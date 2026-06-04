@@ -37,7 +37,8 @@ enum LLMService {
   static func rewriteSystemPrompt(
     _ rewrite: RewriteConfig,
     customTerms: [String],
-    selection: SelectionContext?
+    selection: SelectionContext?,
+    memory: MemoryContext? = nil
   ) -> String {
     var prompt: String
 
@@ -55,11 +56,38 @@ enum LLMService {
         "\n\nWichtig: Diese Eigennamen und Fachbegriffe müssen exakt so geschrieben werden: \(customTerms.joined(separator: ", "))"
     }
 
+    // Memory block is only ever passed when the global master AND the per-mode toggle are on;
+    // gating lives at the call site (AppState) so plain Diktat is never affected.
+    if let memory, let block = memoryContextBlock(memory) {
+      prompt += block
+    }
+
     if let block = selectionContextBlock(for: rewrite.replyContextMode, selection: selection) {
       prompt += block
     }
 
     return prompt
+  }
+
+  // MARK: - Memory context block (Phase 4b)
+
+  /// Renders the structured personal-vocabulary block as a SPELLING hint (not "use these words").
+  static func memoryContextBlock(_ memory: MemoryContext) -> String? {
+    guard !memory.isEmpty else { return nil }
+    var lines = ["\n\n[Persönliches Vokabular – exakt so schreiben]"]
+    if !memory.names.isEmpty {
+      lines.append("Namen: \(memory.names.joined(separator: ", "))")
+    }
+    if !memory.terms.isEmpty {
+      lines.append("Fachbegriffe: \(memory.terms.joined(separator: ", "))")
+    }
+    if !memory.foreign.isEmpty {
+      lines.append("Fremdwörter: \(memory.foreign.joined(separator: ", "))")
+    }
+    lines.append(
+      "Diese Begriffe sind Schreibweisen-Hinweise: Wenn sie vorkommen, schreibe sie exakt so. Erzwinge sie nicht."
+    )
+    return lines.joined(separator: "\n")
   }
 
   // MARK: - Emoji prompt

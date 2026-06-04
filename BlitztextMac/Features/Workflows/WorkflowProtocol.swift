@@ -99,6 +99,38 @@ enum WorkflowLaunchSource: Equatable {
 typealias WorkflowOutputHandler = @MainActor (String) -> Void
 typealias WorkflowPhaseChangeHandler = @MainActor (WorkflowPhase) -> Void
 
+// MARK: - Archive run record (Phase 4)
+
+/// A single completed run, emitted right before `onOutput`. Text-only — never audio.
+/// For plain transcription `rawTranscript == finalText`.
+struct ArchiveRunRecord: Sendable {
+  let mode: WorkflowType
+  let rawTranscript: String
+  let finalText: String
+  let backend: TranscriptionBackend
+  let durationSec: Double
+  let date: Date
+
+  init(
+    mode: WorkflowType,
+    rawTranscript: String,
+    finalText: String,
+    backend: TranscriptionBackend,
+    durationSec: Double,
+    date: Date = Date()
+  ) {
+    self.mode = mode
+    self.rawTranscript = rawTranscript
+    self.finalText = finalText
+    self.backend = backend
+    self.durationSec = durationSec
+    self.date = date
+  }
+}
+
+/// Invoked once per completed run, right before `onOutput`. Default-nil so disabled == zero I/O.
+typealias WorkflowRunHandler = @MainActor (ArchiveRunRecord) -> Void
+
 // MARK: - Workflow Protocol
 
 @MainActor
@@ -108,6 +140,8 @@ protocol Workflow: AnyObject, Observable {
   var isRecording: Bool { get }
   var onOutput: WorkflowOutputHandler? { get set }
   var onPhaseChange: WorkflowPhaseChangeHandler? { get set }
+  /// Emitted with raw+final+mode right before `onOutput`. Wired ONLY when archiving is enabled.
+  var onRun: WorkflowRunHandler? { get set }
 
   func start()
   func stop()
@@ -128,6 +162,11 @@ struct AppSettings: Codable {
   var modes: [String: ModeConfig] = [:]
   var didMigrateToModeConfigs: Bool = false
   var modesSchemaVersion: Int = 1
+  /// Phase 4a: persist text-only transcription history. Opt-in, default OFF.
+  var archiveEnabled: Bool = false
+  /// Phase 4b: inject the confirmed Memory block into rewrite prompts (global master).
+  /// Per-mode `RewriteConfig.useMemoryContext` must ALSO be on. Default OFF.
+  var memoryContextEnabled: Bool = false
 
   init(
     hotkeyMode: HotkeyMode = .hold,
@@ -135,13 +174,17 @@ struct AppSettings: Codable {
     secureLocalModeEnabled: Bool = false,
     selectedLocalTranscriptionModelName: String = LocalTranscriptionService
       .recommendedFastModelName,
-    hasAutoSelectedFastLocalModel: Bool = false
+    hasAutoSelectedFastLocalModel: Bool = false,
+    archiveEnabled: Bool = false,
+    memoryContextEnabled: Bool = false
   ) {
     self.hotkeyMode = hotkeyMode
     self.hasSeenOnboarding = hasSeenOnboarding
     self.secureLocalModeEnabled = secureLocalModeEnabled
     self.selectedLocalTranscriptionModelName = selectedLocalTranscriptionModelName
     self.hasAutoSelectedFastLocalModel = hasAutoSelectedFastLocalModel
+    self.archiveEnabled = archiveEnabled
+    self.memoryContextEnabled = memoryContextEnabled
   }
 
   enum CodingKeys: String, CodingKey {
@@ -153,6 +196,8 @@ struct AppSettings: Codable {
     case modes
     case didMigrateToModeConfigs
     case modesSchemaVersion
+    case archiveEnabled
+    case memoryContextEnabled
   }
 
   init(from decoder: Decoder) throws {
@@ -177,6 +222,10 @@ struct AppSettings: Codable {
       try container.decodeIfPresent(Bool.self, forKey: .didMigrateToModeConfigs) ?? false
     modesSchemaVersion =
       try container.decodeIfPresent(Int.self, forKey: .modesSchemaVersion) ?? 1
+    archiveEnabled =
+      try container.decodeIfPresent(Bool.self, forKey: .archiveEnabled) ?? false
+    memoryContextEnabled =
+      try container.decodeIfPresent(Bool.self, forKey: .memoryContextEnabled) ?? false
   }
 }
 

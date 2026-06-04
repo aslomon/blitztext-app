@@ -9,6 +9,16 @@ struct ModeCardView: View {
   private var forcedOffline: Bool { appState.appSettings.secureLocalModeEnabled }
   private var effectiveBackend: RewriteBackend { appState.resolvedRewriteBackend(for: type) }
 
+  /// The slots that run a rewrite step — only these expose the Memory-context toggle.
+  private var isRewriteMode: Bool {
+    type == .textImprover || type == .dampfAblassen || type == .emojiText
+  }
+
+  /// Memory context is only injected for the text-rewrite modes, not the Emoji/Social mode.
+  private var supportsMemoryContext: Bool {
+    type == .textImprover || type == .dampfAblassen
+  }
+
   private func bind<V>(_ keyPath: WritableKeyPath<ModeConfig, V>) -> Binding<V> {
     Binding(
       get: { appState.modeConfig(for: type)[keyPath: keyPath] },
@@ -46,6 +56,10 @@ struct ModeCardView: View {
           contextField
           replyContextPicker
         }
+      }
+
+      if supportsMemoryContext {
+        memoryToggle
       }
 
       footer
@@ -242,6 +256,39 @@ struct ModeCardView: View {
         }
       }
       .pickerStyle(.segmented)
+    }
+  }
+
+  // MARK: - Memory context (rewrite modes only)
+
+  private var memoryToggle: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Toggle("Memory-Kontext nutzen", isOn: bind(\.rewrite.useMemoryContext))
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .font(.system(size: 11))
+        .disabled(!appState.isMemoryContextEnabled)
+
+      if !appState.isMemoryContextEnabled {
+        Text("Zuerst global „Memory als Kontext nutzen“ im Archiv aktivieren.")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+      } else if config.rewrite.useMemoryContext {
+        if effectiveBackend == .openai {
+          Text(
+            "Dein persönliches Vokabular (Namen, Fachbegriffe, Fremdwörter) wird als "
+              + "Schreibhinweis mitgesendet — bei dieser Online-Verarbeitung an die OpenAI-API."
+          )
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        } else {
+          Text("Dein persönliches Vokabular fließt als Schreibhinweis ein — lokal auf dem Gerät.")
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
     }
   }
 

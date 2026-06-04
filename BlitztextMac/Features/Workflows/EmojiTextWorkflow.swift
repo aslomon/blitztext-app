@@ -11,6 +11,7 @@ final class EmojiTextWorkflow: Workflow {
   }
   var onOutput: WorkflowOutputHandler?
   var onPhaseChange: WorkflowPhaseChangeHandler?
+  var onRun: WorkflowRunHandler?
 
   private let recorder = AudioRecorder()
   private let rewrite: RewriteConfig
@@ -137,6 +138,15 @@ final class EmojiTextWorkflow: Workflow {
           return
         }
         phase = .done(cleanedResult)
+        onRun?(
+          ArchiveRunRecord(
+            mode: type,
+            rawTranscript: cleanedRawText,
+            finalText: cleanedResult,
+            backend: backend,
+            durationSec: recordingDuration
+          )
+        )
         onOutput?(cleanedResult)
       } catch {
         phase = .error(error.localizedDescription)

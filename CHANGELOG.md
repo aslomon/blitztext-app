@@ -9,12 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 4 – Archive & Memory**: Text-only archive store with intelligent Memory context system (opt-in, disabled by default)
+  - **ArchiveStore**: Persistent storage of run records with raw transcripts for offline indexing
+  - **MemoryStore**: Candidate-based memory system with confirmed/denied term curation, category-aware ranking, and injection cap
+  - **MemoryCoordinator**: Orchestrates daily maintenance, hash-gated app-launch catch-up, and on-demand recomputation
+  - **Memory context injection**: Structured context blocks passed to rewrite workflows (TextImprover, DampfAblassen modes only)
+  - **effectiveCustomTerms**: Combined ranking of user custom terms + confirmed memory terms for Whisper hint injection
+  - **Memory UI**: Archive view with suggestion scoring, confirmation/denial workflow, and clearance options
 - **Mode System**: New configurable text rewriting modes (API-based + Apple Foundation Models) with curated email and prompt defaults
 - **ModeConfig.swift**: Core mode model and mode registry with per-mode email templates and prompt settings
 - **RewriteModelRegistry.swift**: Real OpenAI model IDs, dynamic `/v1/models` API client for model availability checking
 - **RewriteProvider.swift**: Unified provider abstraction supporting OpenAI, Apple Foundation Models, and provider selection context
 - **SelectionContextService.swift**: Captures selection context (filename, window title, content type) for intelligent prompt adaptation
-- **ModeCardView.swift**: UI component for browsing and selecting rewriting modes with visual mode presentation
+- **ModeCardView.swift**: UI component for browsing and selecting rewriting modes with visual mode presentation; added Memory context toggle for rewrite modes
 - **DESIGN.md**: Comprehensive architecture and design documentation covering mode system, provider implementations, and UI patterns
 - **docs/PLAN-v2.md**: Implementation plan for Blitztext v2 with phased feature roadmap (stable signing, accessibility grants, local LLM, Prompts tab)
 - **docs/PLAN-modi-und-features.md**: Detailed planning document for the mode system infrastructure and feature implementation
@@ -22,24 +29,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **WorkflowProtocol.swift**: Extended with AppSettings support and mode management (`modes` property, `updateMode` handling)
-- **AppState.swift**: Major refactoring to support mode infrastructure
+- **WorkflowProtocol.swift**: Extended with AppSettings support and mode management (`modes` property, `updateMode` handling); added `onRun` callback for archive ingestion
+- **AppState.swift**: Major refactoring to support mode infrastructure and Phase 4 Memory/Archive
   - Added mode state management and migrations
   - Integrated provider factory with backend gating
   - Implemented selection context capture
   - Updated all workflow instantiation to use provider-based approach
+  - Integrated ArchiveStore, MemoryStore, and MemoryCoordinator initialization
+  - Added Memory maintenance methods: `runMemoryLaunchMaintenanceIfNeeded()`, `recomputeMemory()`
+  - Added Memory curation methods: `confirmMemory()`, `denyMemory()`, `unconfirmMemory()`
+  - Added Archive/Memory toggle properties with privacy controls
+  - Wired archive ingestion callback to workflows (opt-in when archiveEnabled)
+  - Threaded `memoryContext` and `effectiveCustomTerms` into all rewrite workflows
   - Code formatting: consistent indentation and import organization
 - **LLMService.swift**: Refactored as provider-agnostic prompt builder
   - Removed OpenAI-specific request/response structs (moved to provider implementations)
   - New `rewriteSystemPrompt()` method supporting custom terms and selection context integration
   - Added default rewrite temperature constant (0.3)
   - Preserved system prompt builders for email, prompt, and generic improvement modes
-- **DampfAblassenWorkflow.swift**: Migrated from hardcoded provider to dynamic provider selection
+- **DampfAblassenWorkflow.swift**: Migrated from hardcoded provider to dynamic provider selection; threaded memoryContext parameter for archive-aware context injection
 - **EmojiTextWorkflow.swift**: Migrated from hardcoded provider to dynamic provider selection
-- **TextImprovementWorkflow.swift**: Migrated from hardcoded provider to dynamic provider selection
-- **SettingsContentView.swift**: Added mode management UI with ModeCardView integration; code formatting improvements
+- **TextImprovementWorkflow.swift**: Migrated from hardcoded provider to dynamic provider selection; threaded memoryContext parameter for archive-aware context injection
+- **TranscriptionWorkflow.swift**: Updated to use effectiveCustomTerms (combining user custom terms + ranked memory terms) for Whisper hint injection
+- **ModeConfig.swift**: Extended with `useMemoryContext` flag per rewrite mode to gate Memory context injection (TextImprover/DampfAblassen only)
+- **SettingsContentView.swift**: Added mode management UI with ModeCardView integration; added Archive and Memory toggle controls with privacy/clearance options; code formatting improvements
 - **ModeConfig.swift**: Renamed `RewriteBackend.appleIntelligence` → `.local` with user-facing label "Lokal" for clarity; added tolerant decoder to safely migrate legacy settings files that reference the old "appleIntelligence" key
 - **DESIGN.md**: Clarified picker guidance to use `.segmented` only for 2–3 short options (with long labels defaulting to Menu-Picker); renamed "Apple-Intelligence-Hinweis" section to "Offline-/Lokal-Hinweis" for terminology consistency
+- **AppSupportPaths.swift**: Added paths for archive storage (history.json) and Memory store (memory.json) with 0600 file permissions for privacy
 
 ### Fixed
 

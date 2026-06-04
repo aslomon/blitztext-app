@@ -7,19 +7,23 @@ struct SettingsContentView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      // Two-tab segmented picker
+      // Three-tab segmented picker (short labels fit the 340pt popover).
       Picker("", selection: $selectedTab) {
         Text("Anpassen").tag(0)
-        Text("Zugang").tag(1)
+        Text("Archiv").tag(1)
+        Text("Zugang").tag(2)
       }
       .pickerStyle(.segmented)
       .padding(.horizontal, 16)
       .padding(.vertical, 10)
 
       ScrollView {
-        if selectedTab == 0 {
+        switch selectedTab {
+        case 0:
           CustomizeSettingsView(appState: appState)
-        } else {
+        case 1:
+          ArchiveSettingsView(appState: appState)
+        default:
           AccessSettingsView(appState: appState)
         }
       }
@@ -32,18 +36,18 @@ struct SettingsContentView: View {
 
   private var defaultTabSelection: Int {
     if !appState.accessibilityPermissionGranted {
-      return 1
+      return 2
     }
     if appState.isConfigured && !BlitztextInstallLocationService.shouldOfferMoveToApplications {
       return 0
     }
-    return 1
+    return 2
   }
 }
 
 // MARK: - Section Label (quiet style)
 
-private struct SectionLabel: View {
+struct SectionLabel: View {
   let text: String
 
   var body: some View {

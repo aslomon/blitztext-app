@@ -56,6 +56,11 @@ final class AppState {
     didSet { saveSettings() }
   }
 
+  // Phase 4: text-only archive + two-speed Memory (opt-in, default OFF).
+  let archiveStore = ArchiveStore()
+  let memoryStore = MemoryStore()
+  let memoryCoordinator: MemoryCoordinator
+
   // Hotkeys
   let hotkeyService = HotkeyService()
 
@@ -77,11 +82,89 @@ final class AppState {
     self.textImprovementSettings = Self.loadTextImprovementSettings()
     self.dampfAblassenSettings = Self.loadDampfAblassenSettings()
     self.emojiTextSettings = Self.loadEmojiTextSettings()
+    self.memoryCoordinator = MemoryCoordinator(
+      memory: memoryStore, archive: archiveStore)
     migrateToModeConfigsIfNeeded()
     refreshAccessibilityPermission()
     autoSelectFastLocalModelIfNeeded()
     prewarmLocalTranscriptionIfNeeded()
+    runMemoryLaunchMaintenanceIfNeeded()
   }
+
+  // MARK: - Memory maintenance (Phase 4)
+
+  /// App-launch catch-up (hash-gated, skips when the archive is unchanged) plus the daily
+  /// decay/prune pass. Only runs while Memory is enabled; otherwise it is a no-op.
+  private func runMemoryLaunchMaintenanceIfNeeded() {
+    guard appSettings.memoryContextEnabled else { return }
+    memoryCoordinator.runDailyPassIfNeeded()
+    Task { await memoryCoordinator.catchUpIfNeeded() }
+  }
+
+  /// User-facing "Jetzt analysieren": full recompute of the candidate index over the archive.
+  /// The injected (confirmed) set is preserved — only suggestions change.
+  func recomputeMemory() {
+    Task { await memoryCoordinator.recomputeMemory() }
+  }
+
+  /// Confirmed-memory terms + the user's customTerms, ranked and capped, for the Whisper hint.
+  /// The user's own terms come first; ranked memory terms follow (best last in the joined hint).
+  var effectiveCustomTerms: [String] {
+    var seen = Set<String>()
+    var result: [String] = []
+    func add(_ term: String) {
+      let trimmed = term.trimmingCharacters(in: .whitespaces)
+      let key = trimmed.lowercased()
+      guard !trimmed.isEmpty, !seen.contains(key) else { return }
+      seen.insert(key)
+      result.append(trimmed)
+    }
+    for term in textImprovementSettings.customTerms { add(term) }
+    guard appSettings.memoryContextEnabled else { return result }
+    for term in memoryStore.rankedInjectionTerms() { add(term) }
+    return Array(result.prefix(MemoryStore.injectionCap))
+  }
+
+  /// The structured Memory block for the rewrite prompt — non-nil only when the GLOBAL master
+  /// and the per-mode toggle are both on. Gating lives here so plain Diktat stays untouched.
+  func memoryContext(for type: WorkflowType) -> MemoryContext? {
+    guard appSettings.memoryContextEnabled else { return nil }
+    guard modeConfig(for: type).rewrite.useMemoryContext else { return nil }
+    let context = memoryStore.context
+    return context.isEmpty ? nil : context
+  }
+
+  // MARK: - Memory curation (changes the injected set)
+
+  /// Suggestions surfaced in the archive UI (scored, recurring, not yet confirmed/denied).
+  var memorySuggestions: [MemoryCandidate] { memoryStore.suggestions }
+  var memoryConfirmedTerms: [MemoryConfirmedTerm] { memoryStore.confirmed }
+  var isRecomputingMemory: Bool { memoryCoordinator.isRecomputing }
+
+  func confirmMemory(_ candidate: MemoryCandidate) { memoryStore.confirm(candidate) }
+  func confirmMemory(term: String, category: MemoryCategory) {
+    memoryStore.confirm(term: term, category: category)
+  }
+  func denyMemory(_ candidate: MemoryCandidate) { memoryStore.deny(candidate) }
+  func unconfirmMemory(_ id: MemoryConfirmedTerm.ID) { memoryStore.unconfirm(id) }
+
+  // MARK: - Archive / Memory toggles + deletion (privacy)
+
+  var isArchiveEnabled: Bool {
+    get { appSettings.archiveEnabled }
+    set { appSettings.archiveEnabled = newValue }
+  }
+
+  var isMemoryContextEnabled: Bool {
+    get { appSettings.memoryContextEnabled }
+    set {
+      appSettings.memoryContextEnabled = newValue
+      if newValue { runMemoryLaunchMaintenanceIfNeeded() }
+    }
+  }
+
+  func clearArchive() { archiveStore.clear() }
+  func clearMemory() { memoryStore.clear() }
 
   // MARK: - Model picker state
 
@@ -290,7 +373,7 @@ final class AppState {
     switch type {
     case .transcription:
       let workflow = TranscriptionWorkflow(
-        customTerms: textImprovementSettings.customTerms,
+        customTerms: effectiveCustomTerms,
         language: transcriptionSettings.language,
         backend: appSettings.secureLocalModeEnabled ? .local : .remote,
         localModelName: selectedLocalModelName
@@ -302,7 +385,7 @@ final class AppState {
     case .localTranscription:
       let workflow = TranscriptionWorkflow(
         type: .localTranscription,
-        customTerms: textImprovementSettings.customTerms,
+        customTerms: effectiveCustomTerms,
         language: transcriptionSettings.language,
         backend: .local,
         localModelName: selectedLocalModelName
@@ -315,11 +398,12 @@ final class AppState {
       let workflow = TextImprovementWorkflow(
         rewrite: modeConfig(for: .textImprover).rewrite,
         provider: rewriteProvider(for: .textImprover),
-        customTerms: textImprovementSettings.customTerms,
+        customTerms: effectiveCustomTerms,
         language: transcriptionSettings.language,
         backend: rewriteTranscriptionBackend,
         localModelName: selectedLocalModelName,
-        selection: selection
+        selection: selection,
+        memoryContext: memoryContext(for: .textImprover)
       )
       configureWorkflowHandlers(workflow)
       activeWorkflow = workflow
@@ -329,11 +413,12 @@ final class AppState {
       let workflow = DampfAblassenWorkflow(
         rewrite: modeConfig(for: .dampfAblassen).rewrite,
         provider: rewriteProvider(for: .dampfAblassen),
-        customTerms: textImprovementSettings.customTerms,
+        customTerms: effectiveCustomTerms,
         language: transcriptionSettings.language,
         backend: rewriteTranscriptionBackend,
         localModelName: selectedLocalModelName,
-        selection: selection
+        selection: selection,
+        memoryContext: memoryContext(for: .dampfAblassen)
       )
       configureWorkflowHandlers(workflow)
       activeWorkflow = workflow
@@ -343,7 +428,7 @@ final class AppState {
       let workflow = EmojiTextWorkflow(
         rewrite: modeConfig(for: .emojiText).rewrite,
         provider: rewriteProvider(for: .emojiText),
-        customTerms: textImprovementSettings.customTerms,
+        customTerms: effectiveCustomTerms,
         language: transcriptionSettings.language,
         backend: rewriteTranscriptionBackend,
         localModelName: selectedLocalModelName
@@ -618,6 +703,21 @@ final class AppState {
     workflow.onPhaseChange = { [weak self, weak workflow] phase in
       guard let self, let workflow else { return }
       self.handleWorkflowPhaseChange(phase, workflow: workflow)
+    }
+    // Wire archiving/Memory-folding ONLY when the archive is enabled, so disabled == zero I/O.
+    if appSettings.archiveEnabled {
+      workflow.onRun = { [weak self] record in
+        self?.handleWorkflowRun(record)
+      }
+    }
+  }
+
+  /// Persists the run to the text archive and folds it into the Memory candidate index
+  /// (incrementally, off the main actor). Both are opt-in; this only runs when wired above.
+  private func handleWorkflowRun(_ record: ArchiveRunRecord) {
+    archiveStore.append(record)
+    if appSettings.memoryContextEnabled {
+      memoryCoordinator.ingest(rawTranscript: record.rawTranscript, date: record.date)
     }
   }
 

@@ -62,6 +62,9 @@ struct RewriteConfig: Codable {
   var context: String = ""
   var emojiDensity: EmojiTextSettings.EmojiDensity = .mittel
   var replyContextMode: ReplyContextMode = .off
+  /// Phase 4b: when true (and the global master is on), the confirmed Memory block is
+  /// rendered into this mode's rewrite system prompt. Default OFF so plain Diktat stays untouched.
+  var useMemoryContext: Bool = false
 
   init(
     systemPrompt: String = "",
@@ -70,7 +73,8 @@ struct RewriteConfig: Codable {
     tone: TextImprovementSettings.TextTone = .neutral,
     context: String = "",
     emojiDensity: EmojiTextSettings.EmojiDensity = .mittel,
-    replyContextMode: ReplyContextMode = .off
+    replyContextMode: ReplyContextMode = .off,
+    useMemoryContext: Bool = false
   ) {
     self.systemPrompt = systemPrompt
     self.rewriteBackend = rewriteBackend
@@ -79,10 +83,12 @@ struct RewriteConfig: Codable {
     self.context = context
     self.emojiDensity = emojiDensity
     self.replyContextMode = replyContextMode
+    self.useMemoryContext = useMemoryContext
   }
 
   enum CodingKeys: String, CodingKey {
     case systemPrompt, rewriteBackend, modelID, tone, context, emojiDensity, replyContextMode
+    case useMemoryContext
   }
 
   init(from decoder: Decoder) throws {
@@ -103,6 +109,8 @@ struct RewriteConfig: Codable {
       try c.decodeIfPresent(EmojiTextSettings.EmojiDensity.self, forKey: .emojiDensity) ?? .mittel
     replyContextMode =
       try c.decodeIfPresent(ReplyContextMode.self, forKey: .replyContextMode) ?? .off
+    useMemoryContext =
+      try c.decodeIfPresent(Bool.self, forKey: .useMemoryContext) ?? false
   }
 }
 

@@ -11,6 +11,7 @@ final class DampfAblassenWorkflow: Workflow {
   }
   var onOutput: WorkflowOutputHandler?
   var onPhaseChange: WorkflowPhaseChangeHandler?
+  var onRun: WorkflowRunHandler?
 
   private let recorder = AudioRecorder()
   private let rewrite: RewriteConfig
@@ -20,6 +21,7 @@ final class DampfAblassenWorkflow: Workflow {
   private let backend: TranscriptionBackend
   private let localModelName: String
   private let selection: SelectionContext?
+  private let memoryContext: MemoryContext?
   private var processingTask: Task<Void, Never>?
 
   init(
@@ -29,7 +31,8 @@ final class DampfAblassenWorkflow: Workflow {
     language: String = "de",
     backend: TranscriptionBackend = .remote,
     localModelName: String = LocalTranscriptionService.recommendedFastModelName,
-    selection: SelectionContext? = nil
+    selection: SelectionContext? = nil,
+    memoryContext: MemoryContext? = nil
   ) {
     self.rewrite = rewrite
     self.provider = provider
@@ -38,6 +41,7 @@ final class DampfAblassenWorkflow: Workflow {
     self.backend = backend
     self.localModelName = localModelName
     self.selection = selection
+    self.memoryContext = memoryContext
   }
 
   // MARK: - Recording State
@@ -129,7 +133,7 @@ final class DampfAblassenWorkflow: Workflow {
         phase = .running("Wird umformuliert ...")
 
         let systemPrompt = LLMService.rewriteSystemPrompt(
-          rewrite, customTerms: customTerms, selection: selection)
+          rewrite, customTerms: customTerms, selection: selection, memory: memoryContext)
         let answer = try await provider.rewrite(
           systemPrompt: systemPrompt,
           userText: cleanedRawText,
@@ -141,6 +145,15 @@ final class DampfAblassenWorkflow: Workflow {
           return
         }
         phase = .done(cleanedAnswer)
+        onRun?(
+          ArchiveRunRecord(
+            mode: type,
+            rawTranscript: cleanedRawText,
+            finalText: cleanedAnswer,
+            backend: backend,
+            durationSec: recordingDuration
+          )
+        )
         onOutput?(cleanedAnswer)
       } catch {
         phase = .error(error.localizedDescription)

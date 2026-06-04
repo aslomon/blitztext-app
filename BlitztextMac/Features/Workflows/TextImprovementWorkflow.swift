@@ -11,6 +11,7 @@ final class TextImprovementWorkflow: Workflow {
   }
   var onOutput: WorkflowOutputHandler?
   var onPhaseChange: WorkflowPhaseChangeHandler?
+  var onRun: WorkflowRunHandler?
 
   private let recorder = AudioRecorder()
   private let rewrite: RewriteConfig
@@ -20,6 +21,7 @@ final class TextImprovementWorkflow: Workflow {
   private let backend: TranscriptionBackend
   private let localModelName: String
   private let selection: SelectionContext?
+  private let memoryContext: MemoryContext?
   private var processingTask: Task<Void, Never>?
 
   init(
@@ -29,7 +31,8 @@ final class TextImprovementWorkflow: Workflow {
     language: String = "de",
     backend: TranscriptionBackend = .remote,
     localModelName: String = LocalTranscriptionService.recommendedFastModelName,
-    selection: SelectionContext? = nil
+    selection: SelectionContext? = nil,
+    memoryContext: MemoryContext? = nil
   ) {
     self.rewrite = rewrite
     self.provider = provider
@@ -38,6 +41,7 @@ final class TextImprovementWorkflow: Workflow {
     self.backend = backend
     self.localModelName = localModelName
     self.selection = selection
+    self.memoryContext = memoryContext
   }
 
   // MARK: - Recording State
@@ -129,7 +133,7 @@ final class TextImprovementWorkflow: Workflow {
         phase = .running("Text wird verbessert ...")
 
         let systemPrompt = LLMService.rewriteSystemPrompt(
-          rewrite, customTerms: customTerms, selection: selection)
+          rewrite, customTerms: customTerms, selection: selection, memory: memoryContext)
         let improved = try await provider.rewrite(
           systemPrompt: systemPrompt,
           userText: cleanedRawText,
@@ -138,6 +142,15 @@ final class TextImprovementWorkflow: Workflow {
 
         let cleanedImproved = TranscriptionQualityService.cleanedTranscript(improved)
         phase = .done(cleanedImproved)
+        onRun?(
+          ArchiveRunRecord(
+            mode: type,
+            rawTranscript: cleanedRawText,
+            finalText: cleanedImproved,
+            backend: backend,
+            durationSec: recordingDuration
+          )
+        )
         onOutput?(cleanedImproved)
       } catch {
         phase = .error(error.localizedDescription)

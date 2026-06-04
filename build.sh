@@ -31,6 +31,55 @@ for arg in "$@"; do
     esac
 done
 
+CODESIGN_IDENTITY_NAME="Blitztext Local Dev"
+# Absolute path is set after PROJECT_DIR is known (see below).
+ENTITLEMENTS_PATH=""
+# Resolved once by resolve_codesign_identity(): "stable" or "adhoc".
+CODESIGN_MODE="adhoc"
+
+# Decides whether we can sign with the stable local identity or must fall back to
+# ad-hoc. Stable signing requires BOTH: the identity exists in the codesigning
+# keychain AND a throwaway test-sign with it actually succeeds (covers the case
+# where the identity is listed but codesign has no key access yet).
+resolve_codesign_identity() {
+    if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$CODESIGN_IDENTITY_NAME"; then
+        CODESIGN_MODE="adhoc"
+        return
+    fi
+
+    local test_dir
+    test_dir="$(mktemp -d -t blitztext-codesign-test)"
+    local test_file="$test_dir/codesign-test"
+    printf 'blitztext' > "$test_file"
+
+    if codesign --force --sign "$CODESIGN_IDENTITY_NAME" "$test_file" >/dev/null 2>&1; then
+        CODESIGN_MODE="stable"
+    else
+        CODESIGN_MODE="adhoc"
+    fi
+
+    rm -rf "$test_dir"
+}
+
+# Signs the app bundle using the resolved mode. Stable mode uses the local
+# identity + hardened runtime + entitlements so the CDHash stays constant across
+# rebuilds (TCC grants survive). Ad-hoc mode is the clean fallback when no
+# identity is installed — the build still succeeds.
+sign_app_bundle() {
+    local target="$1"
+
+    if [ "$CODESIGN_MODE" = "stable" ]; then
+        echo "🔏 Signiere mit stabiler lokaler Identitaet (\"$CODESIGN_IDENTITY_NAME\"). Bedienungshilfen-Freigaben ueberleben Rebuilds."
+        codesign --force --options runtime \
+            --entitlements "$ENTITLEMENTS_PATH" \
+            --sign "$CODESIGN_IDENTITY_NAME" "$target" 2>&1
+    else
+        echo "🔏 Signiere lokale Development-App ad-hoc. Dieses Artefakt ist nicht notarisiert."
+        echo "   Tipp: Fuehre einmalig scripts/create-dev-cert.sh aus, damit Bedienungshilfen-Freigaben Rebuilds ueberleben."
+        codesign --force --sign - "$target" 2>&1
+    fi
+}
+
 verify_universal_app() {
     local app_path="$1"
     local app_name
@@ -87,6 +136,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/BlitztextMac"
 PROJECT_FILE="$PROJECT_DIR/BlitztextMac.xcodeproj"
 DERIVED_DATA_PATH="$SCRIPT_DIR/.derivedData-blitztextmac-build"
+ENTITLEMENTS_PATH="$PROJECT_DIR/Resources/BlitztextMac.entitlements"
 cd "$PROJECT_DIR"
 
 ensure_xcodebuild_available
@@ -138,8 +188,8 @@ cp -f "$PROJECT_DIR/Resources/menubar_icon@2x.png" "$RESOURCES_DIR/" 2>/dev/null
 DEST="$SCRIPT_DIR/Blitztext.app"
 rm -rf "$DEST"
 cp -R "$APP_PATH" "$DEST"
-echo "🔏 Signiere lokale Development-App ad-hoc. Dieses Artefakt ist nicht notarisiert."
-codesign --force --sign - "$DEST" 2>&1
+resolve_codesign_identity
+sign_app_bundle "$DEST"
 verify_universal_app "$DEST"
 
 RUN_TARGET="$DEST"
@@ -154,8 +204,7 @@ if [ "$INSTALL_APP" = true ]; then
     fi
     rm -rf "$INSTALL_DEST"
     cp -R "$DEST" "$INSTALL_DEST"
-    echo "🔏 Signiere lokale Development-App ad-hoc. Dieses Artefakt ist nicht notarisiert."
-    codesign --force --sign - "$INSTALL_DEST" 2>&1
+    sign_app_bundle "$INSTALL_DEST"
     verify_universal_app "$INSTALL_DEST"
     RUN_TARGET="$INSTALL_DEST"
 fi

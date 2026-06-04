@@ -167,6 +167,11 @@ struct AppSettings: Codable {
   /// Phase 4b: inject the confirmed Memory block into rewrite prompts (global master).
   /// Per-mode `RewriteConfig.useMemoryContext` must ALSO be on. Default OFF.
   var memoryContextEnabled: Bool = false
+  /// Phase 1 (signing): set true once Accessibility trust was ever observed. Drives the
+  /// stale-grant hint: if previously granted but now `AXIsProcessTrusted()` is false (e.g.
+  /// after a rebuild changed the CDHash), macOS may still show Blitztext enabled while not
+  /// recognizing it. Persisted so the hint survives relaunches.
+  var hadAccessibilityGrant: Bool = false
 
   init(
     hotkeyMode: HotkeyMode = .hold,
@@ -176,7 +181,8 @@ struct AppSettings: Codable {
       .recommendedFastModelName,
     hasAutoSelectedFastLocalModel: Bool = false,
     archiveEnabled: Bool = false,
-    memoryContextEnabled: Bool = false
+    memoryContextEnabled: Bool = false,
+    hadAccessibilityGrant: Bool = false
   ) {
     self.hotkeyMode = hotkeyMode
     self.hasSeenOnboarding = hasSeenOnboarding
@@ -185,6 +191,7 @@ struct AppSettings: Codable {
     self.hasAutoSelectedFastLocalModel = hasAutoSelectedFastLocalModel
     self.archiveEnabled = archiveEnabled
     self.memoryContextEnabled = memoryContextEnabled
+    self.hadAccessibilityGrant = hadAccessibilityGrant
   }
 
   enum CodingKeys: String, CodingKey {
@@ -198,6 +205,7 @@ struct AppSettings: Codable {
     case modesSchemaVersion
     case archiveEnabled
     case memoryContextEnabled
+    case hadAccessibilityGrant
   }
 
   init(from decoder: Decoder) throws {
@@ -226,6 +234,8 @@ struct AppSettings: Codable {
       try container.decodeIfPresent(Bool.self, forKey: .archiveEnabled) ?? false
     memoryContextEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .memoryContextEnabled) ?? false
+    hadAccessibilityGrant =
+      try container.decodeIfPresent(Bool.self, forKey: .hadAccessibilityGrant) ?? false
   }
 }
 

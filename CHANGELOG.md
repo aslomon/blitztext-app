@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 1 – Code-signing & Accessibility**: Robust self-signed code-signing with stable identity support and stale-grant detection
+  - **AccessibilityPermissionService**: Enhanced monitoring system with transition-only notifications (no spurious re-fires)
+    - `startMonitoring(onChange:)` + `stopMonitoring()`: Low-frequency timer + workspace app-activation listener for grant state changes
+    - `requestPermissionPrompt()` & `openSystemSettings()`: Explicit user-driven grant request and system settings navigation
+    - Transition detection: only fires `onChange` on actual `AXIsProcessTrusted()` state changes, not every poll cycle
+  - **build.sh**: Stable local code-signing with optional ad-hoc fallback
+    - `resolve_codesign_identity()`: Detects "Blitztext Local Dev" identity and validates it can actually sign (covers key-access blockers)
+    - `sign_app_bundle()`: Dual-mode signing—stable mode (hardened runtime + entitlements, constant CDHash across rebuilds → TCC grants survive) vs. ad-hoc fallback
+    - Guides users to optional `scripts/create-dev-cert.sh` for persistent TCC grant survival
+  - **AppSettings.hadAccessibilityGrant**: New persistence flag to track if accessibility was ever observed; enables stale-grant UX hints
 - **Phase 4 – Archive & Memory**: Text-only archive store with intelligent Memory context system (opt-in, disabled by default)
   - **ArchiveStore**: Persistent storage of run records with raw transcripts for offline indexing
   - **MemoryStore**: Candidate-based memory system with confirmed/denied term curation, category-aware ranking, and injection cap

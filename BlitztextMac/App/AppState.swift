@@ -89,6 +89,22 @@ final class AppState {
     autoSelectFastLocalModelIfNeeded()
     prewarmLocalTranscriptionIfNeeded()
     runMemoryLaunchMaintenanceIfNeeded()
+    startAccessibilityMonitoring()
+    observeAppActivation()
+  }
+
+  /// Re-checks Accessibility whenever the app becomes active (e.g. the user comes back from
+  /// System Settings after toggling the permission).
+  private func observeAppActivation() {
+    NotificationCenter.default.addObserver(
+      forName: NSApplication.didBecomeActiveNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        self?.refreshAccessibilityPermission()
+      }
+    }
   }
 
   // MARK: - Memory maintenance (Phase 4)
@@ -564,6 +580,7 @@ final class AppState {
   }
 
   func prepareForPopoverPresentation() {
+    refreshAccessibilityPermission()
     lastPopoverPasteTarget = captureCurrentFrontmostApp()
     if let activeWorkflow, activeWorkflow.phase.isActive {
       page = .workflow
@@ -646,18 +663,47 @@ final class AppState {
   }
 
   func refreshAccessibilityPermission() {
-    accessibilityPermissionGranted = AccessibilityPermissionService.currentStatus()
+    let trusted = AccessibilityPermissionService.currentStatus()
+    accessibilityPermissionGranted = trusted
+    // Remember that the grant was ever real, so we can later detect a stale grant
+    // (toggle still on in System Settings but AXIsProcessTrusted() == false after a rebuild).
+    if trusted, !appSettings.hadAccessibilityGrant {
+      appSettings.hadAccessibilityGrant = true
+    }
+  }
+
+  /// True when Accessibility was granted before but is no longer recognized — the classic
+  /// stale-grant case after an unsigned/ad-hoc rebuild changes the CDHash. The UI uses this
+  /// to surface the "remove + re-add the Blitztext entry" guidance.
+  var accessibilityLikelyStale: Bool {
+    appSettings.hadAccessibilityGrant && !AccessibilityPermissionService.currentStatus()
+  }
+
+  /// Begins observing trust transitions so the UI updates without manual re-checks.
+  /// Idempotent; safe to call from app launch.
+  func startAccessibilityMonitoring() {
+    AccessibilityPermissionService.startMonitoring { [weak self] _ in
+      self?.refreshAccessibilityPermission()
+    }
   }
 
   func requestAccessibilityPermission() {
     accessibilityPermissionGranted = AccessibilityPermissionService.requestPermissionPrompt()
+    refreshAccessibilityPermission()
     AccessibilityPermissionService.openSystemSettings()
+    startBoundedAccessibilityPoll()
+  }
 
+  /// Bounded poll: re-checks roughly once per second for up to ~10 seconds and stops early as
+  /// soon as the grant is detected. Replaces the previous fixed 1s/3s one-shot re-checks so a
+  /// grant that lands a few seconds after the user toggles it is still picked up.
+  private func startBoundedAccessibilityPoll(attemptsRemaining: Int = 10) {
+    guard attemptsRemaining > 0 else { return }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-      self?.refreshAccessibilityPermission()
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-      self?.refreshAccessibilityPermission()
+      guard let self else { return }
+      self.refreshAccessibilityPermission()
+      guard !self.accessibilityPermissionGranted else { return }
+      self.startBoundedAccessibilityPoll(attemptsRemaining: attemptsRemaining - 1)
     }
   }
 

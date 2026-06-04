@@ -33,22 +33,38 @@ struct MemoryExtractionService: Sendable {
   }
 
   /// Extract candidate terms from ONE raw transcript. Deterministic, pure, no I/O.
-  func extract(from rawTranscript: String) -> [ExtractedTerm] {
+  /// A collected token before OOV resolution.
+  private struct RawToken {
+    let surface: String
+    let lemma: String
+    let lexicalClass: NLTag?
+    let nameTag: NLTag?
+    let tokenLanguageRaw: String?
+  }
+
+  private static func oovKey(_ word: String, _ langCode: String) -> String {
+    word + "\u{1}" + langCode
+  }
+
+  /// `async` because the NSSpellChecker OOV lookups are AppKit main-actor-isolated. The heavy
+  /// NaturalLanguage tokenization stays off the main actor; only the spell-check batch hops to MainActor.
+  func extract(from rawTranscript: String) async -> [ExtractedTerm] {
     let text = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
     guard text.count >= minimumTokenLength else { return [] }
 
     let documentLanguage = dominantLanguage(of: text) ?? .german
-    // `checkSpelling(of:…language:…)` takes the language explicitly, so we never have to
-    // mutate (and restore) the shared checker's current language.
-    let spellChecker = NSSpellChecker.shared
+    let documentLangCode = languageCode(for: documentLanguage)
 
-    var results: [String: ExtractedTerm] = [:]
+    // Pass 1 (off-main): tokenize and collect the (word, languageCode) pairs we need OOV answers for.
+    var tokens: [RawToken] = []
+    var oovQueries: [String: (word: String, lang: String)] = [:]
+    func needOOV(_ word: String, _ lang: String) {
+      oovQueries[Self.oovKey(word, lang)] = (word, lang)
+    }
 
     let tagger = NLTagger(tagSchemes: [.lexicalClass, .nameType, .lemma, .language])
     tagger.string = text
-    let options: NLTagger.Options = [
-      .omitWhitespace, .omitPunctuation, .joinNames,
-    ]
+    let options: NLTagger.Options = [.omitWhitespace, .omitPunctuation, .joinNames]
     let range = text.startIndex..<text.endIndex
 
     tagger.enumerateTags(
@@ -63,28 +79,45 @@ struct MemoryExtractionService: Sendable {
       let nameTag = tagger.tag(at: tokenRange.lowerBound, unit: .word, scheme: .nameType).0
       let tokenLanguage = tagger.tag(at: tokenRange.lowerBound, unit: .word, scheme: .language).0
 
-      if let term = classify(
-        surface: surface,
-        lemma: lemma,
-        lexicalClass: tag,
-        nameTag: nameTag,
-        tokenLanguageRaw: tokenLanguage?.rawValue,
-        documentLanguage: documentLanguage,
-        spellChecker: spellChecker
-      ) {
-        // Keep the first (or highest-priority) classification per lemma in this document.
-        let key = term.lemma.lowercased()
-        if let existing = results[key] {
-          if term.category.injectionRank < existing.category.injectionRank {
-            results[key] = term
-          }
-        } else {
-          results[key] = term
-        }
+      tokens.append(
+        RawToken(
+          surface: surface, lemma: lemma, lexicalClass: tag, nameTag: nameTag,
+          tokenLanguageRaw: tokenLanguage?.rawValue))
+      needOOV(surface, documentLangCode)
+      if let raw = tokenLanguage?.rawValue, let tl = optionalLanguage(raw), tl != documentLanguage {
+        needOOV(surface, languageCode(for: tl))
       }
       return true
     }
 
+    // Pass 2 (MainActor): NSSpellChecker.shared is main-actor-isolated — resolve all OOV queries in one hop.
+    let queries = oovQueries
+    let oov: [String: Bool] = await MainActor.run {
+      let spellChecker = NSSpellChecker.shared
+      var resolved: [String: Bool] = [:]
+      for (key, q) in queries {
+        resolved[key] = Self.isOutOfDictionary(
+          q.word, languageCode: q.lang, spellChecker: spellChecker)
+      }
+      return resolved
+    }
+
+    // Pass 3 (off-main): classify using the precomputed OOV map (pure, no AppKit).
+    var results: [String: ExtractedTerm] = [:]
+    for token in tokens {
+      guard
+        let term = classify(
+          surface: token.surface, lemma: token.lemma, lexicalClass: token.lexicalClass,
+          nameTag: token.nameTag, tokenLanguageRaw: token.tokenLanguageRaw,
+          documentLanguage: documentLanguage, documentLangCode: documentLangCode, oov: oov)
+      else { continue }
+      let key = term.lemma.lowercased()
+      if let existing = results[key] {
+        if term.category.injectionRank < existing.category.injectionRank { results[key] = term }
+      } else {
+        results[key] = term
+      }
+    }
     return Array(results.values)
   }
 
@@ -97,13 +130,12 @@ struct MemoryExtractionService: Sendable {
     nameTag: NLTag?,
     tokenLanguageRaw: String?,
     documentLanguage: NLLanguage,
-    spellChecker: NSSpellChecker
+    documentLangCode: String,
+    oov: [String: Bool]
   ) -> ExtractedTerm? {
     let isCapitalized = surface.first?.isUppercase ?? false
     let isNERName = isPersonalNameTag(nameTag)
-    let documentLangCode = languageCode(for: documentLanguage)
-    let isOOVInDocLanguage = isOutOfDictionary(
-      surface, languageCode: documentLangCode, spellChecker: spellChecker)
+    let isOOVInDocLanguage = oov[Self.oovKey(surface, documentLangCode)] ?? false
 
     // 1) Foreign: token's dominant language differs from the document AND it IS a real word there.
     if let tokenLanguageRaw,
@@ -112,8 +144,7 @@ struct MemoryExtractionService: Sendable {
       !isNERName
     {
       let tokenLangCode = languageCode(for: tokenLanguage)
-      let isInOtherDictionary = !isOutOfDictionary(
-        surface, languageCode: tokenLangCode, spellChecker: spellChecker)
+      let isInOtherDictionary = !(oov[Self.oovKey(surface, tokenLangCode)] ?? false)
       if isInOtherDictionary && isOOVInDocLanguage {
         return ExtractedTerm(lemma: lemma, surfaceForm: surface, category: .foreign)
       }
@@ -155,7 +186,7 @@ struct MemoryExtractionService: Sendable {
     tag == .noun
   }
 
-  private func isOutOfDictionary(
+  private static func isOutOfDictionary(
     _ word: String, languageCode: String, spellChecker: NSSpellChecker
   ) -> Bool {
     let range = NSRange(location: 0, length: (word as NSString).length)

@@ -135,10 +135,16 @@ final class AppState {
       seen.insert(key)
       result.append(trimmed)
     }
+    // Build the list MOST-IMPORTANT-FIRST so the cap keeps the highest-priority terms:
+    // explicit user terms first, then memory terms best-first (rankedInjectionTerms is best-LAST → reverse).
     for term in textImprovementSettings.customTerms { add(term) }
-    guard appSettings.memoryContextEnabled else { return result }
-    for term in memoryStore.rankedInjectionTerms() { add(term) }
-    return Array(result.prefix(MemoryStore.injectionCap))
+    guard appSettings.memoryContextEnabled else {
+      return Array(result.prefix(MemoryStore.injectionCap))
+    }
+    for term in memoryStore.rankedInjectionTerms().reversed() { add(term) }
+    // Cap to the top-priority terms, then reverse so the best terms sit LAST in the Whisper hint
+    // (whisper-1 drops the earliest tokens when the prompt overflows its budget).
+    return Array(result.prefix(MemoryStore.injectionCap)).reversed()
   }
 
   /// The structured Memory block for the rewrite prompt — non-nil only when the GLOBAL master

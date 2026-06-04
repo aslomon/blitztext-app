@@ -54,3 +54,38 @@ targets:
         com.apple.security.app-sandbox: false
         com.apple.security.device.audio-input: true
         com.apple.security.network.client: true
+
+  BlitztextMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: BlitztextMac
+        embed: false
+        link: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.blitztext.mac.tests
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_VERSION: "5.10"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        # The app target overrides PRODUCT_NAME to "Blitztext", so the bundle is
+        # Blitztext.app with binary .../MacOS/Blitztext. XcodeGen's auto-wired
+        # TEST_HOST/BUNDLE_LOADER use the target name (BlitztextMac) and miss this,
+        # so we point them at the real product name explicitly.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Blitztext.app/Contents/MacOS/Blitztext"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  BlitztextMac:
+    build:
+      targets:
+        BlitztextMac: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - BlitztextMacTests

@@ -43,7 +43,7 @@ final class MemoryCoordinator {
     let text = rawTranscript
     let extractor = self.extractor
     Task.detached(priority: .utility) {
-      let extracted = extractor.extract(from: text)
+      let extracted = await extractor.extract(from: text)
       guard !extracted.isEmpty else { return }
       await MainActor.run {
         self.memory.fold(extracted: extracted, at: date)
@@ -75,6 +75,7 @@ final class MemoryCoordinator {
     let entries = archive.entries
     guard !entries.isEmpty else {
       memory.replaceCandidates([], dates: [])
+      memory.updateWatermark(contentHash: Self.contentHash(of: []))
       return
     }
 
@@ -84,7 +85,12 @@ final class MemoryCoordinator {
     let contentHash = Self.contentHash(of: transcripts)
 
     let extractedPerDoc: [[ExtractedTerm]] = await Task.detached(priority: .utility) {
-      transcripts.map { extractor.extract(from: $0) }
+      var perDoc: [[ExtractedTerm]] = []
+      perDoc.reserveCapacity(transcripts.count)
+      for transcript in transcripts {
+        perDoc.append(await extractor.extract(from: transcript))
+      }
+      return perDoc
     }.value
 
     memory.replaceCandidates(extractedPerDoc, dates: dates)

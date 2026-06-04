@@ -102,21 +102,23 @@ struct ModeCardView: View {
       Picker(
         "",
         selection: forcedOffline
-          ? .constant(RewriteBackend.appleIntelligence) : bind(\.rewrite.rewriteBackend)
+          ? .constant(RewriteBackend.local) : bind(\.rewrite.rewriteBackend)
       ) {
         ForEach(RewriteBackend.allCases) { backend in
           Text(backend.displayName).tag(backend)
         }
       }
-      .pickerStyle(.segmented)
+      .labelsHidden()
+      .controlSize(.small)
+      .pickerStyle(.menu)
       .disabled(forcedOffline)
 
       if forcedOffline {
-        Text("Sicherer lokaler Modus erzwingt lokale Verarbeitung (Apple Intelligence).")
+        Text("Sicherer lokaler Modus erzwingt lokale Verarbeitung.")
           .font(.system(size: 10))
           .foregroundStyle(.secondary)
-      } else if effectiveBackend == .appleIntelligence {
-        Text("Lokal auf dem Gerät, ohne Internet. Apple Intelligence muss aktiviert sein.")
+      } else if effectiveBackend == .local {
+        Text("Lokal auf dem Gerät, ohne Internet. Ein lokales Modell muss verfügbar sein.")
           .font(.system(size: 10))
           .foregroundStyle(.secondary)
       } else {
@@ -215,7 +217,9 @@ struct ModeCardView: View {
           Text(mode.displayName).tag(mode)
         }
       }
-      .pickerStyle(.segmented)
+      .labelsHidden()
+      .controlSize(.small)
+      .pickerStyle(.menu)
       if config.rewrite.replyContextMode != .off {
         Text(
           "Liest die aktuelle Auswahl in der App und bezieht sie als Kontext ein. Bei OpenAI-Verarbeitung wird der markierte Text mitgesendet."

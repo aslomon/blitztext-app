@@ -124,7 +124,7 @@ final class AppState {
   /// Effective rewrite backend: the global offline switch forces on-device.
   func resolvedRewriteBackend(for type: WorkflowType) -> RewriteBackend {
     appSettings.secureLocalModeEnabled
-      ? .appleIntelligence : modeConfig(for: type).rewrite.rewriteBackend
+      ? .local : modeConfig(for: type).rewrite.rewriteBackend
   }
 
   /// Transcription backend for the rewrite modes — local in secure offline mode so audio never
@@ -135,13 +135,13 @@ final class AppState {
 
   func rewriteProvider(for type: WorkflowType) -> any RewriteProvider {
     switch resolvedRewriteBackend(for: type) {
-    case .appleIntelligence:
+    case .local:
       if #available(macOS 26.0, *) {
         return FoundationModelsRewriteProvider()
       }
       // Fail closed: never fall back to OpenAI for an offline-required mode.
       return UnavailableRewriteProvider(
-        message: "Lokale Verarbeitung (Apple Intelligence) benötigt macOS 26 oder neuer.")
+        message: "Lokale Verarbeitung benötigt macOS 26 oder neuer.")
     case .openai:
       return OpenAIRewriteProvider(modelID: modeConfig(for: type).rewrite.modelID)
     }
@@ -149,7 +149,7 @@ final class AppState {
 
   func rewriteBackendReady(for type: WorkflowType) -> Bool {
     switch resolvedRewriteBackend(for: type) {
-    case .appleIntelligence:
+    case .local:
       if #available(macOS 26.0, *) {
         return FoundationModelsRewriteProvider.isReady
       }
@@ -207,7 +207,7 @@ final class AppState {
     appSettings.modes = modes
     appSettings.didMigrateToModeConfigs = true
     // Preserve the user's offline choice: a previously-enabled "secure local mode" now simply routes
-    // both transcription AND rewriting on-device (Apple Intelligence) instead of disabling rewrite.
+    // both transcription AND rewriting on-device (local model) instead of disabling rewrite.
     // We never silently flip it — fresh installs default to false via the AppSettings property default.
     // didSet does NOT fire during init mutations — persist explicitly.
     saveSettings()
@@ -234,10 +234,10 @@ final class AppState {
       return "Nur lokal. Kein Server."
     case .textImprover, .dampfAblassen, .emojiText:
       switch resolvedRewriteBackend(for: type) {
-      case .appleIntelligence:
+      case .local:
         return rewriteBackendReady(for: type)
-          ? "Lokal mit Apple Intelligence."
-          : "Apple Intelligence nicht verfügbar."
+          ? "Lokal auf dem Gerät."
+          : "Lokales Modell nicht verfügbar."
       case .openai:
         return type.subtitle
       }

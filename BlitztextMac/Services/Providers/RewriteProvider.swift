@@ -170,7 +170,7 @@ struct OpenAIRewriteProvider: RewriteProvider {
 
 @available(macOS 26.0, *)
 struct FoundationModelsRewriteProvider: RewriteProvider {
-  /// Whether the on-device model can be used right now (Apple Intelligence on, eligible device, model ready).
+  /// Whether the on-device model can be used right now (local model on, eligible device, model ready).
   static func readiness() -> Result<Void, LLMError> {
     switch SystemLanguageModel.default.availability {
     case .available:
@@ -178,9 +178,9 @@ struct FoundationModelsRewriteProvider: RewriteProvider {
     case .unavailable(.appleIntelligenceNotEnabled):
       return .failure(
         .localModelUnavailable(
-          "Apple Intelligence ist nicht aktiviert. Aktiviere es in den Systemeinstellungen."))
+          "Das lokale Modell ist nicht aktiviert. Aktiviere es in den Systemeinstellungen."))
     case .unavailable(.deviceNotEligible):
-      return .failure(.localModelUnavailable("Dieses Gerät unterstützt Apple Intelligence nicht."))
+      return .failure(.localModelUnavailable("Dieses Gerät unterstützt das lokale Modell nicht."))
     case .unavailable(.modelNotReady):
       return .failure(
         .localModelUnavailable(

@@ -32,7 +32,7 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 - `SubtleButtonStyle` (Opacity-Press) für fast alle Buttons.
 - `SectionLabel(text:)` für Abschnittsüberschriften.
 - Chips: Capsule + 0.5pt Border, kleines `xmark` zum Entfernen (`FlowLayout`).
-- Picker: `.segmented` für 2–3 Optionen, sonst Menu-Picker, `.controlSize(.small)`.
+- Picker: `.segmented` für 2–3 KURZE Optionen, sonst Menu-Picker (auch wenn die Labels lang sind), `.controlSize(.small)`.
 - Toggles: `.switch`, `.controlSize(.small)`.
 
 ## Neue Muster (dieser Ausbau)
@@ -42,7 +42,7 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
   Übernimmt Sektionslabel-Stil, 6pt-Felder, `SubtleButtonStyle`.
 - **Verfügbarkeits-Badges**: vorhandene Icons `checkmark.circle.fill` (grün) /
   `arrow.down.circle.fill` (blau) / `exclamationmark.triangle.fill` (orange) wiederverwenden.
-- **Offline/Apple-Intelligence-Hinweis**: orange Info-Banner-Muster wie `accessibilityHintBanner`.
+- **Offline-/Lokal-Hinweis**: orange Info-Banner-Muster wie `accessibilityHintBanner`.
 
 ## Regeln
 

@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EmojiTextWorkflow.swift**: Migrated from hardcoded provider to dynamic provider selection
 - **TextImprovementWorkflow.swift**: Migrated from hardcoded provider to dynamic provider selection
 - **SettingsContentView.swift**: Added mode management UI with ModeCardView integration; code formatting improvements
+- **ModeConfig.swift**: Renamed `RewriteBackend.appleIntelligence` → `.local` with user-facing label "Lokal" for clarity; added tolerant decoder to safely migrate legacy settings files that reference the old "appleIntelligence" key
+- **DESIGN.md**: Clarified picker guidance to use `.segmented` only for 2–3 short options (with long labels defaulting to Menu-Picker); renamed "Apple-Intelligence-Hinweis" section to "Offline-/Lokal-Hinweis" for terminology consistency
 
 ### Fixed
 

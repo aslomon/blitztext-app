@@ -14,14 +14,24 @@ enum ModeKind: String, Codable {
 /// Where the rewrite step runs.
 enum RewriteBackend: String, Codable, CaseIterable, Identifiable {
   case openai
-  case appleIntelligence
+  case local
 
   var id: String { rawValue }
 
   var displayName: String {
     switch self {
     case .openai: return "Online (OpenAI)"
-    case .appleIntelligence: return "Lokal (Apple)"
+    case .local: return "Lokal"
+    }
+  }
+
+  /// Tolerant decoder mapping that keeps legacy on-disk settings parseable.
+  /// Old files persisted the raw value "appleIntelligence" for the local backend.
+  static func from(rawValue raw: String) -> RewriteBackend {
+    if let backend = RewriteBackend(rawValue: raw) { return backend }
+    switch raw {
+    case "appleIntelligence": return .local
+    default: return .openai
     }
   }
 }
@@ -78,7 +88,13 @@ struct RewriteConfig: Codable {
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     systemPrompt = try c.decodeIfPresent(String.self, forKey: .systemPrompt) ?? ""
-    rewriteBackend = try c.decodeIfPresent(RewriteBackend.self, forKey: .rewriteBackend) ?? .openai
+    // Decode the raw string and map tolerantly so legacy "appleIntelligence" files
+    // (the former on-device case) still parse onto the renamed `.local` backend.
+    if let rawBackend = try c.decodeIfPresent(String.self, forKey: .rewriteBackend) {
+      rewriteBackend = RewriteBackend.from(rawValue: rawBackend)
+    } else {
+      rewriteBackend = .openai
+    }
     modelID =
       try c.decodeIfPresent(String.self, forKey: .modelID) ?? RewriteModelRegistry.defaultModelID
     tone = try c.decodeIfPresent(TextImprovementSettings.TextTone.self, forKey: .tone) ?? .neutral

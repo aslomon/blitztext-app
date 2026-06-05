@@ -1,65 +1,105 @@
 import SwiftUI
 
 /// A compact floating capsule shown at the top-center of the screen while a workflow records.
-/// Idle state: an accent dot + live waveform + "Aufnahme" label. On hover it morphs to expose
-/// two affordances — a stop/checkmark ("Enter = beenden") and an X ("Abbrechen").
 ///
-/// Minimalist, DESIGN.md-aligned: ultraThinMaterial, 0.5pt border, per-mode accent, short
-/// easeInOut transitions. Hosted in a borderless, non-activating NSPanel by `RecordingPillController`.
+/// Idle: a static accent dot + live center-mirrored waveform.
+/// Hover: morphs to expose stop (checkmark) and cancel (X) affordances.
+///
+/// macOS 26+: native Liquid Glass via `.glassEffect(in: .capsule)`.
+/// macOS 14–25: clean Capsule + .regularMaterial + one quiet shadow. No gradients, no blends.
+///
+/// Hosted in a borderless non-activating NSPanel by `RecordingPillController`.
 struct RecordingPillView: View {
   /// Live mic level (0...1), pushed from the controller each tick.
   var audioLevel: Float
-  /// The recording mode, for the accent color. Defaults to transcription blue.
+  /// Per-mode accent color. Defaults to transcription blue.
   var accentColor: Color
-  /// Invoked when the user clicks the stop/checkmark affordance (finish recording).
+  /// Recording (live waveform) / processing (working animation) / cancelled (brief red flash).
+  var phase: PillPhase
+  /// Invoked when the user confirms (stop/checkmark).
   var onStop: () -> Void
-  /// Invoked when the user clicks the X affordance (cancel recording).
+  /// Invoked when the user cancels (X).
   var onCancel: () -> Void
 
   @State private var isHovering = false
 
-  private var pillHeight: CGFloat { 30 }
+  private let pillHeight: CGFloat = 32
 
   var body: some View {
+    pillContent
+      .onHover { hovering in
+        withAnimation(.easeInOut(duration: 0.18)) {
+          isHovering = hovering
+        }
+      }
+      .animation(.easeInOut(duration: 0.18), value: isHovering)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel(pillAccessibilityLabel)
+  }
+
+  // MARK: - Layout
+
+  private var tint: Color { phase == .cancelled ? .red : accentColor }
+
+  /// Spoken summary of the pill's current state for VoiceOver.
+  private var pillAccessibilityLabel: String {
+    phase == .processing ? "Wird transkribiert" : "Aufnahme läuft"
+  }
+
+  private var pillContent: some View {
     HStack(spacing: 8) {
-      Circle()
-        .fill(accentColor)
-        .frame(width: 6, height: 6)
-        .shadow(color: accentColor.opacity(0.6), radius: 2)
+      recordingDot
 
-      // Compact live waveform driven by the workflow's audio level.
-      WaveformView(audioLevel: audioLevel, isRecording: true, accentColor: accentColor)
-        .frame(width: 56, height: 18)
-        .clipped()
-
-      if isHovering {
-        affordances
-          .transition(.opacity.combined(with: .move(edge: .trailing)))
-      } else {
-        Text("Aufnahme")
-          .font(.system(size: 11, weight: .medium))
-          .foregroundStyle(.secondary)
+      if phase == .cancelled {
+        Image(systemName: "xmark")
+          .font(.system(size: 11, weight: .bold))
+          .foregroundStyle(.red)
           .transition(.opacity)
+      } else if isHovering {
+        affordances
+          .transition(
+            .asymmetric(
+              insertion: .opacity.combined(with: .scale(scale: 0.88)),
+              removal: .opacity.combined(with: .scale(scale: 0.88))
+            )
+          )
+      } else {
+        PillWaveformView(
+          audioLevel: phase == .processing ? 0 : audioLevel,
+          accentColor: accentColor,
+          isProcessing: phase == .processing
+        )
+        .accessibilityHidden(true)
+        .transition(
+          .asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.92)),
+            removal: .opacity.combined(with: .scale(scale: 0.92))
+          )
+        )
       }
     }
     .padding(.horizontal, 12)
     .frame(height: pillHeight)
-    .background(
-      Capsule(style: .continuous)
-        .fill(.ultraThinMaterial)
-    )
-    .overlay(
-      Capsule(style: .continuous)
-        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
-    )
-    .clipShape(Capsule(style: .continuous))
-    .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
-    .onHover { hovering in
-      withAnimation(.easeInOut(duration: 0.18)) {
-        isHovering = hovering
-      }
-    }
-    .animation(.easeInOut(duration: 0.18), value: isHovering)
+    .modifier(PillGlassModifier())
+    .animation(.easeInOut(duration: 0.2), value: phase)
+  }
+
+  // MARK: - Subviews
+
+  /// Accent dot — turns red on cancel; gently pulses while processing to signal "working".
+  private var recordingDot: some View {
+    Circle()
+      .fill(tint)
+      .frame(width: 6, height: 6)
+      .scaleEffect(phase == .processing ? 1.25 : 1.0)
+      .opacity(phase == .processing ? 0.65 : 1.0)
+      .animation(
+        phase == .processing
+          ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true)
+          : .default,
+        value: phase
+      )
+      .accessibilityHidden(true)
   }
 
   private var affordances: some View {
@@ -68,37 +108,56 @@ struct RecordingPillView: View {
         systemName: "checkmark",
         tint: accentColor,
         help: "Enter = beenden",
+        accessibilityLabel: "Aufnahme beenden",
         action: onStop
       )
       affordanceButton(
         systemName: "xmark",
-        tint: .secondary,
+        tint: Color.primary.opacity(0.55),
         help: "Abbrechen",
+        accessibilityLabel: "Aufnahme abbrechen",
         action: onCancel
       )
     }
   }
 
+  // MARK: - Helpers
+
   private func affordanceButton(
     systemName: String,
     tint: Color,
     help: String,
+    accessibilityLabel: String,
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
       Image(systemName: systemName)
-        .font(.system(size: 10, weight: .bold))
+        .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(tint)
-        .frame(width: 20, height: 20)
-        .background(
-          Circle().fill(Color.primary.opacity(0.06))
-        )
-        .overlay(
-          Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
+        .frame(width: 22, height: 22)
         .contentShape(Circle())
     }
     .buttonStyle(.plain)
     .help(help)
+    .accessibilityLabel(accessibilityLabel)
+  }
+}
+
+// MARK: - Glass Modifier
+
+/// Applies the pill's background surface.
+/// macOS 26+: native Liquid Glass capsule (the real design).
+/// macOS 14–25: a clean material capsule with one quiet shadow (no gradients, no blends).
+private struct PillGlassModifier: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(macOS 26.0, *) {
+      content
+        .glassEffect(.regular, in: .capsule)
+    } else {
+      content
+        .background(Capsule(style: .continuous).fill(.regularMaterial))
+        .clipShape(Capsule(style: .continuous))
+        .shadow(color: .black.opacity(0.14), radius: 8, y: 2)
+    }
   }
 }

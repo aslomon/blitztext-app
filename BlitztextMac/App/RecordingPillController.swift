@@ -1,5 +1,8 @@
 import AppKit
 import SwiftUI
+import os
+
+private let pillLogger = Logger(subsystem: "app.blitztext.mac", category: "RecordingPill")
 
 /// Drives the floating recording pill. Created by `AppDelegate`, it shows a borderless,
 /// non-activating panel at the top-center of the active screen while a workflow is RECORDING
@@ -12,8 +15,14 @@ import SwiftUI
 final class RecordingPillController {
   private weak var appState: AppState?
   private var panel: NSPanel?
+  /// The hosting view inside the panel — kept so `positionPanel` reads its fitting size directly
+  /// rather than guessing via `contentView.subviews.first`. Owned by the panel's contentView.
+  private weak var hostingView: NSView?
   private let model = RecordingPillModel()
   private var levelTimer: Timer?
+  /// True while the red cancel/error flash is playing, so the trailing `.idle` doesn't hide early.
+  private var isFlashing = false
+  private var flashTask: Task<Void, Never>?
 
   /// Distance below the top of the active screen's safe area (under the notch / menu bar).
   private let topInset: CGFloat = 8
@@ -29,9 +38,50 @@ final class RecordingPillController {
     switch status {
     case .recording(let type):
       model.accentColor = type.accentColorValue
+      model.phase = .recording
       show()
-    case .idle, .processing, .success, .error:
+    case .processing(let type):
+      // Stay VISIBLE while transcribing/rewriting — the pill only disappears once the text is
+      // inserted (.success) or the user cancels. It shows an indeterminate "working" animation.
+      model.accentColor = type.accentColorValue
+      model.phase = .processing
+      show()
+    case .success:
+      // Text was inserted → done.
       hide()
+    case .error:
+      flashCancelAndHide()
+    case .idle:
+      // Ignore the .idle that arrives right after a cancel — the flash owns the hide.
+      if !isFlashing { hide() }
+    }
+  }
+
+  /// Cancel (discard) the active dictation — used by ESC, the pill's ✕, and the panel's Esc.
+  /// Resets the workflow and flashes the pill red before hiding. No-op when nothing is active.
+  func cancelCurrent() {
+    guard appState?.activeWorkflow != nil else { return }
+    // Start the flash FIRST (sets isFlashing) so the `.idle` from resetCurrentWorkflow is ignored.
+    flashCancelAndHide()
+    appState?.resetCurrentWorkflow()
+  }
+
+  /// Briefly tints the pill red (cancel/error) and then hides it. Only flashes when the pill is
+  /// already on screen — a pre-recording error (e.g. empty selection) just hides without a flash.
+  private func flashCancelAndHide() {
+    guard panel?.isVisible == true else {
+      hide()
+      return
+    }
+    isFlashing = true
+    model.phase = .cancelled
+    stopLevelTimer()
+    flashTask?.cancel()
+    flashTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(550))
+      guard let self else { return }
+      self.isFlashing = false
+      self.panel?.orderOut(nil)
     }
   }
 
@@ -41,10 +91,16 @@ final class RecordingPillController {
     if panel == nil {
       panel = makePanel()
     }
-    guard let panel else { return }
+    guard let panel else {
+      pillLogger.error("show(): panel is nil after makePanel()")
+      return
+    }
     positionPanel(panel)
     panel.orderFrontRegardless()
     startLevelTimer()
+    pillLogger.debug(
+      "show(): frame=\(NSStringFromRect(panel.frame), privacy: .public) visible=\(panel.isVisible) screens=\(NSScreen.screens.count)"
+    )
   }
 
   private func hide() {
@@ -57,31 +113,54 @@ final class RecordingPillController {
       rootView: RecordingPillHostView(
         model: model,
         onStop: { [weak self] in self?.appState?.activeWorkflow?.stop() },
-        onCancel: { [weak self] in self?.appState?.resetCurrentWorkflow() }
+        onCancel: { [weak self] in self?.cancelCurrent() }
       )
     )
     hosting.translatesAutoresizingMaskIntoConstraints = false
 
+    // Derive a concrete size from SwiftUI so the panel is never zero-sized.
+    let fitting = hosting.fittingSize
+    let width = max(fitting.width, 160)
+    let height = max(fitting.height, 44)
+
     let panel = KeyablePanel(
-      contentRect: NSRect(x: 0, y: 0, width: 160, height: 44),
+      contentRect: NSRect(x: 0, y: 0, width: width, height: height),
       styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered,
       defer: false
     )
     panel.onReturn = { [weak self] in self?.appState?.activeWorkflow?.stop() }
-    panel.onEscape = { [weak self] in self?.appState?.resetCurrentWorkflow() }
+    panel.onEscape = { [weak self] in self?.cancelCurrent() }
 
     panel.level = .statusBar
     panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
     panel.isFloatingPanel = true
-    panel.hasShadow = true
+    // No AppKit window shadow: it draws a rectangular box around the transparent panel. The
+    // capsule's own SwiftUI `.shadow` (shaped, with padding room) is the only shadow.
+    panel.hasShadow = false
     panel.hidesOnDeactivate = false
     panel.becomesKeyOnlyIfNeeded = true
     panel.isMovable = false
     panel.backgroundColor = .clear
     panel.isOpaque = false
-    panel.contentView = hosting
 
+    // Pin the hosting view to the contentView so it always fills (and is sized by) the panel.
+    // (Setting `contentView = hosting` with TAMIC off + no constraints collapsed it to zero before.)
+    guard let contentView = panel.contentView else {
+      pillLogger.error("makePanel(): panel.contentView is nil")
+      return panel
+    }
+    contentView.addSubview(hosting)
+    hostingView = hosting
+    NSLayoutConstraint.activate([
+      hosting.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+      hosting.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+      hosting.topAnchor.constraint(equalTo: contentView.topAnchor),
+      hosting.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+    ])
+
+    pillLogger.debug(
+      "makePanel(): fitting=\(NSStringFromSize(fitting), privacy: .public) size=\(width)x\(height)")
     return panel
   }
 
@@ -89,12 +168,20 @@ final class RecordingPillController {
   /// (so it tucks under the notch / menu bar). Falls back to `NSScreen.main` geometry.
   private func positionPanel(_ panel: NSPanel) {
     panel.layoutIfNeeded()
-    let fitting = panel.contentView?.fittingSize ?? NSSize(width: 160, height: 44)
-    let width = max(fitting.width, 120)
-    let height = max(fitting.height, 36)
-    panel.setContentSize(NSSize(width: width, height: height))
+    let fitting =
+      hostingView?.fittingSize
+      ?? panel.contentView?.fittingSize
+      ?? NSSize(width: 160, height: 44)
+    let width = max(fitting.width, 160)
+    let height = max(fitting.height, 44)
 
-    guard let screen = NSScreen.main else { return }
+    // `panel.screen` is nil until first ordered in; fall back to main / first screen.
+    let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first
+    guard let screen else {
+      pillLogger.error("positionPanel(): no screen available")
+      panel.setContentSize(NSSize(width: width, height: height))
+      return
+    }
     let visible = screen.visibleFrame
 
     // visibleFrame.maxY already sits just below the menu bar (and the taller notch menu bar on
@@ -102,7 +189,9 @@ final class RecordingPillController {
     let originX = visible.midX - (width / 2)
     let originY = visible.maxY - height - topInset
 
-    panel.setFrameOrigin(NSPoint(x: originX, y: originY))
+    panel.setFrame(NSRect(x: originX, y: originY, width: width, height: height), display: true)
+    pillLogger.debug(
+      "positionPanel(): frame=\(NSStringFromRect(panel.frame), privacy: .public)")
   }
 
   // MARK: - Live level pump
@@ -134,11 +223,19 @@ final class RecordingPillController {
 
 // MARK: - Hosted SwiftUI bridge
 
-/// Observable bridge so the controller's timer-pushed `audioLevel`/`accentColor` re-render the view.
+/// The pill's visual phase: live recording, working (transcribing/rewriting), or a cancel/error flash.
+enum PillPhase {
+  case recording
+  case processing
+  case cancelled
+}
+
+/// Observable bridge so the controller's timer-pushed `audioLevel`/`accentColor`/`phase` re-render.
 @MainActor
 final class RecordingPillModel: ObservableObject {
   @Published var audioLevel: Float = 0
   @Published var accentColor: Color = WorkflowType.transcription.accentColorValue
+  @Published var phase: PillPhase = .recording
 }
 
 private struct RecordingPillHostView: View {
@@ -150,10 +247,13 @@ private struct RecordingPillHostView: View {
     RecordingPillView(
       audioLevel: model.audioLevel,
       accentColor: model.accentColor,
+      phase: model.phase,
       onStop: onStop,
       onCancel: onCancel
     )
-    .padding(6)
+    // Margin around the capsule so its soft `.shadow` (radius 8) is never clipped by the panel
+    // edge into a hard rectangle.
+    .padding(12)
   }
 }
 

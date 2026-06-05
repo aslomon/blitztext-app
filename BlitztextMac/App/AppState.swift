@@ -44,6 +44,13 @@ final class AppState {
   var localModelDownloadStatusText: String?
   var localModelDownloadErrorText: String?
   var onMenuBarStatusChange: ((MenuBarStatus) -> Void)?
+  /// Invoked when a finished run could NOT be auto-pasted (no Accessibility right / no target /
+  /// focus race lost). Carries the dictated text so the floating pill can expand and show it in a
+  /// scrollable card with a copy action — instead of the text silently sitting only on the clipboard.
+  var onCopyOnlyFallback: ((String) -> Void)?
+  /// The dictated text of the current paste attempt, kept so `markCopyOnly` can surface it in the
+  /// fallback pill even from the deep retry path (which doesn't carry the text).
+  private var currentPasteText: String?
 
   /// Backs the "Lokale Modelle" management window (Ollama status, installed models, downloads).
   let localModelManager = LocalModelManager()
@@ -852,6 +859,7 @@ final class AppState {
   private func pasteAtCursor(_ text: String, target: PasteTarget? = nil) {
     // Fresh run: assume a real paste until a no-paste path proves otherwise.
     lastRunWasCopyOnly = false
+    currentPasteText = text
     // A new paste/dictation starts: cancel any pending improvement re-read so they never pile up.
     cancelPendingImprovementReread()
     // Stage the improvement candidate (opt-in). Armed only on the success path (`performPaste`).
@@ -873,7 +881,12 @@ final class AppState {
     let trusted = AccessibilityPermissionService.isTrusted(promptIfNeeded: true)
     accessibilityPermissionGranted = trusted
     guard trusted else {
-      menuBarStatus = .error(activeWorkflow?.type)
+      // No Accessibility right → we can't synthesize ⌘V. Don't just flash red: keep the text on the
+      // clipboard and surface it in the fallback pill so the dictation is never lost, plus guide the
+      // user to fix the permission (the common ad-hoc-signing / stale-grant case).
+      lastRunErrorMessage =
+        "Bedienungshilfen-Recht fehlt — Text kopiert, mit ⌘V einfügen. In Systemeinstellungen → Bedienungshilfen erneut erlauben."
+      markCopyOnly()
       return
     }
 
@@ -1256,7 +1269,10 @@ final class AppState {
         return
       }
 
-      target.application.activate(options: [])
+      // `.activateIgnoringOtherApps` is required: a background .accessory app's plain activate() is
+      // unreliable on recent macOS, so the target never comes frontmost in time and the run silently
+      // degrades to copy-only even with Accessibility granted.
+      target.application.activate(options: [.activateIgnoringOtherApps])
     } else {
       // No paste target (e.g. nothing focusable was frontmost): the text is on the clipboard but
       // we can't paste it. Tell the user instead of silently claiming success.
@@ -1295,6 +1311,11 @@ final class AppState {
   private func markCopyOnly() {
     lastRunWasCopyOnly = true
     pasteboardRestoreSnapshot = nil
+    // Surface the dictated text in the expanding fallback pill so it's never silently stuck on the
+    // clipboard — the user can read it, copy it, and paste it wherever they want.
+    if let text = currentPasteText, !text.isEmpty {
+      onCopyOnlyFallback?(text)
+    }
   }
 
   private func performPaste() {

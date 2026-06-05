@@ -19,10 +19,16 @@ struct RecordingPillView: View {
   var phase: PillPhase
   /// The run's error text, shown in the `.failed` state.
   var errorMessage: String?
+  /// The dictated text, shown in the `.copyOnly` fallback card.
+  var copyOnlyText: String?
   /// Invoked when the user confirms (stop/checkmark).
   var onStop: () -> Void
   /// Invoked when the user cancels (X).
   var onCancel: () -> Void
+  /// Invoked from the `.copyOnly` card's Copy button with the dictated text.
+  var onCopy: (String) -> Void = { _ in }
+  /// Invoked from the `.copyOnly` card's dismiss (✕).
+  var onDismiss: () -> Void = {}
 
   @State private var isHovering = false
 
@@ -32,6 +38,8 @@ struct RecordingPillView: View {
     Group {
       if phase == .failed {
         failedContent
+      } else if phase == .copyOnly {
+        copyOnlyContent
       } else {
         pillContent
       }
@@ -65,6 +73,56 @@ struct RecordingPillView: View {
     .modifier(PillGlassModifier())
   }
 
+  /// Fallback card when auto-paste couldn't land: the dictated text in a scrollable, selectable area
+  /// with a Copy button (and a ⌘V hint), so the result is never silently stuck on the clipboard.
+  private var copyOnlyContent: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 6) {
+        Image(systemName: "doc.on.clipboard")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(accentColor)
+        Text("Konnte nicht direkt einfügen")
+          .font(.system(size: 11, weight: .semibold))
+        Spacer(minLength: 8)
+        Button(action: onDismiss) {
+          Image(systemName: "xmark")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 18, height: 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Schließen")
+      }
+
+      ScrollView {
+        Text(copyOnlyText ?? "")
+          .font(.system(size: 11.5))
+          .foregroundStyle(.primary)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .frame(maxHeight: 120)
+
+      HStack(spacing: 8) {
+        Button {
+          onCopy(copyOnlyText ?? "")
+        } label: {
+          Label("Kopieren", systemImage: "doc.on.doc")
+            .font(.system(size: 10.5, weight: .medium))
+        }
+        .buttonStyle(.borderless)
+        Text("oder ⌘V")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+        Spacer()
+      }
+    }
+    .padding(12)
+    .frame(width: 300)
+    .modifier(PillGlassModifier())
+  }
+
   // MARK: - Layout
 
   private var tint: Color { phase == .cancelled ? .red : accentColor }
@@ -73,6 +131,7 @@ struct RecordingPillView: View {
   private var pillAccessibilityLabel: String {
     switch phase {
     case .failed: return "Fehler: \(errorMessage ?? "")"
+    case .copyOnly: return "Konnte nicht einfügen. Text kopiert: \(copyOnlyText ?? "")"
     case .processing: return "Wird transkribiert"
     default: return "Aufnahme läuft"
     }

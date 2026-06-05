@@ -53,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
       self?.menuBarStatusController.update(to: status)
       self?.recordingPillController.handleStatusChange(status)
     }
+    appState.onCopyOnlyFallback = { [weak self] text in
+      self?.recordingPillController.showCopyOnly(text)
+    }
     appState.hotkeyService.start()
 
     // Listen for popover dismiss requests (from auto-paste)

@@ -37,12 +37,15 @@ final class RecordingPillController {
   func handleStatusChange(_ status: MenuBarStatus) {
     switch status {
     case .recording(let type):
+      // A new run supersedes any lingering cancel/error/copy-only card (and its pending hide timer).
+      cancelTransientState()
       model.accentColor = type.accentColorValue
       model.phase = .recording
       show()
     case .processing(let type):
       // Stay VISIBLE while transcribing/rewriting — the pill only disappears once the text is
       // inserted (.success) or the user cancels. It shows an indeterminate "working" animation.
+      cancelTransientState()
       model.accentColor = type.accentColorValue
       model.phase = .processing
       show()
@@ -120,6 +123,56 @@ final class RecordingPillController {
     }
   }
 
+  // MARK: - Copy-only fallback
+
+  /// Expands the pill into a card showing the dictated text the app could NOT auto-paste, with a
+  /// Copy action. Stays ~18s (long enough to read/copy) or until dismissed; the text also remains on
+  /// the clipboard so ⌘V works regardless.
+  func showCopyOnly(_ text: String) {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    if panel == nil { panel = makePanel() }
+    guard let panel else { return }
+    isFlashing = true  // protect from a trailing `.idle` hide
+    model.copyOnlyText = trimmed
+    model.phase = .copyOnly
+    stopLevelTimer()
+    flashTask?.cancel()
+    flashTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      // Let SwiftUI lay out the much larger card, then size + recenter the panel to fit it.
+      try? await Task.sleep(for: .milliseconds(30))
+      self.positionPanel(panel)
+      panel.orderFrontRegardless()
+      try? await Task.sleep(for: .seconds(18))
+      guard !Task.isCancelled, self.model.phase == .copyOnly else { return }
+      self.dismissCopyOnly()
+    }
+  }
+
+  private func dismissCopyOnly() {
+    flashTask?.cancel()
+    isFlashing = false
+    model.copyOnlyText = nil
+    panel?.orderOut(nil)
+  }
+
+  /// Clears any lingering transient card (cancel flash / error / copy-only) and its pending hide
+  /// timer so a NEW run can take over the pill cleanly without an old timer ordering it out.
+  private func cancelTransientState() {
+    flashTask?.cancel()
+    flashTask = nil
+    isFlashing = false
+    model.errorMessage = nil
+    model.copyOnlyText = nil
+  }
+
+  private func copyTextToPasteboard(_ text: String) {
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    pasteboard.setString(text, forType: .string)
+  }
+
   // MARK: - Panel lifecycle
 
   private func show() {
@@ -130,8 +183,10 @@ final class RecordingPillController {
       pillLogger.error("show(): panel is nil after makePanel()")
       return
     }
-    positionPanel(panel)
+    // Order in FIRST so `panel.screen` is non-nil, THEN position — otherwise the very first show
+    // falls back to NSScreen.main geometry and can land off-center on a secondary/active display.
     panel.orderFrontRegardless()
+    positionPanel(panel)
     startLevelTimer()
     pillLogger.debug(
       "show(): frame=\(NSStringFromRect(panel.frame), privacy: .public) visible=\(panel.isVisible) screens=\(NSScreen.screens.count)"
@@ -148,10 +203,15 @@ final class RecordingPillController {
       rootView: RecordingPillHostView(
         model: model,
         onStop: { [weak self] in self?.appState?.activeWorkflow?.stop() },
-        onCancel: { [weak self] in self?.cancelCurrent() }
+        onCancel: { [weak self] in self?.cancelCurrent() },
+        onCopy: { [weak self] text in self?.copyTextToPasteboard(text) },
+        onDismiss: { [weak self] in self?.dismissCopyOnly() }
       )
     )
     hosting.translatesAutoresizingMaskIntoConstraints = false
+    // Report a stable NATURAL size so the panel can be sized + centered correctly (a both-direction
+    // edge pin makes fittingSize echo the locked frame width → off-center pill).
+    hosting.sizingOptions = [.intrinsicContentSize]
 
     // Derive a concrete size from SwiftUI so the panel is never zero-sized.
     let fitting = hosting.fittingSize
@@ -187,11 +247,12 @@ final class RecordingPillController {
     }
     contentView.addSubview(hosting)
     hostingView = hosting
+    // Pin only leading+top and let the host's intrinsic size drive width/height (the panel is then
+    // sized to `hosting.fittingSize` in `positionPanel`). Pinning all four edges locked the width and
+    // poisoned `fittingSize`, so the centering math used a stale width → the pill drifted off-center.
     NSLayoutConstraint.activate([
       hosting.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-      hosting.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       hosting.topAnchor.constraint(equalTo: contentView.topAnchor),
-      hosting.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
     ])
 
     pillLogger.debug(
@@ -203,6 +264,9 @@ final class RecordingPillController {
   /// (so it tucks under the notch / menu bar). Falls back to `NSScreen.main` geometry.
   private func positionPanel(_ panel: NSPanel) {
     panel.layoutIfNeeded()
+    // Force the SwiftUI subtree to re-measure so `fittingSize` reflects the CURRENT content (e.g.
+    // after switching to the wide `.failed`/`.copyOnly` cards), not a stale size.
+    hostingView?.layoutSubtreeIfNeeded()
     let fitting =
       hostingView?.fittingSize
       ?? panel.contentView?.fittingSize
@@ -266,6 +330,9 @@ enum PillPhase {
   case processing
   case cancelled
   case failed
+  /// Auto-paste could not land — the pill expands into a scrollable card showing the dictated text
+  /// with a Copy action, so the result is never silently stuck on the clipboard.
+  case copyOnly
 }
 
 /// Observable bridge so the controller's timer-pushed `audioLevel`/`accentColor`/`phase` re-render.
@@ -276,12 +343,16 @@ final class RecordingPillModel: ObservableObject {
   @Published var phase: PillPhase = .recording
   /// Shown in the `.failed` state — the run's error message.
   @Published var errorMessage: String?
+  /// Shown in the `.copyOnly` state — the dictated text the user can read/copy.
+  @Published var copyOnlyText: String?
 }
 
 private struct RecordingPillHostView: View {
   @ObservedObject var model: RecordingPillModel
   let onStop: () -> Void
   let onCancel: () -> Void
+  let onCopy: (String) -> Void
+  let onDismiss: () -> Void
 
   var body: some View {
     RecordingPillView(
@@ -289,8 +360,11 @@ private struct RecordingPillHostView: View {
       accentColor: model.accentColor,
       phase: model.phase,
       errorMessage: model.errorMessage,
+      copyOnlyText: model.copyOnlyText,
       onStop: onStop,
-      onCancel: onCancel
+      onCancel: onCancel,
+      onCopy: onCopy,
+      onDismiss: onDismiss
     )
     // Margin around the capsule so its soft `.shadow` (radius 8) is never clipped by the panel
     // edge into a hard rectangle.

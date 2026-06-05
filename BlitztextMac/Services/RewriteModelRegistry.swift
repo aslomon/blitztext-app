@@ -38,6 +38,18 @@ enum RewriteModelRegistry {
       id: "gpt-5.5", label: "GPT-5.5", tier: "Maximale Qualität", supportsTemperature: false),
   ]
 
+  // MARK: - Fallback note (B6)
+
+  /// Builds the quiet, one-line German (du-form) note shown when a rewrite ran on a DIFFERENT model
+  /// than requested. Returns `nil` when nothing changed (happy path) or either id is missing, so the
+  /// UI shows the note only on a real fallback. The label, not the raw id, is used when curated.
+  static func fallbackNote(requested: String?, used: String?) -> String? {
+    guard let requested, let used, requested != used else { return nil }
+    let requestedLabel = option(for: requested).label
+    let usedLabel = option(for: used).label
+    return "Modell \(requestedLabel) nicht verfügbar — \(usedLabel) verwendet."
+  }
+
   static func supportsTemperature(_ modelID: String) -> Bool {
     if let known = curated.first(where: { $0.id == modelID }) {
       return known.supportsTemperature

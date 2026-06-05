@@ -1,5 +1,24 @@
 import Foundation
-import FoundationModels
+import os
+
+// MARK: - Rewrite outcome
+
+/// Result of a single rewrite call. Carries the produced `text` plus the model that was REQUESTED
+/// and the model that ACTUALLY ran. They differ only when the OpenAI provider fell back after the
+/// chosen model was rejected — that gap is what the UI surfaces so a silent quality drop is visible.
+struct RewriteOutcome: Equatable, Sendable {
+  let text: String
+  /// The model that actually produced `text`. `nil` only when the provider can't name one.
+  let usedModelID: String?
+  /// The model the caller asked for. `nil` only when the provider can't name one.
+  let requestedModelID: String?
+
+  /// True when the effective model differs from the requested one (a fallback happened).
+  var didFallBack: Bool {
+    guard let usedModelID, let requestedModelID else { return false }
+    return usedModelID != requestedModelID
+  }
+}
 
 // MARK: - Selection context (Phase 2)
 
@@ -22,19 +41,8 @@ struct SelectionContext {
 /// Prompt-building stays in `LLMService`; a provider only turns
 /// (systemPrompt, userText) into rewritten text.
 protocol RewriteProvider: Sendable {
-  func rewrite(systemPrompt: String, userText: String, temperature: Double) async throws -> String
-}
-
-// MARK: - Fail-closed provider
-
-/// Used when an offline backend is required but unavailable (e.g. macOS < 26).
-/// Never falls back to the network — guarantees the offline invariant.
-struct UnavailableRewriteProvider: RewriteProvider {
-  let message: String
-
-  func rewrite(systemPrompt: String, userText: String, temperature: Double) async throws -> String {
-    throw LLMError.localModelUnavailable(message)
-  }
+  func rewrite(systemPrompt: String, userText: String, temperature: Double) async throws
+    -> RewriteOutcome
 }
 
 // MARK: - OpenAI provider
@@ -42,6 +50,8 @@ struct UnavailableRewriteProvider: RewriteProvider {
 /// OpenAI Chat Completions transport. Owns the HTTP that used to live in LLMService.
 struct OpenAIRewriteProvider: RewriteProvider {
   let modelID: String
+
+  private static let logger = Logger(subsystem: "app.blitztext.mac", category: "RewriteProvider")
 
   private static let chatCompletionsURL = URL(string: "https://api.openai.com/v1/chat/completions")!
 
@@ -92,20 +102,29 @@ struct OpenAIRewriteProvider: RewriteProvider {
     let error: APIError?
   }
 
-  func rewrite(systemPrompt: String, userText: String, temperature: Double) async throws -> String {
+  func rewrite(systemPrompt: String, userText: String, temperature: Double) async throws
+    -> RewriteOutcome
+  {
     do {
-      return try await send(
+      let text = try await send(
         systemPrompt: systemPrompt, userText: userText, model: modelID, temperature: temperature)
+      return RewriteOutcome(text: text, usedModelID: modelID, requestedModelID: modelID)
     } catch let LLMError.modelUnavailable(model)
       where model != RewriteModelRegistry.safeFallbackModelID
     {
-      // Chosen model not available on this account → retry once with a safe model.
-      return try await send(
+      // Chosen model not available on this account → retry once with a safe model. The used model
+      // now differs from the requested one; surface that so the user notices the quality drop.
+      let fallbackModel = RewriteModelRegistry.safeFallbackModelID
+      Self.logger.notice(
+        "requested \(model, privacy: .public) unavailable → used \(fallbackModel, privacy: .public)"
+      )
+      let text = try await send(
         systemPrompt: systemPrompt,
         userText: userText,
-        model: RewriteModelRegistry.safeFallbackModelID,
+        model: fallbackModel,
         temperature: temperature
       )
+      return RewriteOutcome(text: text, usedModelID: fallbackModel, requestedModelID: modelID)
     }
   }
 
@@ -210,7 +229,9 @@ struct OllamaRewriteProvider: RewriteProvider {
     let choices: [Choice]?
   }
 
-  func rewrite(systemPrompt: String, userText: String, temperature: Double) async throws -> String {
+  func rewrite(systemPrompt: String, userText: String, temperature: Double) async throws
+    -> RewriteOutcome
+  {
     let trimmedModelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedModelID.isEmpty else {
       throw LLMError.localModelUnavailable(
@@ -272,48 +293,8 @@ struct OllamaRewriteProvider: RewriteProvider {
     else {
       throw LLMError.noContent
     }
-    return content
-  }
-}
-
-// MARK: - Apple Foundation Models provider (on-device, offline)
-
-@available(macOS 26.0, *)
-struct FoundationModelsRewriteProvider: RewriteProvider {
-  /// Whether the on-device model can be used right now (local model on, eligible device, model ready).
-  static func readiness() -> Result<Void, LLMError> {
-    switch SystemLanguageModel.default.availability {
-    case .available:
-      return .success(())
-    case .unavailable(.appleIntelligenceNotEnabled):
-      return .failure(
-        .localModelUnavailable(
-          "Das lokale Modell ist nicht aktiviert. Aktiviere es in den Systemeinstellungen."))
-    case .unavailable(.deviceNotEligible):
-      return .failure(.localModelUnavailable("Dieses Gerät unterstützt das lokale Modell nicht."))
-    case .unavailable(.modelNotReady):
-      return .failure(
-        .localModelUnavailable(
-          "Das lokale Modell wird noch geladen. Bitte später erneut versuchen."))
-    case .unavailable:
-      return .failure(.localModelUnavailable("Das lokale Modell ist gerade nicht verfügbar."))
-    }
-  }
-
-  static var isReady: Bool {
-    if case .success = readiness() { return true }
-    return false
-  }
-
-  func rewrite(systemPrompt: String, userText: String, temperature: Double) async throws -> String {
-    if case .failure(let error) = Self.readiness() {
-      throw error
-    }
-    let session = LanguageModelSession(instructions: systemPrompt)
-    let options = GenerationOptions(temperature: temperature)
-    let response = try await session.respond(to: userText, options: options)
-    let content = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !content.isEmpty else { throw LLMError.noContent }
-    return content
+    // Local Ollama never falls back — the effective model is exactly the requested local one.
+    return RewriteOutcome(
+      text: content, usedModelID: trimmedModelID, requestedModelID: trimmedModelID)
   }
 }

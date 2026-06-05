@@ -92,7 +92,7 @@ enum LLMService {
 
   // MARK: - Emoji prompt
 
-  static func emojiSystemPrompt(_ rewrite: RewriteConfig) -> String {
+  static func emojiSystemPrompt(_ rewrite: RewriteConfig, customTerms: [String] = []) -> String {
     let densityInstruction: String
     switch rewrite.emojiDensity {
     case .wenig:
@@ -103,8 +103,15 @@ enum LLMService {
       densityInstruction = "Setze grosszuegig Emojis ein, gerne mehrere pro Satz."
     }
 
-    return
+    var prompt =
       "Du erhaeltst ein gesprochenes Transkript. Gib den Text moeglichst originalgetreu zurueck, aber fuege passende Emojis ein. \(densityInstruction) Korrigiere offensichtliche Sprach- und Grammatikfehler. Behalte den Stil und die Bedeutung bei. Gib NUR den Text mit Emojis zurueck, keine Erklaerungen."
+
+    if !customTerms.isEmpty {
+      prompt +=
+        "\n\nWichtig: Diese Eigennamen und Fachbegriffe müssen exakt so geschrieben werden: \(customTerms.joined(separator: ", "))"
+    }
+
+    return prompt
   }
 
   // MARK: - Helpers

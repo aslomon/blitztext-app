@@ -99,6 +99,10 @@ enum WorkflowLaunchSource: Equatable {
 typealias WorkflowOutputHandler = @MainActor (String) -> Void
 typealias WorkflowPhaseChangeHandler = @MainActor (WorkflowPhase) -> Void
 
+/// Emitted once per rewrite run with the fallback note (B6): `nil` when the chosen model ran, or a
+/// short German hint when the provider fell back to a different model. Only rewrite workflows fire.
+typealias WorkflowRewriteFallbackHandler = @MainActor (String?) -> Void
+
 // MARK: - Archive run record (Phase 4)
 
 /// A single completed run, emitted right before `onOutput`. Text-only — never audio.
@@ -141,6 +145,10 @@ protocol Workflow: AnyObject, Observable {
   /// Live microphone level (0...1) while recording. Drives the menu-bar waveform and the
   /// floating recording pill. All concrete workflows already expose this via their recorder.
   var audioLevel: Float { get }
+  /// True when the just-finished run's recording hit the safety cap (`AudioRecorder.maxRecordingDuration`)
+  /// and was auto-stopped — the tail was not captured. Lets the result view note the truncation
+  /// honestly. Stays true through `.done` (the recorder resets it on the next `start()`).
+  var didTruncateAtMaxDuration: Bool { get }
   var onOutput: WorkflowOutputHandler? { get set }
   var onPhaseChange: WorkflowPhaseChangeHandler? { get set }
   /// Emitted with raw+final+mode right before `onOutput`. Wired ONLY when archiving is enabled.
@@ -153,9 +161,13 @@ protocol Workflow: AnyObject, Observable {
 
 // MARK: - App Settings
 
-struct AppSettings: Codable {
+struct AppSettings: Codable, Sendable {
   var hotkeyMode: HotkeyMode = .hold
   var hasSeenOnboarding: Bool = false
+  /// Set true only when the user clicks "Fertig" in the first-run onboarding wizard. Distinct from
+  /// `hasSeenOnboarding`: gates the launch auto-open so closing the window early (without "Fertig")
+  /// keeps it re-opening next launch until the wizard is actually completed.
+  var hasCompletedOnboarding: Bool = false
   var secureLocalModeEnabled: Bool = false
   var selectedLocalTranscriptionModelName: String = LocalTranscriptionService
     .recommendedFastModelName
@@ -173,15 +185,34 @@ struct AppSettings: Codable {
   /// Phase 4b: inject the confirmed Memory block into rewrite prompts (global master).
   /// Per-mode `RewriteConfig.useMemoryContext` must ALSO be on. Default OFF.
   var memoryContextEnabled: Bool = false
+  /// MEM-2 (experimental): after Blitztext pastes, re-read the field later via AX to learn from
+  /// the user's manual corrections (before → after). PRIVACY-SENSITIVE → opt-in, default OFF,
+  /// on-device only. A superset of the archive opt-in: only effective while `archiveEnabled`.
+  var improvementDetectionEnabled: Bool = false
   /// Phase 1 (signing): set true once Accessibility trust was ever observed. Drives the
   /// stale-grant hint: if previously granted but now `AXIsProcessTrusted()` is false (e.g.
   /// after a rebuild changed the CDHash), macOS may still show Blitztext enabled while not
   /// recognizing it. Persisted so the hint survives relaunches.
   var hadAccessibilityGrant: Bool = false
+  /// On-device dictation dictionary: deterministic literal replacements + spoken-punctuation
+  /// mapping applied to the cleaned transcript BEFORE rewrite/paste. Default empty (no-op).
+  var dictationDictionary: DictationDictionary = DictationDictionary()
+  /// On-device fuzzy correction of the user's KNOWN terms (Eigennamen + confirmed Memory terms):
+  /// snaps a CLEAR near-miss spelling (e.g. "Rinert" → "Rinnert") to its canonical form. Default
+  /// ON but conservative — it only fires for unambiguous near-misses and never corrupts unrelated
+  /// words. Runs AFTER the dictation dictionary. With no terms it is a no-op (zero overhead).
+  var fuzzyCorrectionEnabled: Bool = true
+  /// Optional audio feedback (earcons) for start / done / error, so eyes-off background-hotkey
+  /// dictation gives an audible cue. Default OFF — silent unless the user opts in.
+  var soundFeedbackEnabled: Bool = false
+  /// MEM-2b: keys (`from→to`, lowercased) of mined suggestions the user permanently dismissed, so a
+  /// declined "Lern-Vorschlag" doesn't reappear on every relaunch. Persisted; default empty.
+  var dismissedImprovementSuggestionKeys: [String] = []
 
   init(
     hotkeyMode: HotkeyMode = .hold,
     hasSeenOnboarding: Bool = false,
+    hasCompletedOnboarding: Bool = false,
     secureLocalModeEnabled: Bool = false,
     selectedLocalTranscriptionModelName: String = LocalTranscriptionService
       .recommendedFastModelName,
@@ -189,22 +220,34 @@ struct AppSettings: Codable {
     selectedLocalLLMModelName: String = OllamaService.defaultModelName,
     archiveEnabled: Bool = false,
     memoryContextEnabled: Bool = false,
-    hadAccessibilityGrant: Bool = false
+    improvementDetectionEnabled: Bool = false,
+    hadAccessibilityGrant: Bool = false,
+    dictationDictionary: DictationDictionary = DictationDictionary(),
+    fuzzyCorrectionEnabled: Bool = true,
+    soundFeedbackEnabled: Bool = false,
+    dismissedImprovementSuggestionKeys: [String] = []
   ) {
     self.hotkeyMode = hotkeyMode
     self.hasSeenOnboarding = hasSeenOnboarding
+    self.hasCompletedOnboarding = hasCompletedOnboarding
     self.secureLocalModeEnabled = secureLocalModeEnabled
     self.selectedLocalTranscriptionModelName = selectedLocalTranscriptionModelName
     self.hasAutoSelectedFastLocalModel = hasAutoSelectedFastLocalModel
     self.selectedLocalLLMModelName = selectedLocalLLMModelName
     self.archiveEnabled = archiveEnabled
     self.memoryContextEnabled = memoryContextEnabled
+    self.improvementDetectionEnabled = improvementDetectionEnabled
     self.hadAccessibilityGrant = hadAccessibilityGrant
+    self.dictationDictionary = dictationDictionary
+    self.fuzzyCorrectionEnabled = fuzzyCorrectionEnabled
+    self.soundFeedbackEnabled = soundFeedbackEnabled
+    self.dismissedImprovementSuggestionKeys = dismissedImprovementSuggestionKeys
   }
 
   enum CodingKeys: String, CodingKey {
     case hotkeyMode
     case hasSeenOnboarding
+    case hasCompletedOnboarding
     case secureLocalModeEnabled
     case selectedLocalTranscriptionModelName
     case hasAutoSelectedFastLocalModel
@@ -214,7 +257,12 @@ struct AppSettings: Codable {
     case modesSchemaVersion
     case archiveEnabled
     case memoryContextEnabled
+    case improvementDetectionEnabled
     case hadAccessibilityGrant
+    case dictationDictionary
+    case fuzzyCorrectionEnabled
+    case soundFeedbackEnabled
+    case dismissedImprovementSuggestionKeys
   }
 
   init(from decoder: Decoder) throws {
@@ -222,6 +270,8 @@ struct AppSettings: Codable {
     hotkeyMode = try container.decodeIfPresent(HotkeyMode.self, forKey: .hotkeyMode) ?? .hold
     hasSeenOnboarding =
       try container.decodeIfPresent(Bool.self, forKey: .hasSeenOnboarding) ?? false
+    hasCompletedOnboarding =
+      try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
     secureLocalModeEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .secureLocalModeEnabled) ?? false
     selectedLocalTranscriptionModelName =
@@ -248,33 +298,47 @@ struct AppSettings: Codable {
       try container.decodeIfPresent(Bool.self, forKey: .archiveEnabled) ?? false
     memoryContextEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .memoryContextEnabled) ?? false
+    improvementDetectionEnabled =
+      try container.decodeIfPresent(Bool.self, forKey: .improvementDetectionEnabled) ?? false
     hadAccessibilityGrant =
       try container.decodeIfPresent(Bool.self, forKey: .hadAccessibilityGrant) ?? false
+    dictationDictionary =
+      try container.decodeIfPresent(DictationDictionary.self, forKey: .dictationDictionary)
+      ?? DictationDictionary()
+    // Missing key (older settings.json) → default ON. The corrector is conservative and a no-op
+    // without terms, so defaulting ON for existing users is safe and matches the property default.
+    fuzzyCorrectionEnabled =
+      try container.decodeIfPresent(Bool.self, forKey: .fuzzyCorrectionEnabled) ?? true
+    soundFeedbackEnabled =
+      try container.decodeIfPresent(Bool.self, forKey: .soundFeedbackEnabled) ?? false
+    dismissedImprovementSuggestionKeys =
+      try container.decodeIfPresent([String].self, forKey: .dismissedImprovementSuggestionKeys)
+      ?? []
   }
 }
 
-enum TranscriptionBackend: String, Codable {
+enum TranscriptionBackend: String, Codable, Sendable {
   case remote
   case local
 }
 
 // MARK: - Workflow Settings
 
-struct TranscriptionSettings: Codable {
+struct TranscriptionSettings: Codable, Sendable {
   var language: String = "de"
 }
 
-struct DampfAblassenSettings: Codable {
+struct DampfAblassenSettings: Codable, Sendable {
   var systemPrompt: String =
     "Du erhältst ein emotional gesprochenes Transkript. Erkenne zuerst das eigentliche Ziel, Anliegen und den wahren Frust der Person. Formuliere daraus eine klare, respektvolle und wirksame Nachricht, mit der die Person ihr Ziel eher erreicht. Bewahre relevante Fakten, konkrete Probleme, Grenzen, Erwartungen und die nötige Dringlichkeit. Entferne Beleidigungen, Drohungen, Sarkasmus, Unterstellungen und unnötige Eskalation. Wenn mehrere Vorwürfe genannt werden, verdichte sie auf die entscheidenden Kernpunkte. Der Ton soll ruhig, menschlich, bestimmt und lösungsorientiert sein. Gib NUR die fertige Nachricht zurück."
   var customName: String = ""
 }
 
-struct EmojiTextSettings: Codable {
+struct EmojiTextSettings: Codable, Sendable {
   var emojiDensity: EmojiDensity = .mittel
   var customName: String = ""
 
-  enum EmojiDensity: String, Codable, CaseIterable, Identifiable {
+  enum EmojiDensity: String, Codable, Sendable, CaseIterable, Identifiable {
     case wenig
     case mittel
     case viel
@@ -291,14 +355,14 @@ struct EmojiTextSettings: Codable {
   }
 }
 
-struct TextImprovementSettings: Codable {
+struct TextImprovementSettings: Codable, Sendable {
   var systemPrompt: String = ""
   var customTerms: [String] = []
   var context: String = ""
   var tone: TextTone = .neutral
   var customName: String = ""
 
-  enum TextTone: String, Codable, CaseIterable, Identifiable {
+  enum TextTone: String, Codable, Sendable, CaseIterable, Identifiable {
     case formal
     case neutral
     case casual

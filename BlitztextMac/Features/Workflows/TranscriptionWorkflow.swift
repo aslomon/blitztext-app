@@ -22,6 +22,10 @@ final class TranscriptionWorkflow: Workflow {
 
   private let recorder = AudioRecorder()
   private let customTerms: [String]
+  private let dictionary: DictationDictionary
+  /// Canonical KNOWN terms used to fuzzy-correct near-miss spellings AFTER the dictionary. Empty
+  /// (the default, or when the feature is off) → the corrector is a no-op.
+  private let fuzzyTerms: [String]
   private let language: String
   private let backend: TranscriptionBackend
   private let localModelName: String
@@ -30,24 +34,35 @@ final class TranscriptionWorkflow: Workflow {
   init(
     type: WorkflowType = .transcription,
     customTerms: [String] = [],
+    dictionary: DictationDictionary = DictationDictionary(),
+    fuzzyTerms: [String] = [],
     language: String = "de",
     backend: TranscriptionBackend = .remote,
     localModelName: String = LocalTranscriptionService.recommendedFastModelName
   ) {
     self.type = type
     self.customTerms = customTerms
+    self.dictionary = dictionary
+    self.fuzzyTerms = fuzzyTerms
     self.language = language
     self.backend = backend
     self.localModelName = localModelName
   }
 
   func start() {
-    phase = .running("Aufnahme läuft ...")
+    // Start the recorder FIRST so `recorder.isRecording` is true before `phase = .running`
+    // emits onPhaseChange — otherwise AppState reads isRecording==false and shows the menu-bar
+    // status (and the floating pill) as ".processing" instead of ".recording".
     recorder.startRecording()
 
     if let error = recorder.errorMessage {
       phase = .error(error)
+      return
     }
+    // Safety cap: if the recording runs past the max duration, stop+transcribe what we have
+    // instead of letting it grow unbounded. `stop()` runs the normal transcription path.
+    recorder.onMaxDurationReached = { [weak self] in self?.stop() }
+    phase = .running("Aufnahme läuft ...")
   }
 
   func stop() {
@@ -57,7 +72,7 @@ final class TranscriptionWorkflow: Workflow {
         !TranscriptionQualityService.shouldRejectRecording(duration: recorder.lastRecordingDuration)
       else {
         recorder.discardRecording()
-        phase = .error("Keine Aufnahme erkannt.")
+        phase = .error(TranscriptionQualityService.noSpeechMessage)
         return
       }
       transcribe()
@@ -78,6 +93,7 @@ final class TranscriptionWorkflow: Workflow {
 
   var isRecording: Bool { recorder.isRecording }
   var audioLevel: Float { recorder.audioLevel }
+  var didTruncateAtMaxDuration: Bool { recorder.didStopAtMaxDuration }
 
   private func transcribe() {
     guard let url = recorder.recordingURL else {
@@ -110,13 +126,17 @@ final class TranscriptionWorkflow: Workflow {
           text = try await LocalTranscriptionService.shared.transcribe(
             audioURL: url,
             language: requestLanguage,
-            modelName: localModelName
+            modelName: localModelName,
+            customTerms: vocabularyHints
           )
         }
         try Task.checkCancellation()
 
         let responseReceivedAt = Date()
-        let cleaned = TranscriptionQualityService.cleanedTranscript(text)
+        let cleaned = FuzzyTermCorrector.correct(
+          DictationPostProcessor.process(
+            TranscriptionQualityService.cleanedTranscript(text), dictionary: dictionary),
+          terms: fuzzyTerms)
         guard
           !TranscriptionQualityService.isLikelyArtifact(
             cleaned, recordingDuration: recordingDuration)
@@ -124,7 +144,7 @@ final class TranscriptionWorkflow: Workflow {
           transcriptionLogger.info(
             "Transcription rejected short artifact after \(elapsedMilliseconds(since: stopTime)) ms"
           )
-          phase = .error("Keine Aufnahme erkannt.")
+          phase = .error(TranscriptionQualityService.noSpeechMessage)
           return
         }
 

@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - Root router
+
 struct MenuBarView: View {
   @Bindable var appState: AppState
 
@@ -7,78 +9,30 @@ struct MenuBarView: View {
     VStack(spacing: 0) {
       switch appState.page {
       case .main:
-        mainPage
-      case .onboarding:
-        onboardingPage
+        MainPageView(appState: appState)
       case .settings:
-        settingsPage
+        SettingsPageView(appState: appState)
       case .workflow:
-        workflowPage
+        WorkflowPageView(appState: appState)
       }
     }
     .frame(width: 340)
+    // Opaque backstop: fixes dark-mode transparency wash-out (macOS 26 glass / <26 material).
+    .blitztextSurface()
     .animation(.easeInOut(duration: 0.2), value: appState.page)
   }
+}
 
-  // MARK: - Main Page
+// MARK: - Main Page
 
-  private var mainPage: some View {
+private struct MainPageView: View {
+  @Bindable var appState: AppState
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
     VStack(spacing: 0) {
-      // Header
-      VStack(spacing: 0) {
-        // Top bar
-        HStack {
-          HStack(spacing: 6) {
-            Text("Blitztext")
-              .font(.system(size: 11, weight: .medium))
-              .foregroundStyle(.secondary)
-
-            Text("macOS Preview")
-              .font(.system(size: 9.5, weight: .medium))
-              .foregroundStyle(.quaternary)
-          }
-
-          Spacer()
-
-          Button {
-            appState.page = .settings
-          } label: {
-            ZStack(alignment: .topTrailing) {
-              Image(systemName: "gear")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.tertiary)
-                .frame(width: 28, height: 28)
-                .background(
-                  RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.primary.opacity(0.00001))  // hit target
-                )
-                .contentShape(Rectangle())
-
-              if !appState.accessibilityPermissionGranted {
-                Circle()
-                  .fill(Color.orange)
-                  .frame(width: 6, height: 6)
-                  .offset(x: -4, y: 4)
-              }
-            }
-          }
-          .buttonStyle(SubtleButtonStyle())
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-
-        // Status area
-        if appState.isConfigured {
-          configuredHeader
-        } else {
-          unconfiguredHeader
-        }
-      }
-      .padding(.bottom, 16)
-      .background(
-        Color(nsColor: .controlBackgroundColor).opacity(0.5)
-      )
+      headerBand
+      Divider()
 
       if BlitztextInstallLocationService.shouldOfferMoveToApplications {
         installHintBanner
@@ -87,7 +41,7 @@ struct MenuBarView: View {
           .padding(.bottom, 6)
       }
 
-      transcriptionModePanel
+      enginePanel
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, appState.accessibilityPermissionGranted ? 6 : 4)
@@ -98,59 +52,148 @@ struct MenuBarView: View {
           .padding(.bottom, 6)
       }
 
-      // Workflow list
-      VStack(spacing: 0) {
-        ForEach(WorkflowType.mainMenuCases) { type in
-          let enabled = appState.isWorkflowAvailable(type)
-          WorkflowRowView(
-            type: type,
-            enabled: enabled,
-            customName: appState.displayName(for: type),
-            subtitle: appState.workflowSubtitle(for: type)
-          ) {
-            appState.startWorkflow(type)
-          }
-        }
-      }
-      .padding(.vertical, 2)
+      workflowList
+        .padding(.vertical, 2)
 
       appFooter
     }
   }
 
-  private var transcriptionModePanel: some View {
+  // MARK: Header
+
+  private var headerBand: some View {
+    VStack(spacing: 0) {
+      HStack {
+        HStack(spacing: 6) {
+          Text("Blitztext")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+
+          Text("macOS Preview")
+            .font(.system(size: 9.5, weight: .medium))
+            // Was .quaternary — too low contrast in dark mode; .secondary reads at 4.5:1
+            .foregroundStyle(.secondary)
+        }
+
+        Spacer()
+
+        Button {
+          appState.page = .settings
+        } label: {
+          ZStack(alignment: .topTrailing) {
+            Image(systemName: "gear")
+              .font(.system(size: 13, weight: .medium))
+              // Was .tertiary — raised to .secondary for legibility in dark mode
+              .foregroundStyle(.secondary)
+              .frame(width: 28, height: 28)
+              .background(
+                RoundedRectangle(cornerRadius: 6)
+                  .fill(Color.primary.opacity(0.00001))  // hit target only
+              )
+              .contentShape(Rectangle())
+
+            if !appState.accessibilityPermissionGranted {
+              Circle()
+                .fill(Color.orange)
+                .frame(width: 6, height: 6)
+                .offset(x: -4, y: 4)
+            }
+          }
+        }
+        .buttonStyle(SubtleButtonStyle())
+      }
+      .padding(.horizontal, 16)
+      .padding(.top, 12)
+      .padding(.bottom, 8)
+
+      if appState.isConfigured {
+        configuredStatusLine
+      } else {
+        unconfiguredStatusLine
+      }
+    }
+    .padding(.bottom, 12)
+    // colorScheme-aware header band — no more forced 0.5 alpha that washes out in dark mode
+    .background(MenuBarTokens.headerBand(colorScheme: colorScheme))
+  }
+
+  private var configuredStatusLine: some View {
+    HStack(spacing: 6) {
+      Circle()
+        .fill(.green)
+        .frame(width: 7, height: 7)
+      Text("Bereit")
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(.primary)
+    }
+  }
+
+  private var unconfiguredStatusLine: some View {
+    VStack(spacing: 10) {
+      ZStack {
+        Circle()
+          // Was hardcoded Color.orange.opacity(0.1) — now colorScheme-aware
+          .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
+          .frame(width: 40, height: 40)
+        Image(systemName: "key.fill")
+          .font(.system(size: 16, weight: .medium))
+          .foregroundStyle(.orange)
+      }
+
+      VStack(spacing: 4) {
+        Text("Einrichtung nötig")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(.primary)
+
+        Text(
+          "Starte die geführte Einrichtung, um Blitztext in wenigen Schritten startklar zu machen."
+        )
+        .font(.system(size: 11.5))
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .lineLimit(nil)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 20)
+      }
+
+      Button {
+        NotificationCenter.default.post(name: .openOnboardingWindow, object: nil)
+      } label: {
+        Text("Blitztext einrichten")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(.primary)
+          .padding(.horizontal, 20)
+          .padding(.vertical, 7)
+          .background(
+            RoundedRectangle(cornerRadius: 8)
+              .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
+          )
+          .overlay(
+            RoundedRectangle(cornerRadius: 8)
+              .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
+          )
+      }
+      .buttonStyle(SubtleButtonStyle())
+    }
+  }
+
+  // MARK: Engine Panel
+
+  /// Replaces the bare Toggle with a 2-segment Picker + status line for clarity.
+  private var enginePanel: some View {
     let modelOptions = LocalTranscriptionService.modelOptions()
     let selectedModelInstalled = appState.selectedLocalModelIsInstalled
 
     return VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 10) {
-        Image(
-          systemName: appState.appSettings.secureLocalModeEnabled ? "lock.shield.fill" : "network"
-        )
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(appState.appSettings.secureLocalModeEnabled ? .green : .blue)
-        .frame(width: 22, height: 22)
+      // Engine selector row
+      HStack(spacing: 8) {
+        Text("Transkription")
+          .font(.system(size: 10.5, weight: .medium))
+          .foregroundStyle(.secondary)
 
-        VStack(alignment: .leading, spacing: 2) {
-          Text(
-            appState.appSettings.secureLocalModeEnabled
-              ? "Sicherer lokaler Modus" : "Online Whisper"
-          )
-          .font(.system(size: 11.5, weight: .semibold))
-          .foregroundStyle(.primary)
-
-          Text(modePanelSubtitle(selectedModelInstalled: selectedModelInstalled))
-            .font(.system(size: 10.5))
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-
-        Spacer(minLength: 4)
-
-        Toggle(
+        Picker(
           "",
-          isOn: Binding(
+          selection: Binding(
             get: { appState.appSettings.secureLocalModeEnabled },
             set: { newValue in
               if newValue {
@@ -160,13 +203,21 @@ struct MenuBarView: View {
               }
             }
           )
-        )
+        ) {
+          Text("Online").tag(false)
+          Text("Lokal").tag(true)
+        }
         .labelsHidden()
-        .toggleStyle(.switch)
+        .pickerStyle(.segmented)
         .controlSize(.small)
         .disabled(appState.isDownloadingLocalModel)
+        .frame(maxWidth: .infinity)
       }
 
+      // Status line: accent dot + engine name
+      engineStatusLine
+
+      // Local-mode extras
       if appState.appSettings.secureLocalModeEnabled {
         HStack(spacing: 8) {
           Text("Modell")
@@ -193,7 +244,7 @@ struct MenuBarView: View {
         if let progress = appState.localModelDownloadProgress {
           VStack(alignment: .leading, spacing: 4) {
             ProgressView(value: progress)
-            Text(appState.localModelDownloadStatusText ?? "Modell wird geladen...")
+            Text(appState.localModelDownloadStatusText ?? "Modell wird geladen…")
               .font(.system(size: 10.5))
               .foregroundStyle(.secondary)
           }
@@ -215,31 +266,42 @@ struct MenuBarView: View {
     .padding(10)
     .background(
       RoundedRectangle(cornerRadius: 10)
-        .fill(Color.primary.opacity(0.035))
+        // Was Color.primary.opacity(0.035) — invisible in dark mode; now colorScheme-aware
+        .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
     )
     .overlay(
       RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
     )
   }
 
-  private func modePanelSubtitle(selectedModelInstalled: Bool) -> String {
+  private var engineStatusLine: some View {
+    HStack(spacing: 6) {
+      Circle()
+        .fill(appState.appSettings.secureLocalModeEnabled ? Color.green : Color.blue)
+        .frame(width: 6, height: 6)
+
+      Text(engineStatusText)
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .lineLimit(2)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private var engineStatusText: String {
     if appState.appSettings.secureLocalModeEnabled {
       if appState.isDownloadingLocalModel {
         return appState.localModelDownloadStatusText ?? "Lokales Modell wird geladen."
       }
-      if selectedModelInstalled {
+      if appState.selectedLocalModelIsInstalled {
         return "Lokal mit \(appState.selectedLocalModelDisplayName)."
       }
       return "\(appState.selectedLocalModelDisplayName) ist noch nicht installiert."
     }
-
-    return "Blitztext nutzt gerade die OpenAI-Transkription."
+    return "Online via OpenAI Whisper."
   }
 
-  /// Compact picker label for the menu-bar panel: model name plus an honest geladen/nicht-geladen
-  /// suffix (with the pending download size when known), so a not-installed model is never shown
-  /// as if it were ready to run.
   private func menuBarModelLabel(for model: LocalTranscriptionModel) -> String {
     if model.isInstalled {
       return "\(model.shortDisplayName) · geladen"
@@ -249,6 +311,8 @@ struct MenuBarView: View {
     }
     return "\(model.shortDisplayName) · nicht geladen"
   }
+
+  // MARK: Banners
 
   private var accessibilityHintBanner: some View {
     HStack(alignment: .top, spacing: 10) {
@@ -279,23 +343,13 @@ struct MenuBarView: View {
     .padding(10)
     .background(
       RoundedRectangle(cornerRadius: 10)
-        .fill(Color.orange.opacity(0.08))
+        // Was hardcoded Color.orange.opacity(0.08) — too faint in dark mode
+        .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
     )
     .overlay(
       RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(Color.orange.opacity(0.12), lineWidth: 0.5)
+        .strokeBorder(MenuBarTokens.tintStroke(.orange, colorScheme: colorScheme), lineWidth: 0.5)
     )
-  }
-
-  private var configuredHeader: some View {
-    HStack(spacing: 6) {
-      Circle()
-        .fill(.green)
-        .frame(width: 7, height: 7)
-      Text("Bereit")
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(.primary)
-    }
   }
 
   private var installHintBanner: some View {
@@ -327,218 +381,41 @@ struct MenuBarView: View {
     .padding(10)
     .background(
       RoundedRectangle(cornerRadius: 10)
-        .fill(Color.orange.opacity(0.08))
+        .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
     )
     .overlay(
       RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(Color.orange.opacity(0.12), lineWidth: 0.5)
+        .strokeBorder(MenuBarTokens.tintStroke(.orange, colorScheme: colorScheme), lineWidth: 0.5)
     )
   }
 
-  private var onboardingPage: some View {
+  // MARK: Workflow list
+
+  private var workflowList: some View {
     VStack(spacing: 0) {
-      HStack {
-        Text("Willkommen bei Blitztext")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.primary)
-
-        Spacer()
-
-        Button("Später") {
-          appState.page = .main
+      ForEach(WorkflowType.mainMenuCases) { type in
+        let enabled = appState.isWorkflowAvailable(type)
+        WorkflowRowView(
+          type: type,
+          enabled: enabled,
+          customName: appState.displayName(for: type),
+          subtitle: appState.workflowSubtitle(for: type)
+        ) {
+          appState.startWorkflowFromPopover(type)
         }
-        .font(.system(size: 11, weight: .medium))
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.secondary)
-      }
-      .padding(.horizontal, 16)
-      .padding(.top, 12)
-      .padding(.bottom, 8)
-      .background(
-        Color(nsColor: .controlBackgroundColor).opacity(0.5)
-      )
-
-      Divider()
-
-      VStack(alignment: .leading, spacing: 14) {
-        HStack(spacing: 12) {
-          ZStack {
-            Circle()
-              .fill(Color.blue.opacity(0.1))
-              .frame(width: 42, height: 42)
-            Image(systemName: "sparkles")
-              .font(.system(size: 16, weight: .semibold))
-              .foregroundStyle(.blue)
-          }
-
-          VStack(alignment: .leading, spacing: 3) {
-            Text("Einmal einrichten, dann direkt loslegen.")
-              .font(.system(size: 14, weight: .semibold))
-              .foregroundStyle(.primary)
-            Text("Eigenen OpenAI API Key eintragen. Danach sprechen und einfügen.")
-              .font(.system(size: 11.5))
-              .foregroundStyle(.secondary)
-              .fixedSize(horizontal: false, vertical: true)
-          }
-        }
-
-        VStack(alignment: .leading, spacing: 10) {
-          if BlitztextInstallLocationService.shouldOfferMoveToApplications {
-            onboardingInstallCard
-          }
-
-          onboardingStep(
-            number: "1", title: "OpenAI Key speichern",
-            detail: "Öffne die Einstellungen und trage deinen eigenen OpenAI API Key ein.")
-          onboardingStep(
-            number: "2", title: "Berechtigungen erlauben",
-            detail: "Mikrofon und Bedienungshilfen für das Einfügen freigeben.")
-          onboardingStep(
-            number: "3", title: "Workflow wählen",
-            detail:
-              "Blitztext oder einen der Verbesserer-Workflows direkt aus der Menüleiste starten.")
-        }
-
-        HStack(spacing: 8) {
-          Button {
-            appState.page = .settings
-          } label: {
-            Text("Jetzt einrichten")
-              .font(.system(size: 12, weight: .medium))
-              .foregroundStyle(.primary)
-              .padding(.horizontal, 16)
-              .padding(.vertical, 7)
-              .background(
-                RoundedRectangle(cornerRadius: 8)
-                  .fill(Color.primary.opacity(0.06))
-              )
-              .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                  .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-              )
-          }
-          .buttonStyle(SubtleButtonStyle())
-
-          Text("Du findest alles später im Zahnrad.")
-            .font(.system(size: 10.5))
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-        }
-      }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 14)
-
-      Spacer(minLength: 0)
-
-      appFooter
-    }
-  }
-
-  private var unconfiguredHeader: some View {
-    VStack(spacing: 10) {
-      ZStack {
-        Circle()
-          .fill(Color.orange.opacity(0.1))
-          .frame(width: 40, height: 40)
-        Image(systemName: "key.fill")
-          .font(.system(size: 16, weight: .medium))
-          .foregroundStyle(.orange)
-      }
-
-      VStack(spacing: 4) {
-        Text("Einrichtung n\u{00F6}tig")
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(.primary)
-
-        Text("\u{00D6}ffne die Einstellungen und hinterlege deine Zugangsdaten, um loszulegen.")
-          .font(.system(size: 11.5))
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .lineLimit(nil)
-          .fixedSize(horizontal: false, vertical: true)
-          .padding(.horizontal, 20)
-      }
-
-      Button {
-        appState.page = .settings
-      } label: {
-        Text("Einstellungen \u{00F6}ffnen")
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(.primary)
-          .padding(.horizontal, 20)
-          .padding(.vertical, 7)
-          .background(
-            RoundedRectangle(cornerRadius: 8)
-              .fill(Color.primary.opacity(0.06))
-          )
-          .overlay(
-            RoundedRectangle(cornerRadius: 8)
-              .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-          )
-      }
-      .buttonStyle(SubtleButtonStyle())
-    }
-  }
-
-  private func onboardingStep(number: String, title: String, detail: String) -> some View {
-    HStack(alignment: .top, spacing: 10) {
-      Text(number)
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .frame(width: 18, height: 18)
-        .background(
-          Circle()
-            .fill(Color.primary.opacity(0.05))
-        )
-
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(.system(size: 11.5, weight: .semibold))
-          .foregroundStyle(.primary)
-        Text(detail)
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
       }
     }
   }
+}
 
-  private var onboardingInstallCard: some View {
-    HStack(alignment: .top, spacing: 10) {
-      Image(systemName: "arrow.down.app")
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(.orange)
-        .frame(width: 18, height: 18)
+// MARK: - Settings Page
 
-      VStack(alignment: .leading, spacing: 4) {
-        Text("Lege Blitztext zuerst nach /Applications.")
-          .font(.system(size: 11.5, weight: .semibold))
-          .foregroundStyle(.primary)
+private struct SettingsPageView: View {
+  @Bindable var appState: AppState
+  @Environment(\.colorScheme) private var colorScheme
 
-        Text(
-          "Das hält Anmeldestart, spätere Updates und das Entfernen sauber auf einer einzigen App-Kopie."
-        )
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-      }
-    }
-    .padding(10)
-    .background(
-      RoundedRectangle(cornerRadius: 10)
-        .fill(Color.orange.opacity(0.08))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(Color.orange.opacity(0.12), lineWidth: 0.5)
-    )
-  }
-
-  // MARK: - Settings Page
-
-  private var settingsPage: some View {
+  var body: some View {
     VStack(spacing: 0) {
-      // Header bar
       HStack {
         Button {
           appState.page = .main
@@ -546,7 +423,7 @@ struct MenuBarView: View {
           HStack(spacing: 3) {
             Image(systemName: "chevron.left")
               .font(.system(size: 10, weight: .semibold))
-            Text("Zur\u{00FC}ck")
+            Text("Zurück")
               .font(.system(size: 12))
           }
           .foregroundStyle(.secondary)
@@ -563,6 +440,7 @@ struct MenuBarView: View {
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 10)
+      .background(MenuBarTokens.headerBand(colorScheme: colorScheme))
 
       Divider()
 
@@ -593,61 +471,47 @@ struct MenuBarView: View {
       Color.clear.frame(width: 58, height: 18)
     }
   }
+}
 
-  // MARK: - Workflow Page
+// MARK: - Workflow Page
 
-  private var workflowPage: some View {
+private struct WorkflowPageView: View {
+  @Bindable var appState: AppState
+
+  var body: some View {
     VStack(spacing: 0) {
       if let workflow = appState.activeWorkflow {
-        // Header bar
-        HStack {
-          Button {
-            appState.resetCurrentWorkflow()
-          } label: {
-            HStack(spacing: 3) {
-              Image(systemName: "chevron.left")
-                .font(.system(size: 10, weight: .semibold))
-              Text("Zur\u{00FC}ck")
-                .font(.system(size: 12))
-            }
-            .foregroundStyle(.secondary)
-          }
-          .buttonStyle(SubtleButtonStyle())
-
-          Spacer()
-
-          HStack(spacing: 5) {
-            Image(systemName: workflow.type.icon)
-              .font(.system(size: 11))
-              .foregroundStyle(workflowIconColor(workflow.type))
-            Text(appState.displayName(for: workflow.type))
-              .font(.system(size: 12, weight: .medium))
-              .foregroundStyle(.primary)
-          }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        workflowHeader(workflow: workflow)
 
         Divider()
 
-        // Content
         switch workflow.type {
         case .transcription, .localTranscription:
           if let w = workflow as? TranscriptionWorkflow {
-            TranscriptionActiveView(workflow: w)
+            TranscriptionActiveView(workflow: w, copyOnly: appState.lastRunWasCopyOnly)
           }
         case .textImprover:
           if let w = workflow as? TextImprovementWorkflow {
-            TextImproverActiveView(workflow: w)
+            TextImproverActiveView(
+              workflow: w, copyOnly: appState.lastRunWasCopyOnly,
+              fallbackNote: appState.lastRewriteFallbackNote)
           }
         case .dampfAblassen:
           if let w = workflow as? DampfAblassenWorkflow {
-            DampfAblassenActiveView(workflow: w)
+            DampfAblassenActiveView(
+              workflow: w, copyOnly: appState.lastRunWasCopyOnly,
+              fallbackNote: appState.lastRewriteFallbackNote)
           }
         case .emojiText:
           if let w = workflow as? EmojiTextWorkflow {
-            EmojiTextActiveView(workflow: w)
+            EmojiTextActiveView(
+              workflow: w, copyOnly: appState.lastRunWasCopyOnly,
+              fallbackNote: appState.lastRewriteFallbackNote)
           }
+        }
+
+        if case .done = workflow.phase, workflow.didTruncateAtMaxDuration {
+          truncationBanner
         }
 
         Spacer(minLength: 0)
@@ -657,29 +521,73 @@ struct MenuBarView: View {
     }
   }
 
-  private var appFooter: some View {
+  private func workflowHeader(workflow: any Workflow) -> some View {
     HStack {
-      Spacer()
-      Button("Beenden") {
-        NSApplication.shared.terminate(nil)
+      Button {
+        appState.resetCurrentWorkflow()
+      } label: {
+        HStack(spacing: 3) {
+          Image(systemName: "chevron.left")
+            .font(.system(size: 10, weight: .semibold))
+          Text("Zurück")
+            .font(.system(size: 12))
+        }
+        .foregroundStyle(.secondary)
       }
-      .font(.system(size: 10, weight: .medium))
-      .foregroundStyle(.quaternary)
       .buttonStyle(SubtleButtonStyle())
+
       Spacer()
+
+      HStack(spacing: 5) {
+        Image(systemName: workflow.type.icon)
+          .font(.system(size: 11))
+          .foregroundStyle(workflow.type.accentColorValue)
+        Text(appState.displayName(for: workflow.type))
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(.primary)
+      }
     }
-    .padding(.vertical, 8)
+    .padding(.horizontal, 16)
+    .padding(.vertical, 10)
   }
 
-  private func workflowIconColor(_ type: WorkflowType) -> Color {
-    switch type {
-    case .transcription: return .blue
-    case .localTranscription: return .green
-    case .textImprover: return .purple
-    case .dampfAblassen: return .orange
-    case .emojiText: return .cyan
+  /// Honest note shown after a run whose recording hit the safety cap and was auto-stopped — the
+  /// captured part was still transcribed, but the user should know the tail was cut.
+  private var truncationBanner: some View {
+    let minutes = Int(AudioRecorder.maxRecordingDuration / 60)
+    return HStack(alignment: .top, spacing: 6) {
+      Image(systemName: "clock.badge.exclamationmark")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.orange)
+      Text(
+        "Aufnahme war zu lang und wurde nach \(minutes) Min automatisch gestoppt. "
+          + "Nur der Anfang wurde übernommen."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
     }
+    .padding(.horizontal, 16)
+    .padding(.bottom, 8)
   }
+}
+
+// MARK: - Shared footer (used on all pages)
+
+private var appFooter: some View {
+  HStack {
+    Spacer()
+    Button("Beenden") {
+      NSApplication.shared.terminate(nil)
+    }
+    .font(.system(size: 10, weight: .medium))
+    // Was .quaternary — too low contrast in dark mode; raised to .secondary
+    .foregroundStyle(.secondary)
+    .buttonStyle(SubtleButtonStyle())
+    Spacer()
+  }
+  .padding(.vertical, 8)
 }
 
 // MARK: - Subtle Button Style
@@ -692,45 +600,22 @@ struct SubtleButtonStyle: ButtonStyle {
   }
 }
 
-// MARK: - Transcription Active View
+// MARK: - Shared recording body (deduplicates 4 identical copies)
 
-struct TranscriptionActiveView: View {
-  @Bindable var workflow: TranscriptionWorkflow
+/// Reusable recording affordance: waveform + stop button + hint.
+/// Extracted from the 4 identical `recordingView` closures in the original file.
+private struct RecordingBodyView: View {
+  let audioLevel: Float
+  let onStop: () -> Void
 
   var body: some View {
-    VStack(spacing: 0) {
-      switch workflow.phase {
-      case .idle, .running:
-        if workflow.isRecording {
-          recordingView(onStop: { workflow.stop() })
-        } else {
-          processingView(message: "Wird transkribiert \u{2026}")
-        }
-
-      case .done(let text):
-        autoPasteView(text: text)
-
-      case .error(let msg):
-        errorView(message: msg) {
-          workflow.reset()
-          workflow.start()
-        }
-      }
-    }
-    .padding(.horizontal, 16)
-    .padding(.bottom, 16)
-  }
-
-  @ViewBuilder
-  private func recordingView(onStop: @escaping () -> Void) -> some View {
     VStack(spacing: 16) {
       Spacer().frame(height: 20)
 
-      WaveformView(audioLevel: workflow.audioLevel, isRecording: true)
+      WaveformView(audioLevel: audioLevel, isRecording: true)
         .frame(height: 44)
         .padding(.horizontal, 24)
 
-      // Monochrome stop button
       Button(action: onStop) {
         ZStack {
           Circle()
@@ -742,13 +627,52 @@ struct TranscriptionActiveView: View {
         }
       }
       .buttonStyle(.plain)
+      .keyboardShortcut(.return, modifiers: [])
+      .accessibilityLabel("Aufnahme beenden")
 
-      Text("Ich h\u{00F6}re zu \u{2026} Klicke zum Stoppen.")
-        .font(.system(size: 11))
-        .foregroundStyle(.tertiary)
+      VStack(spacing: 4) {
+        Text("Ich höre zu … Klicke zum Stoppen.")
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
+
+        Text("Enter = beenden · Esc = abbrechen")
+          .font(.system(size: 10.5))
+          .foregroundStyle(.secondary)
+      }
 
       Spacer().frame(height: 8)
     }
+  }
+}
+
+// MARK: - Transcription Active View
+
+struct TranscriptionActiveView: View {
+  @Bindable var workflow: TranscriptionWorkflow
+  var copyOnly: Bool = false
+
+  var body: some View {
+    VStack(spacing: 0) {
+      switch workflow.phase {
+      case .idle, .running:
+        if workflow.isRecording {
+          RecordingBodyView(audioLevel: workflow.audioLevel) { workflow.stop() }
+        } else {
+          processingView(message: "Wird transkribiert …")
+        }
+
+      case .done(let text):
+        autoPasteView(text: text, copyOnly: copyOnly)
+
+      case .error(let msg):
+        errorView(message: msg) {
+          workflow.reset()
+          workflow.start()
+        }
+      }
+    }
+    .padding(.horizontal, 16)
+    .padding(.bottom, 16)
   }
 }
 
@@ -756,32 +680,21 @@ struct TranscriptionActiveView: View {
 
 struct TextImproverActiveView: View {
   @Bindable var workflow: TextImprovementWorkflow
+  var copyOnly: Bool = false
+  var fallbackNote: String?
 
   var body: some View {
     VStack(spacing: 0) {
       switch workflow.phase {
       case .idle, .running:
         if workflow.isRecording {
-          recordingView(onStop: { workflow.stop() })
+          RecordingBodyView(audioLevel: workflow.audioLevel) { workflow.stop() }
         } else {
-          VStack(spacing: 12) {
-            Spacer().frame(height: 24)
-            ProgressView()
-              .scaleEffect(0.7)
-              .controlSize(.small)
-            if case .running(let msg) = workflow.phase {
-              Text(msg)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .lineLimit(nil)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer().frame(height: 24)
-          }
+          processingSpinner(phase: workflow.phase)
         }
 
       case .done(let text):
-        autoPasteView(text: text)
+        autoPasteView(text: text, copyOnly: copyOnly, fallbackNote: fallbackNote)
 
       case .error(let msg):
         errorView(message: msg) {
@@ -792,36 +705,6 @@ struct TextImproverActiveView: View {
     }
     .padding(.horizontal, 16)
     .padding(.bottom, 16)
-  }
-
-  @ViewBuilder
-  private func recordingView(onStop: @escaping () -> Void) -> some View {
-    VStack(spacing: 16) {
-      Spacer().frame(height: 20)
-
-      WaveformView(audioLevel: workflow.audioLevel, isRecording: true)
-        .frame(height: 44)
-        .padding(.horizontal, 24)
-
-      // Monochrome stop button
-      Button(action: onStop) {
-        ZStack {
-          Circle()
-            .strokeBorder(.primary.opacity(0.2), lineWidth: 1.5)
-            .frame(width: 44, height: 44)
-          RoundedRectangle(cornerRadius: 3)
-            .fill(.primary.opacity(0.7))
-            .frame(width: 14, height: 14)
-        }
-      }
-      .buttonStyle(.plain)
-
-      Text("Ich h\u{00F6}re zu \u{2026} Klicke zum Stoppen.")
-        .font(.system(size: 11))
-        .foregroundStyle(.tertiary)
-
-      Spacer().frame(height: 8)
-    }
   }
 }
 
@@ -829,32 +712,21 @@ struct TextImproverActiveView: View {
 
 struct DampfAblassenActiveView: View {
   @Bindable var workflow: DampfAblassenWorkflow
+  var copyOnly: Bool = false
+  var fallbackNote: String?
 
   var body: some View {
     VStack(spacing: 0) {
       switch workflow.phase {
       case .idle, .running:
         if workflow.isRecording {
-          recordingView(onStop: { workflow.stop() })
+          RecordingBodyView(audioLevel: workflow.audioLevel) { workflow.stop() }
         } else {
-          VStack(spacing: 12) {
-            Spacer().frame(height: 24)
-            ProgressView()
-              .scaleEffect(0.7)
-              .controlSize(.small)
-            if case .running(let msg) = workflow.phase {
-              Text(msg)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .lineLimit(nil)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer().frame(height: 24)
-          }
+          processingSpinner(phase: workflow.phase)
         }
 
       case .done(let text):
-        autoPasteView(text: text)
+        autoPasteView(text: text, copyOnly: copyOnly, fallbackNote: fallbackNote)
 
       case .error(let msg):
         errorView(message: msg) {
@@ -865,36 +737,6 @@ struct DampfAblassenActiveView: View {
     }
     .padding(.horizontal, 16)
     .padding(.bottom, 16)
-  }
-
-  @ViewBuilder
-  private func recordingView(onStop: @escaping () -> Void) -> some View {
-    VStack(spacing: 16) {
-      Spacer().frame(height: 20)
-
-      WaveformView(audioLevel: workflow.audioLevel, isRecording: true)
-        .frame(height: 44)
-        .padding(.horizontal, 24)
-
-      // Monochrome stop button
-      Button(action: onStop) {
-        ZStack {
-          Circle()
-            .strokeBorder(.primary.opacity(0.2), lineWidth: 1.5)
-            .frame(width: 44, height: 44)
-          RoundedRectangle(cornerRadius: 3)
-            .fill(.primary.opacity(0.7))
-            .frame(width: 14, height: 14)
-        }
-      }
-      .buttonStyle(.plain)
-
-      Text("Ich h\u{00F6}re zu \u{2026} Klicke zum Stoppen.")
-        .font(.system(size: 11))
-        .foregroundStyle(.tertiary)
-
-      Spacer().frame(height: 8)
-    }
   }
 }
 
@@ -902,32 +744,21 @@ struct DampfAblassenActiveView: View {
 
 struct EmojiTextActiveView: View {
   @Bindable var workflow: EmojiTextWorkflow
+  var copyOnly: Bool = false
+  var fallbackNote: String?
 
   var body: some View {
     VStack(spacing: 0) {
       switch workflow.phase {
       case .idle, .running:
         if workflow.isRecording {
-          recordingView(onStop: { workflow.stop() })
+          RecordingBodyView(audioLevel: workflow.audioLevel) { workflow.stop() }
         } else {
-          VStack(spacing: 12) {
-            Spacer().frame(height: 24)
-            ProgressView()
-              .scaleEffect(0.7)
-              .controlSize(.small)
-            if case .running(let msg) = workflow.phase {
-              Text(msg)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .lineLimit(nil)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer().frame(height: 24)
-          }
+          processingSpinner(phase: workflow.phase)
         }
 
       case .done(let text):
-        autoPasteView(text: text)
+        autoPasteView(text: text, copyOnly: copyOnly, fallbackNote: fallbackNote)
 
       case .error(let msg):
         errorView(message: msg) {
@@ -939,39 +770,9 @@ struct EmojiTextActiveView: View {
     .padding(.horizontal, 16)
     .padding(.bottom, 16)
   }
-
-  @ViewBuilder
-  private func recordingView(onStop: @escaping () -> Void) -> some View {
-    VStack(spacing: 16) {
-      Spacer().frame(height: 20)
-
-      WaveformView(audioLevel: workflow.audioLevel, isRecording: true)
-        .frame(height: 44)
-        .padding(.horizontal, 24)
-
-      // Monochrome stop button
-      Button(action: onStop) {
-        ZStack {
-          Circle()
-            .strokeBorder(.primary.opacity(0.2), lineWidth: 1.5)
-            .frame(width: 44, height: 44)
-          RoundedRectangle(cornerRadius: 3)
-            .fill(.primary.opacity(0.7))
-            .frame(width: 14, height: 14)
-        }
-      }
-      .buttonStyle(.plain)
-
-      Text("Ich h\u{00F6}re zu \u{2026} Klicke zum Stoppen.")
-        .font(.system(size: 11))
-        .foregroundStyle(.tertiary)
-
-      Spacer().frame(height: 8)
-    }
-  }
 }
 
-// MARK: - Shared Result / Error Views
+// MARK: - Shared result / error views (free functions — no self capture needed)
 
 private func processingView(message: String) -> some View {
   VStack(spacing: 12) {
@@ -986,72 +787,140 @@ private func processingView(message: String) -> some View {
   }
 }
 
-private func autoPasteView(text: String) -> some View {
+/// Indeterminate spinner shown while a rewrite workflow is processing.
+@ViewBuilder
+private func processingSpinner(phase: WorkflowPhase) -> some View {
   VStack(spacing: 12) {
-    Spacer().frame(height: 20)
-
-    ZStack {
-      Circle()
-        .fill(Color.green.opacity(0.1))
-        .frame(width: 44, height: 44)
-      Image(systemName: "checkmark.circle.fill")
-        .font(.system(size: 24))
-        .foregroundStyle(.green)
+    Spacer().frame(height: 24)
+    ProgressView()
+      .scaleEffect(0.7)
+      .controlSize(.small)
+    if case .running(let msg) = phase {
+      Text(msg)
+        .font(.system(size: 11.5))
+        .foregroundStyle(.secondary)
+        .lineLimit(nil)
+        .fixedSize(horizontal: false, vertical: true)
     }
+    Spacer().frame(height: 24)
+  }
+}
 
-    Text("Eingef\u{00FC}gt")
-      .font(.system(size: 14, weight: .semibold))
-      .foregroundStyle(.primary)
+private func autoPasteView(text: String, copyOnly: Bool = false, fallbackNote: String? = nil)
+  -> some View
+{
+  _AutoPasteView(text: text, copyOnly: copyOnly, fallbackNote: fallbackNote)
+}
 
-    Text(text)
-      .font(.system(size: 11))
-      .foregroundStyle(.secondary)
-      .lineLimit(3)
-      .multilineTextAlignment(.center)
-      .padding(.horizontal, 8)
+private struct _AutoPasteView: View {
+  let text: String
+  /// When the auto-paste couldn't run (no target / focus race lost), the text is only on the
+  /// clipboard — show the manual-paste hint in orange instead of the green "Eingefügt".
+  var copyOnly: Bool = false
+  /// Quiet one-line note when this run fell back to a different rewrite model (B6). `nil` = hidden.
+  var fallbackNote: String?
+  @Environment(\.colorScheme) private var colorScheme
 
-    Spacer().frame(height: 12)
+  private var accent: Color { copyOnly ? .orange : .green }
+  private var iconName: String {
+    copyOnly ? "doc.on.clipboard.fill" : "checkmark.circle.fill"
+  }
+  private var title: String { copyOnly ? "In die Zwischenablage kopiert" : "Eingefügt" }
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Spacer().frame(height: 20)
+
+      ZStack {
+        Circle()
+          // Was hardcoded Color.green.opacity(0.1) — now colorScheme-aware
+          .fill(MenuBarTokens.tintFill(accent, colorScheme: colorScheme))
+          .frame(width: 44, height: 44)
+        Image(systemName: iconName)
+          .font(.system(size: 24))
+          .foregroundStyle(accent)
+      }
+
+      Text(title)
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(.primary)
+
+      if copyOnly {
+        Text("Mit ⌘V einfügen.")
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
+      }
+
+      if let fallbackNote {
+        Text(fallbackNote)
+          .font(.system(size: 10.5))
+          .foregroundStyle(.orange)
+          .multilineTextAlignment(.center)
+          .padding(.horizontal, 8)
+      }
+
+      Text(text)
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .lineLimit(3)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 8)
+
+      Spacer().frame(height: 12)
+    }
   }
 }
 
 private func errorView(message: String, onRetry: @escaping () -> Void) -> some View {
-  VStack(spacing: 10) {
-    Spacer().frame(height: 16)
+  _ErrorView(message: message, onRetry: onRetry)
+}
 
-    ZStack {
-      Circle()
-        .fill(Color.orange.opacity(0.1))
-        .frame(width: 40, height: 40)
-      Image(systemName: "exclamationmark.triangle.fill")
-        .font(.system(size: 18))
-        .foregroundStyle(.orange)
+private struct _ErrorView: View {
+  let message: String
+  let onRetry: () -> Void
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    VStack(spacing: 10) {
+      Spacer().frame(height: 16)
+
+      ZStack {
+        Circle()
+          // Was hardcoded Color.orange.opacity(0.1) — now colorScheme-aware
+          .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
+          .frame(width: 40, height: 40)
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.system(size: 18))
+          .foregroundStyle(.orange)
+      }
+
+      Text(message)
+        .font(.system(size: 11.5))
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .lineLimit(nil)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 8)
+
+      Button(action: onRetry) {
+        Text("Nochmal versuchen")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(.primary)
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, 8)
+          .background(
+            RoundedRectangle(cornerRadius: 8)
+              .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
+          )
+          .overlay(
+            RoundedRectangle(cornerRadius: 8)
+              .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
+          )
+      }
+      .buttonStyle(SubtleButtonStyle())
+      .keyboardShortcut(.defaultAction)
+
+      Spacer().frame(height: 4)
     }
-
-    Text(message)
-      .font(.system(size: 11.5))
-      .foregroundStyle(.secondary)
-      .multilineTextAlignment(.center)
-      .lineLimit(nil)
-      .fixedSize(horizontal: false, vertical: true)
-      .padding(.horizontal, 8)
-
-    Button(action: onRetry) {
-      Text("Nochmal versuchen")
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(.primary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(
-          RoundedRectangle(cornerRadius: 8)
-            .fill(Color.primary.opacity(0.06))
-        )
-        .overlay(
-          RoundedRectangle(cornerRadius: 8)
-            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-    }
-    .buttonStyle(SubtleButtonStyle())
-
-    Spacer().frame(height: 4)
   }
 }

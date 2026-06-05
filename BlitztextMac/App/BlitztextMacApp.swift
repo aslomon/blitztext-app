@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
   private var popover: NSPopover!
   private let menuBarStatusController = MenuBarStatusController()
   private var recordingPillController: RecordingPillController!
+  private var localModelsWindowController: LocalModelsWindowController!
+  private var archiveWindowController: ArchiveWindowController!
+  private var onboardingWindowController: OnboardingWindowController!
   let appState = AppState()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -41,6 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
       self?.handleHotkeyEvent(event)
     }
     recordingPillController = RecordingPillController(appState: appState)
+    localModelsWindowController = LocalModelsWindowController(manager: appState.localModelManager)
+    archiveWindowController = ArchiveWindowController(appState: appState)
+    onboardingWindowController = OnboardingWindowController(appState: appState) { [weak self] in
+      self?.openSettingsInPopover()
+    }
     appState.onMenuBarStatusChange = { [weak self] status in
       self?.menuBarStatusController.update(to: status)
       self?.recordingPillController.handleStatusChange(status)
@@ -55,6 +63,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
       object: nil
     )
 
+    // Open the standalone "Lokale Modelle" management window on request from settings.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleOpenLocalModelsWindow),
+      name: .openLocalModelsWindow,
+      object: nil
+    )
+
+    // Open the standalone "Transkriptions-Archiv" window on request from the archive tab.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleOpenArchiveWindow),
+      name: .openArchiveWindow,
+      object: nil
+    )
+
+    // Open the standalone first-run onboarding wizard window (empty-state nudges, re-run action).
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleOpenOnboardingWindow),
+      name: .openOnboardingWindow,
+      object: nil
+    )
+
     DispatchQueue.main.async { [weak self] in
       self?.showOnboardingIfNeeded()
     }
@@ -63,6 +95,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
   @objc private func handleDismissPopover() {
     appState.isPopoverShown = false
     popover.performClose(nil)
+  }
+
+  @objc private func handleOpenLocalModelsWindow() {
+    if popover.isShown {
+      popover.performClose(nil)
+      appState.isPopoverShown = false
+    }
+    localModelsWindowController.show()
+  }
+
+  @objc private func handleOpenArchiveWindow() {
+    if popover.isShown {
+      popover.performClose(nil)
+      appState.isPopoverShown = false
+    }
+    archiveWindowController.show()
+  }
+
+  @objc private func handleOpenOnboardingWindow() {
+    if popover.isShown {
+      popover.performClose(nil)
+      appState.isPopoverShown = false
+    }
+    onboardingWindowController.show()
+  }
+
+  /// Opens the popover already on the settings page — used by the wizard's "Zu den Einstellungen".
+  private func openSettingsInPopover() {
+    appState.prepareForPopoverPresentation()
+    appState.page = .settings
+    showPopover()
   }
 
   private func handleHotkeyEvent(_ event: HotkeyEvent) {
@@ -87,16 +150,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
       appState.startWorkflow(type, source: .hotkeyBackground)
 
     case .toggle:
-      // Toggle mode: if already recording same workflow, stop it
+      // Toggle mode: if already recording the same workflow, stop it. Otherwise record in the
+      // BACKGROUND with the floating pill as the sole indicator — no popover, no waveform window.
       if let active = appState.activeWorkflow,
         active.type == type,
         active.phase.isActive
       {
         active.stop()
       } else {
-        appState.prepareForPopoverPresentation()
-        appState.startWorkflow(type, source: .manual)
-        showPopover()
+        appState.startWorkflow(type, source: .hotkeyBackground)
       }
     }
   }
@@ -118,7 +180,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
   }
 
   private func handleHotkeyCancel() {
-    appState.activeWorkflow?.stop()
+    // ESC aborts (discards) the dictation — distinct from re-pressing the hotkey, which finishes it.
+    // The pill flashes red and disappears.
+    recordingPillController.cancelCurrent()
   }
 
   @objc private func togglePopover() {
@@ -133,8 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
   private func showOnboardingIfNeeded() {
     guard appState.shouldShowOnboarding else { return }
-    appState.prepareForPopoverPresentation()
-    showPopover()
+    onboardingWindowController.show()
   }
 
   private func showPopover() {

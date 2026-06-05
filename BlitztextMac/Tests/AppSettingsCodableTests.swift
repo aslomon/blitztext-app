@@ -98,6 +98,38 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertFalse(decoded.archiveEnabled)
     XCTAssertFalse(decoded.memoryContextEnabled)
     XCTAssertFalse(decoded.hadAccessibilityGrant)
+    // Dictation dictionary absent -> empty replacements, spoken punctuation defaults OFF.
+    // OFF avoids silently mapping real words like "Punkt"/"Komma" to symbols (data-corruption).
+    XCTAssertTrue(decoded.dictationDictionary.replacements.isEmpty)
+    XCTAssertFalse(decoded.dictationDictionary.spokenPunctuationEnabled)
+  }
+
+  /// Round-trips the dictation dictionary (replacements + the punctuation toggle) and confirms
+  /// an OLD settings.json missing the key decodes to a safe default (no replacements, toggle OFF).
+  func testDictationDictionaryRoundTripAndMigration() throws {
+    var settings = AppSettings()
+    settings.dictationDictionary = DictationDictionary(
+      replacements: [
+        DictationReplacement(from: "blitztext", to: "Blitztext"),
+        DictationReplacement(from: "ue", to: "ü", wholeWord: false),
+      ],
+      spokenPunctuationEnabled: false
+    )
+
+    let data = try makeEncoder().encode(settings)
+    let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+    XCTAssertEqual(decoded.dictationDictionary.replacements.count, 2)
+    XCTAssertFalse(decoded.dictationDictionary.spokenPunctuationEnabled)
+    let first = try XCTUnwrap(decoded.dictationDictionary.replacements.first)
+    XCTAssertEqual(first.from, "blitztext")
+    XCTAssertEqual(first.to, "Blitztext")
+    XCTAssertTrue(first.wholeWord)
+    XCTAssertFalse(decoded.dictationDictionary.replacements[1].wholeWord)
+
+    // Legacy settings without the key -> default dictionary (toggle defaults OFF).
+    let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+    XCTAssertTrue(legacy.dictationDictionary.replacements.isEmpty)
+    XCTAssertFalse(legacy.dictationDictionary.spokenPunctuationEnabled)
   }
 
   /// A mode persisted WITHOUT the v2 `rewrite.useMemoryContext` key decodes to false.

@@ -12,11 +12,20 @@ final class EmojiTextWorkflow: Workflow {
   var onOutput: WorkflowOutputHandler?
   var onPhaseChange: WorkflowPhaseChangeHandler?
   var onRun: WorkflowRunHandler?
+  /// Fired once per run with the model-fallback note (`nil` when the chosen model ran). See B6.
+  var onRewriteFallback: WorkflowRewriteFallbackHandler?
 
   private let recorder = AudioRecorder()
   private let rewrite: RewriteConfig
   private let provider: any RewriteProvider
   private let customTerms: [String]
+  /// Terms for the REWRITE prompt — natural (most-important-first) order, no Whisper cap.
+  /// Defaults to `customTerms` so callers that don't split keep the previous behavior.
+  private let rewriteTerms: [String]
+  private let dictionary: DictationDictionary
+  /// Canonical KNOWN terms used to fuzzy-correct near-miss spellings AFTER the dictionary. Empty
+  /// (the default, or when the feature is off) → the corrector is a no-op.
+  private let fuzzyTerms: [String]
   private let language: String
   private let backend: TranscriptionBackend
   private let localModelName: String
@@ -26,6 +35,9 @@ final class EmojiTextWorkflow: Workflow {
     rewrite: RewriteConfig,
     provider: any RewriteProvider,
     customTerms: [String] = [],
+    rewriteTerms: [String]? = nil,
+    dictionary: DictationDictionary = DictationDictionary(),
+    fuzzyTerms: [String] = [],
     language: String = "de",
     backend: TranscriptionBackend = .remote,
     localModelName: String = LocalTranscriptionService.recommendedFastModelName
@@ -33,6 +45,9 @@ final class EmojiTextWorkflow: Workflow {
     self.rewrite = rewrite
     self.provider = provider
     self.customTerms = customTerms
+    self.rewriteTerms = rewriteTerms ?? customTerms
+    self.dictionary = dictionary
+    self.fuzzyTerms = fuzzyTerms
     self.language = language
     self.backend = backend
     self.localModelName = localModelName
@@ -42,16 +57,21 @@ final class EmojiTextWorkflow: Workflow {
 
   var isRecording: Bool { recorder.isRecording }
   var audioLevel: Float { recorder.audioLevel }
+  var didTruncateAtMaxDuration: Bool { recorder.didStopAtMaxDuration }
 
   // MARK: - Workflow Protocol
 
   func start() {
-    phase = .running("Aufnahme l\u{00E4}uft ...")
+    // Recorder first so isRecording is true before .running fires (see TranscriptionWorkflow).
     recorder.startRecording()
 
     if let error = recorder.errorMessage {
       phase = .error(error)
+      return
     }
+    // Safety cap: if the recording runs past the max duration, stop+process what we have.
+    recorder.onMaxDurationReached = { [weak self] in self?.stop() }
+    phase = .running("Aufnahme l\u{00E4}uft ...")
   }
 
   func stop() {
@@ -61,7 +81,7 @@ final class EmojiTextWorkflow: Workflow {
         !TranscriptionQualityService.shouldRejectRecording(duration: recorder.lastRecordingDuration)
       else {
         recorder.discardRecording()
-        phase = .error("Keine Aufnahme erkannt.")
+        phase = .error(TranscriptionQualityService.noSpeechMessage)
         return
       }
       processRecording()
@@ -110,15 +130,19 @@ final class EmojiTextWorkflow: Workflow {
           rawText = try await LocalTranscriptionService.shared.transcribe(
             audioURL: url,
             language: language,
-            modelName: localModelName
+            modelName: localModelName,
+            customTerms: vocabularyHints
           )
         }
-        let cleanedRawText = TranscriptionQualityService.cleanedTranscript(rawText)
+        let cleanedRawText = FuzzyTermCorrector.correct(
+          DictationPostProcessor.process(
+            TranscriptionQualityService.cleanedTranscript(rawText), dictionary: dictionary),
+          terms: fuzzyTerms)
         guard
           !TranscriptionQualityService.isLikelyArtifact(
             cleanedRawText, recordingDuration: recordingDuration)
         else {
-          phase = .error("Keine Aufnahme erkannt.")
+          phase = .error(TranscriptionQualityService.noSpeechMessage)
           return
         }
 
@@ -126,15 +150,18 @@ final class EmojiTextWorkflow: Workflow {
 
         phase = .running("Emojis werden eingef\u{00FC}gt ...")
 
-        let systemPrompt = LLMService.emojiSystemPrompt(rewrite)
-        let result = try await provider.rewrite(
+        let systemPrompt = LLMService.emojiSystemPrompt(rewrite, customTerms: rewriteTerms)
+        let outcome = try await provider.rewrite(
           systemPrompt: systemPrompt,
           userText: cleanedRawText,
           temperature: LLMService.defaultRewriteTemperature
         )
-        let cleanedResult = TranscriptionQualityService.cleanedTranscript(result)
+        onRewriteFallback?(
+          RewriteModelRegistry.fallbackNote(
+            requested: outcome.requestedModelID, used: outcome.usedModelID))
+        let cleanedResult = TranscriptionQualityService.cleanedTranscript(outcome.text)
         guard cleanedResult != "KEINE_AUFNAHME_ERKANNT" else {
-          phase = .error("Keine Aufnahme erkannt.")
+          phase = .error(TranscriptionQualityService.noSpeechMessage)
           return
         }
         phase = .done(cleanedResult)

@@ -12,11 +12,20 @@ final class TextImprovementWorkflow: Workflow {
   var onOutput: WorkflowOutputHandler?
   var onPhaseChange: WorkflowPhaseChangeHandler?
   var onRun: WorkflowRunHandler?
+  /// Fired once per run with the model-fallback note (`nil` when the chosen model ran). See B6.
+  var onRewriteFallback: WorkflowRewriteFallbackHandler?
 
   private let recorder = AudioRecorder()
   private let rewrite: RewriteConfig
   private let provider: any RewriteProvider
   private let customTerms: [String]
+  /// Terms for the REWRITE prompt — natural (most-important-first) order, no Whisper cap.
+  /// Defaults to `customTerms` so callers that don't split keep the previous behavior.
+  private let rewriteTerms: [String]
+  private let dictionary: DictationDictionary
+  /// Canonical KNOWN terms used to fuzzy-correct near-miss spellings AFTER the dictionary. Empty
+  /// (the default, or when the feature is off) → the corrector is a no-op.
+  private let fuzzyTerms: [String]
   private let language: String
   private let backend: TranscriptionBackend
   private let localModelName: String
@@ -28,6 +37,9 @@ final class TextImprovementWorkflow: Workflow {
     rewrite: RewriteConfig,
     provider: any RewriteProvider,
     customTerms: [String] = [],
+    rewriteTerms: [String]? = nil,
+    dictionary: DictationDictionary = DictationDictionary(),
+    fuzzyTerms: [String] = [],
     language: String = "de",
     backend: TranscriptionBackend = .remote,
     localModelName: String = LocalTranscriptionService.recommendedFastModelName,
@@ -37,6 +49,9 @@ final class TextImprovementWorkflow: Workflow {
     self.rewrite = rewrite
     self.provider = provider
     self.customTerms = customTerms
+    self.rewriteTerms = rewriteTerms ?? customTerms
+    self.dictionary = dictionary
+    self.fuzzyTerms = fuzzyTerms
     self.language = language
     self.backend = backend
     self.localModelName = localModelName
@@ -48,16 +63,30 @@ final class TextImprovementWorkflow: Workflow {
 
   var isRecording: Bool { recorder.isRecording }
   var audioLevel: Float { recorder.audioLevel }
+  var didTruncateAtMaxDuration: Bool { recorder.didStopAtMaxDuration }
 
   // MARK: - Workflow Protocol
 
   func start() {
-    phase = .running("Aufnahme läuft ...")
+    // "Auswahl bearbeiten" needs real highlighted text; without it the rewrite would silently
+    // improve something unrelated and auto-paste it. Fail fast BEFORE recording instead.
+    if rewrite.replyContextMode == .editSelection,
+      selection?.selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+    {
+      phase = .error("Bitte zuerst Text markieren, dann „Auswahl bearbeiten“ starten.")
+      return
+    }
+
+    // Recorder first so isRecording is true before .running fires (see TranscriptionWorkflow).
     recorder.startRecording()
 
     if let error = recorder.errorMessage {
       phase = .error(error)
+      return
     }
+    // Safety cap: if the recording runs past the max duration, stop+process what we have.
+    recorder.onMaxDurationReached = { [weak self] in self?.stop() }
+    phase = .running("Aufnahme läuft ...")
   }
 
   func stop() {
@@ -67,7 +96,7 @@ final class TextImprovementWorkflow: Workflow {
         !TranscriptionQualityService.shouldRejectRecording(duration: recorder.lastRecordingDuration)
       else {
         recorder.discardRecording()
-        phase = .error("Keine Aufnahme erkannt.")
+        phase = .error(TranscriptionQualityService.noSpeechMessage)
         return
       }
       processRecording()
@@ -116,15 +145,19 @@ final class TextImprovementWorkflow: Workflow {
           rawText = try await LocalTranscriptionService.shared.transcribe(
             audioURL: url,
             language: language,
-            modelName: localModelName
+            modelName: localModelName,
+            customTerms: vocabularyHints
           )
         }
-        let cleanedRawText = TranscriptionQualityService.cleanedTranscript(rawText)
+        let cleanedRawText = FuzzyTermCorrector.correct(
+          DictationPostProcessor.process(
+            TranscriptionQualityService.cleanedTranscript(rawText), dictionary: dictionary),
+          terms: fuzzyTerms)
         guard
           !TranscriptionQualityService.isLikelyArtifact(
             cleanedRawText, recordingDuration: recordingDuration)
         else {
-          phase = .error("Keine Aufnahme erkannt.")
+          phase = .error(TranscriptionQualityService.noSpeechMessage)
           return
         }
 
@@ -133,14 +166,17 @@ final class TextImprovementWorkflow: Workflow {
         phase = .running("Text wird verbessert ...")
 
         let systemPrompt = LLMService.rewriteSystemPrompt(
-          rewrite, customTerms: customTerms, selection: selection, memory: memoryContext)
-        let improved = try await provider.rewrite(
+          rewrite, customTerms: rewriteTerms, selection: selection, memory: memoryContext)
+        let outcome = try await provider.rewrite(
           systemPrompt: systemPrompt,
           userText: cleanedRawText,
           temperature: LLMService.defaultRewriteTemperature
         )
+        onRewriteFallback?(
+          RewriteModelRegistry.fallbackNote(
+            requested: outcome.requestedModelID, used: outcome.usedModelID))
 
-        let cleanedImproved = TranscriptionQualityService.cleanedTranscript(improved)
+        let cleanedImproved = TranscriptionQualityService.cleanedTranscript(outcome.text)
         phase = .done(cleanedImproved)
         onRun?(
           ArchiveRunRecord(

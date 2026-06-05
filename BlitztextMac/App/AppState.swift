@@ -281,6 +281,65 @@ final class AppState {
   func denyMemory(_ candidate: MemoryCandidate) { memoryStore.deny(candidate) }
   func unconfirmMemory(_ id: MemoryConfirmedTerm.ID) { memoryStore.unconfirm(id) }
 
+  // MARK: - Unified vocabulary "recognize" list (Vokabular page)
+
+  /// One merged "richtig erkennen & schreiben" list for the Vokabular page: the user's manual
+  /// Eigennamen PLUS the confirmed Memory terms, deduped (manual wins), each tagged with its source.
+  /// They were functionally identical and edited in two places — this is the single surface. The
+  /// underlying stores (customTerms + memoryStore.confirmed) and the injection pipeline are unchanged.
+  struct RecognizeTerm: Identifiable, Hashable {
+    let id: String  // lowercased text — stable list identity
+    let text: String
+    let fromMemory: Bool
+    let memoryID: MemoryConfirmedTerm.ID?
+  }
+
+  var recognizeTerms: [RecognizeTerm] {
+    var seen = Set<String>()
+    var result: [RecognizeTerm] = []
+    for term in textImprovementSettings.customTerms {
+      let trimmed = term.trimmingCharacters(in: .whitespaces)
+      let key = trimmed.lowercased()
+      guard !trimmed.isEmpty, !seen.contains(key) else { continue }
+      seen.insert(key)
+      result.append(RecognizeTerm(id: key, text: trimmed, fromMemory: false, memoryID: nil))
+    }
+    // Confirmed Memory terms only when Memory is on — that's exactly when they're injected, so the
+    // list matches reality (turning Memory off hides them; the terms themselves are kept on disk).
+    if appSettings.memoryContextEnabled {
+      for confirmed in memoryConfirmedTerms {
+        let key = confirmed.term.lowercased()
+        guard !seen.contains(key) else { continue }
+        seen.insert(key)
+        result.append(
+          RecognizeTerm(id: key, text: confirmed.term, fromMemory: true, memoryID: confirmed.id))
+      }
+    }
+    return result
+  }
+
+  /// Adds a manual recognize term (Eigenname). Case-insensitive de-dupe against existing manual terms.
+  func addRecognizeTerm(_ text: String) {
+    let trimmed = text.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty,
+      !textImprovementSettings.customTerms.contains(where: {
+        $0.caseInsensitiveCompare(trimmed) == .orderedSame
+      })
+    else { return }
+    textImprovementSettings.customTerms.append(trimmed)
+  }
+
+  /// Removes a recognize term from whichever store owns it (manual list or confirmed Memory).
+  func removeRecognizeTerm(_ term: RecognizeTerm) {
+    if let memoryID = term.memoryID {
+      unconfirmMemory(memoryID)
+    } else {
+      textImprovementSettings.customTerms.removeAll {
+        $0.caseInsensitiveCompare(term.text) == .orderedSame
+      }
+    }
+  }
+
   // MARK: - Archive / Memory toggles + deletion (privacy)
 
   var isArchiveEnabled: Bool {

@@ -9,21 +9,18 @@ struct ArchiveSettingsView: View {
   @Bindable var appState: AppState
 
   @State private var showClearArchiveConfirm = false
-  @State private var showClearMemoryConfirm = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
       Text(
         "Privatsphäre zuerst: Alles hier ist opt-in, standardmäßig aus und bleibt on-device. "
-          + "Das Archiv speichert nur Text; Memory leitet daraus dein Vokabular ab."
+          + "Das Archiv speichert nur Text. Gelernte Begriffe pflegst du im Tab „Vokabular“."
       )
       .font(.system(size: 10.5))
       .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
 
       archiveSection
-      Divider().opacity(0.5)
-      memorySection
       Divider().opacity(0.5)
       improvementSection
     }
@@ -143,159 +140,6 @@ struct ArchiveSettingsView: View {
     }
   }
 
-  // MARK: - Memory
-
-  private var memorySection: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        SectionLabel(text: "Memory")
-        Spacer()
-        if appState.isRecomputingMemory {
-          ProgressView()
-            .controlSize(.small)
-            .scaleEffect(0.7)
-        }
-      }
-
-      Toggle(
-        "Memory als Kontext nutzen",
-        isOn: $appState.isMemoryContextEnabled
-      )
-      .toggleStyle(.switch)
-      .controlSize(.small)
-      .disabled(!appState.isArchiveEnabled)
-
-      Text(
-        "Leitet on-device wiederkehrende Namen, Fachbegriffe und Fremdwörter aus deinem "
-          + "Archiv ab. Wirkt nur in Modi, in denen du Memory zusätzlich einschaltest. "
-          + "Nichts wird automatisch übernommen — du bestätigst jeden Begriff selbst."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-
-      if !appState.isArchiveEnabled {
-        Text("Zuerst Archiv aktivieren.")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
-      }
-
-      if appState.isMemoryContextEnabled {
-        HStack(spacing: 8) {
-          Button("Jetzt analysieren") {
-            appState.recomputeMemory()
-          }
-          .buttonStyle(SubtleButtonStyle())
-          .disabled(appState.isRecomputingMemory || !appState.isArchiveEnabled)
-
-          if !appState.isArchiveEnabled {
-            Text("Archiv aktivieren, um Begriffe zu finden.")
-              .font(.system(size: 10))
-              .foregroundStyle(.secondary)
-          }
-        }
-
-        memoryEmptyStateLine
-        suggestionsBlock
-        confirmedBlock
-        clearMemoryButton
-      }
-    }
-  }
-
-  /// Shown when Memory is on but nothing has surfaced yet — keeps the section from looking broken.
-  @ViewBuilder
-  private var memoryEmptyStateLine: some View {
-    if appState.memorySuggestions.isEmpty && appState.memoryConfirmedTerms.isEmpty {
-      Text(
-        "Noch keine Begriffe gefunden. Nimm etwas auf und tippe „Jetzt analysieren“, "
-          + "um Vorschläge aus deinem Archiv zu erzeugen."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  @ViewBuilder
-  private var suggestionsBlock: some View {
-    let suggestions = appState.memorySuggestions
-
-    if !suggestions.isEmpty {
-      VStack(alignment: .leading, spacing: 10) {
-        Text("Vorschläge (\(suggestions.count))")
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(.secondary)
-
-        ForEach(MemoryCategory.allCases, id: \.self) { category in
-          let inCategory = suggestions.filter { $0.category == category }
-          if !inCategory.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-              Text(category.displayName)
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-
-              FlowLayout(spacing: 5) {
-                ForEach(inCategory) { candidate in
-                  SuggestionChip(
-                    candidate: candidate,
-                    onConfirm: { appState.confirmMemory(candidate) },
-                    onDeny: { appState.denyMemory(candidate) }
-                  )
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  @ViewBuilder
-  private var confirmedBlock: some View {
-    let confirmed = appState.memoryConfirmedTerms
-
-    if !confirmed.isEmpty {
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Bestätigt (\(confirmed.count)) — fließt als Kontext in deine Modi")
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(.secondary)
-
-        FlowLayout(spacing: 5) {
-          ForEach(confirmed) { term in
-            ConfirmedChip(
-              term: term,
-              onRemove: { appState.unconfirmMemory(term.id) }
-            )
-          }
-        }
-      }
-    }
-  }
-
-  private var clearMemoryButton: some View {
-    HStack {
-      Spacer()
-      Button("Memory löschen") { showClearMemoryConfirm = true }
-        .font(.system(size: 10, weight: .medium))
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.red)
-        .accessibilityLabel("Memory löschen")
-        .confirmationDialog(
-          "Memory löschen?",
-          isPresented: $showClearMemoryConfirm,
-          titleVisibility: .visible
-        ) {
-          Button("Löschen", role: .destructive) { appState.clearMemory() }
-          Button("Abbrechen", role: .cancel) {}
-        } message: {
-          Text(
-            "Alle abgeleiteten und bestätigten Begriffe werden entfernt. Das lässt sich nicht rückgängig machen."
-          )
-        }
-    }
-  }
-
   // MARK: - Improvement detection (MEM-2, experimental)
 
   /// Opt-in "Verbesserungs-Erkennung": re-reads the field after a paste to learn from manual
@@ -377,83 +221,6 @@ struct ArchiveSettingsView: View {
     formatter.locale = Locale(identifier: "de_DE")
     formatter.dateFormat = "EEEE, d. MMMM"
     return formatter.string(from: day)
-  }
-}
-
-// MARK: - Memory chips
-
-/// A suggested candidate: leading "+" confirms (append to confirmed), trailing "x" denies.
-private struct SuggestionChip: View {
-  let candidate: MemoryCandidate
-  let onConfirm: () -> Void
-  let onDeny: () -> Void
-
-  @Environment(\.colorScheme) private var colorScheme
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Button {
-        withAnimation(.easeOut(duration: 0.15)) { onConfirm() }
-      } label: {
-        Image(systemName: "plus")
-          .font(.system(size: 8, weight: .bold))
-          .foregroundStyle(.green)
-      }
-      .buttonStyle(SubtleButtonStyle())
-      .help("Bestätigen")
-
-      Text(candidate.surfaceForm)
-        .font(.system(size: 10.5))
-        .foregroundStyle(.primary)
-
-      Button {
-        withAnimation(.easeOut(duration: 0.15)) { onDeny() }
-      } label: {
-        Image(systemName: "xmark")
-          .font(.system(size: 7, weight: .bold))
-          .foregroundStyle(.tertiary)
-      }
-      .buttonStyle(SubtleButtonStyle())
-      .help("Nie vorschlagen")
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .background(Capsule().fill(MenuBarTokens.cardFill(colorScheme: colorScheme)))
-    .overlay(
-      Capsule().strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5))
-  }
-}
-
-/// A confirmed term: trailing "x" removes it from the injected set.
-private struct ConfirmedChip: View {
-  let term: MemoryConfirmedTerm
-  let onRemove: () -> Void
-
-  @Environment(\.colorScheme) private var colorScheme
-
-  var body: some View {
-    HStack(spacing: 3) {
-      Text(term.term)
-        .font(.system(size: 10.5))
-        .foregroundStyle(.primary)
-
-      Button {
-        withAnimation(.easeOut(duration: 0.15)) { onRemove() }
-      } label: {
-        Image(systemName: "xmark")
-          .font(.system(size: 7, weight: .bold))
-          .foregroundStyle(.tertiary)
-      }
-      .buttonStyle(SubtleButtonStyle())
-      .help("Entfernen")
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .background(Capsule().fill(MenuBarTokens.tintFill(.green, colorScheme: colorScheme)))
-    .overlay(
-      Capsule().strokeBorder(
-        MenuBarTokens.tintStroke(.green, colorScheme: colorScheme), lineWidth: 0.5)
-    )
   }
 }
 

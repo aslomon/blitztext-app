@@ -12,8 +12,9 @@ struct SettingsContentView: View {
       Picker("", selection: $selectedTab) {
         Text("Prompts").tag(0)
         Text("Modelle").tag(1)
-        Text("Archiv").tag(2)
-        Text("System").tag(3)
+        Text("Vokabular").tag(2)
+        Text("Archiv").tag(3)
+        Text("System").tag(4)
       }
       .pickerStyle(.segmented)
       .font(.system(size: 11))
@@ -34,6 +35,8 @@ struct SettingsContentView: View {
           case 1:
             ModelsSettingsView(appState: appState, selectTab: selectTab)
           case 2:
+            VocabularySettingsView(appState: appState)
+          case 3:
             ArchiveSettingsView(appState: appState)
           default:
             SystemSettingsView(appState: appState)

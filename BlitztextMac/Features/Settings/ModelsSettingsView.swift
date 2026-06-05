@@ -1,17 +1,13 @@
 import SwiftUI
 
-/// Tab "Modelle": the engines and vocabulary that power Blitztext. Engines on top — "Online" (the
-/// OpenAI API key) and "Lokal" (the local Whisper transcription engine, the local Ollama rewrite
-/// model and the secure-local master switch) — then a "Vokabular & Ersetzungen" group bundling the
-/// three word-handling mechanisms (Eigennamen, fuzzy correction, dictation dictionary).
+/// Tab "Modelle": the engines that power Blitztext — "Online" (the OpenAI API key) and "Lokal" (the
+/// local Whisper transcription engine, the local Ollama rewrite model and the secure-local master
+/// switch). All word handling (Eigennamen, gelernte Begriffe, Ersetzungen) lives in the Vokabular tab.
 struct ModelsSettingsView: View {
   @Bindable var appState: AppState
   /// Reserved for cross-tab navigation from empty-state CTAs (kept for parity with Prompts tab).
   let selectTab: (Int) -> Void
 
-  @Environment(\.colorScheme) private var colorScheme
-
-  @State private var newTerm = ""
   /// Bumped by the "Prüfen" button to force a fresh disk read of the installed WhisperKit models.
   /// The disk scan is synchronous, so re-reading inside a recomputed `body` reflects reality.
   @State private var transcriptionRecheckToken = 0
@@ -48,35 +44,19 @@ struct ModelsSettingsView: View {
       onlineBand
       Divider().opacity(0.5)
       localBand
-      Divider().opacity(0.5)
-      vocabularyGroup
+      vocabularyPointer
     }
     .padding(16)
   }
 
-  // MARK: - Vokabular & Ersetzungen (Eigennamen + Fuzzy + Wörterbuch)
-
-  /// Groups the three word-handling mechanisms under one heading so they read as related, with a
-  /// short caption (R3-UX-vocabref) disambiguating which to reach for.
-  private var vocabularyGroup: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      SectionLabel(text: "Vokabular & Ersetzungen")
-      vocabularyIntro
-      customTermsSection
-      Divider().opacity(0.5)
-      DictationDictionarySection(appState: appState)
-    }
-  }
-
-  private var vocabularyIntro: some View {
-    Text(
-      "Drei Wege, Wörter zu treffen: Eigennamen helfen Whisper, deine Begriffe richtig zu hören. "
-        + "Die automatische Korrektur schnappt knappe Verhörer dieser Begriffe gerade. Das "
-        + "Wörterbuch ersetzt fest, was du sagst, durch etwas anderes."
-    )
-    .font(.system(size: 10.5))
-    .foregroundStyle(.secondary)
-    .fixedSize(horizontal: false, vertical: true)
+  /// Vocabulary moved to its own "Vokabular" tab — leave a one-line pointer so anyone who looks for
+  /// Eigennamen/Wörterbuch here finds them.
+  private var vocabularyPointer: some View {
+    Text("Eigennamen, gelernte Begriffe und Ersetzungen findest du jetzt im Tab „Vokabular“.")
+      .font(.system(size: 10))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.top, 4)
   }
 
   // MARK: - Online band (OpenAI)
@@ -239,105 +219,4 @@ struct ModelsSettingsView: View {
     }
   }
 
-  // MARK: - Eigennamen
-
-  private var customTermsSection: some View {
-    SettingsSection(
-      "Eigennamen",
-      caption:
-        "Eigene Namen, Marken und Fachbegriffe, die korrekt erkannt und geschrieben werden sollen."
-    ) {
-      if appState.textImprovementSettings.customTerms.isEmpty {
-        Text("Noch keine Begriffe — füge unten Namen oder Fachwörter hinzu.")
-          .font(.system(size: 10.5))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      } else {
-        FlowLayout(spacing: 5) {
-          ForEach(appState.textImprovementSettings.customTerms, id: \.self) { term in
-            termChip(term)
-          }
-        }
-      }
-
-      HStack(spacing: 6) {
-        TextField("Neuer Begriff", text: $newTerm)
-          .textFieldStyle(.roundedBorder)
-          .font(.system(size: 11))
-          .onSubmit { addTerm() }
-
-        Button {
-          addTerm()
-        } label: {
-          Image(systemName: "plus.circle.fill")
-            .font(.system(size: 16))
-            .foregroundStyle(.blue.opacity(0.7))
-        }
-        .buttonStyle(SubtleButtonStyle())
-        .disabled(newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
-      }
-
-      fuzzyCorrectionToggle
-    }
-  }
-
-  /// Conservative on-device fuzzy correction of the Eigennamen above: snaps near-miss spellings
-  /// Whisper produces back to the canonical term. Default ON; only fires on clear, unambiguous
-  /// near-misses, so it never corrupts unrelated words.
-  private var fuzzyCorrectionToggle: some View {
-    VStack(alignment: .leading, spacing: 3) {
-      Toggle(
-        "Eigennamen automatisch korrigieren",
-        isOn: $appState.appSettings.fuzzyCorrectionEnabled
-      )
-      .toggleStyle(.switch)
-      .controlSize(.small)
-      .font(.system(size: 11.5))
-
-      Text(
-        "Korrigiert Tippfehler-nahe Schreibweisen deiner Begriffe (z. B. „Rinert“ → „Rinnert“)."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  private func termChip(_ term: String) -> some View {
-    HStack(spacing: 3) {
-      Text(term)
-        .font(.system(size: 10.5))
-      Button {
-        withAnimation(.easeOut(duration: 0.15)) {
-          appState.textImprovementSettings.customTerms.removeAll { $0 == term }
-        }
-      } label: {
-        Image(systemName: "xmark")
-          .font(.system(size: 7, weight: .bold))
-          .foregroundStyle(.tertiary)
-      }
-      .buttonStyle(SubtleButtonStyle())
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .background(
-      Capsule()
-        .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-    )
-    .overlay(
-      Capsule()
-        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-    )
-  }
-
-  private func addTerm() {
-    let trimmed = newTerm.trimmingCharacters(in: .whitespaces)
-    guard !trimmed.isEmpty, !appState.textImprovementSettings.customTerms.contains(trimmed) else {
-      return
-    }
-    withAnimation(.easeOut(duration: 0.15)) {
-      appState.textImprovementSettings.customTerms.append(trimmed)
-    }
-    newTerm = ""
-  }
 }

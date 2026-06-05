@@ -287,14 +287,29 @@ actor LocalTranscriptionService {
     }
   }
 
-  func transcribe(audioURL: URL, language: String, modelName: String) async throws -> String {
+  func transcribe(
+    audioURL: URL, language: String, modelName: String, customTerms: [String] = []
+  ) async throws -> String {
     let resolvedLanguage = language.trimmingCharacters(in: .whitespacesAndNewlines)
-    let decodeOptions = DecodingOptions(
+    var decodeOptions = DecodingOptions(
       task: .transcribe,
       language: resolvedLanguage.isEmpty ? nil : resolvedLanguage
     )
 
     let pipeline = try await pipeline(modelName: modelName)
+
+    // Bias the decoder toward configured Eigennamen (names / foreign terms) via a conditioning
+    // prompt, so local transcription gets the same vocabulary hint the remote path already uses.
+    if !customTerms.isEmpty, let tokenizer = pipeline.tokenizer {
+      let promptText = " " + customTerms.joined(separator: ", ")
+      let promptTokens = tokenizer.encode(text: promptText)
+        .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+      if !promptTokens.isEmpty {
+        decodeOptions.usePrefillPrompt = true
+        decodeOptions.promptTokens = Array(promptTokens.prefix(200))
+      }
+    }
+
     let results = try await pipeline.transcribe(
       audioPath: audioURL.path,
       decodeOptions: decodeOptions

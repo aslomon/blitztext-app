@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Local Model Manager & Window**: Standalone UI for Ollama model discovery, download, and lifecycle management
+  - **LocalModelManager**: Orchestrates Ollama connectivity, installed model inventory, and download/delete operations
+  - **LocalModelsWindowController**: Resizable standalone window (separate from popover) accessible via "Modelle verwalten & laden …" button
+  - **System Info Card**: Displays user's hardware (chip, RAM, free storage) with intelligent model recommendations based on available memory
+  - **Model Catalog**: Browsable library of 30+ curated models (gemma3, qwen3, llama3.2, llama3.1, phi4, mistral, deepseek-r1, 1B–30B variants) with:
+    - Download size per model, estimated RAM footprint
+    - Suitability badges (Passt locker / Knapp / Zu groß) based on system memory
+    - Live download progress (% per layer) with cancel button
+    - Installed model deletion with verification
+  - **Freetext Model Input**: Support for arbitrary Ollama tags (e.g., `llama3.1:70b`) beyond curated catalog
+  - **Ollama Connectivity**: Honest status messaging and "Ollama öffnen" button when Ollama is offline
+  - **OllamaService Expansion**:
+    - `pull(tag, onProgress:)`: Stream-based model downloads with task cancellation support
+    - `delete(tag)`: Model deletion endpoint
+    - `installedModelsDetailed()`: Fetch installed models with on-disk sizes and parameter/quantization metadata
+    - Long-lived `transferSession` (6h timeout) for downloads and deletes separate from status polling
+    - `InstalledModel` struct with `sizeBytes`, `parameterSize`, `quantization` for UI display
+    - `PullProgress` struct for streaming progress updates
+    - `OllamaTransferError` for pull/delete-specific error handling
 - **Phase 1 – Code-signing & Accessibility**: Robust self-signed code-signing with stable identity support and stale-grant detection
   - **AccessibilityPermissionService**: Enhanced monitoring system with transition-only notifications (no spurious re-fires)
     - `startMonitoring(onChange:)` + `stopMonitoring()`: Low-frequency timer + workspace app-activation listener for grant state changes
@@ -43,9 +62,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **RecordingPillView**: Complete visual redesign for minimalist elegance
+  - Removed "Aufnahme" text label entirely for cleaner interface
+  - **Pulsing accent dot** replaces static indicator: gentle breathing scale+opacity animation (1.1s cycle, ±25% scale, ±30% opacity)
+  - **Center-mirrored waveform** (PillWaveformView): 22 thin bars rendered on Canvas, mirrored horizontally from center axis with edge-fade and per-mode accent color for live audio feedback
+  - Improved hover affordances: asymmetric insertion/removal transitions (scale 0.92 for waveform, 0.88 for buttons), refined button styling (hairline-ring borders, adjusted opacity)
+  - Enhanced color refinement: affordance button tint changed from `.secondary` to `Color.primary.opacity(0.55)` for better visual hierarchy
+- **RecordingPillController**: Fixed NSHostingView sizing issue where pill was invisible due to zero-size collapse
+  - Changed from `translatesAutoresizingMaskIntoConstraints = false` (had no constraints, causing collapse) to `sizingOptions = [.minSize, .intrinsicContentSize]`
+  - AppKit now respects SwiftUI's intrinsic content size for proper layout
+  - Added screen fallback (`NSScreen.main ?? NSScreen.screens.first`) for edge-case multi-screen scenarios
+  - Added comprehensive logging via `pillLogger` for debugging panel visibility and frame issues
+- **AppState.swift**:
+  - Added `localModelManager` property to back the standalone "Lokale Modelle" window
+  - Added `.openLocalModelsWindow` notification name for communicating window open requests
+- **BlitztextMacApp.swift**:
+  - Instantiated `localModelsWindowController` in AppDelegate to manage the model manager window
+  - Added notification observer for `.openLocalModelsWindow` to show the model manager window and close popover
+- **ModeCardView.swift**:
+  - Added "Modelle verwalten & laden …" button in `LocalLLMModelPicker` that posts `.openLocalModelsWindow` notification
+  - Button uses blue accent color and subtle button style for consistent UI presentation
 - **WorkflowProtocol.swift**: Extended with AppSettings support and mode management (`modes` property, `updateMode` handling); added `onRun` callback for archive ingestion; added `audioLevel` property for microphone level feedback
 - **AppDelegate**: Integrated RecordingPillController for floating recording UI; wired status change callbacks to update pill visibility and state
-- **AppState.swift**: Major refactoring to support mode infrastructure and Phase 4 Memory/Archive
+- **AppState.swift** (earlier phase): Major refactoring to support mode infrastructure and Phase 4 Memory/Archive
   - Added mode state management and migrations
   - Integrated provider factory with backend gating
   - Implemented selection context capture

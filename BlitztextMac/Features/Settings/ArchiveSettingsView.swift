@@ -13,9 +13,19 @@ struct ArchiveSettingsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
+      Text(
+        "Privatsphäre zuerst: Alles hier ist opt-in, standardmäßig aus und bleibt on-device. "
+          + "Das Archiv speichert nur Text; Memory leitet daraus dein Vokabular ab."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+
       archiveSection
       Divider().opacity(0.5)
       memorySection
+      Divider().opacity(0.5)
+      improvementSection
     }
     .padding(16)
   }
@@ -43,40 +53,68 @@ struct ArchiveSettingsView: View {
 
       if appState.isArchiveEnabled {
         archiveList
+      } else {
+        EmptyStateCard(
+          icon: "archivebox",
+          title: "Archiv ist aus",
+          caption:
+            "Es wird nichts gespeichert. Aktiviere das Archiv, um Transkriptionen on-device "
+            + "festzuhalten und Memory zu speisen.",
+          accent: .primary
+        )
       }
+
+      // Always reachable — opens the full window (Verlauf · Diktate · Kontext · Verbesserungen).
+      // Crucially this works even with the archive OFF/empty, so its off-state + facets are
+      // discoverable (and the user learns what to enable) instead of being a hidden dead end.
+      openArchiveWindowButton
     }
   }
 
+  private var openArchiveWindowButton: some View {
+    HStack {
+      Button("Archiv-Fenster öffnen …") {
+        NotificationCenter.default.post(name: .openArchiveWindow, object: nil)
+      }
+      .font(.system(size: 10, weight: .medium))
+      .buttonStyle(SubtleButtonStyle())
+      .foregroundStyle(.blue)
+      Spacer()
+    }
+    .padding(.top, 2)
+  }
+
+  /// Inline condensed list: only the newest few entries, with a button that opens the full
+  /// archive in its own standalone window. The full list lives in `ArchiveWindowView`.
+  private static let inlinePreviewLimit = 3
+
   @ViewBuilder
   private var archiveList: some View {
-    let grouped = appState.archiveStore.entriesByDay()
+    let all = appState.archiveStore.entries
+    let preview = Array(all.prefix(Self.inlinePreviewLimit))
 
-    if grouped.isEmpty {
+    if preview.isEmpty {
       Text("Noch keine Einträge. Neue Transkriptionen erscheinen hier nach Tag.")
         .font(.system(size: 10.5))
         .foregroundStyle(.secondary)
         .padding(.top, 2)
     } else {
-      VStack(alignment: .leading, spacing: 12) {
-        ForEach(grouped, id: \.day) { group in
-          VStack(alignment: .leading, spacing: 6) {
-            Text(dayHeader(for: group.day))
-              .font(.system(size: 10, weight: .semibold))
-              .foregroundStyle(.secondary)
-
-            VStack(spacing: 6) {
-              ForEach(group.entries) { entry in
-                ArchiveEntryRow(
-                  entry: entry,
-                  displayName: appState.displayName(for: entry.mode),
-                  onDelete: { appState.archiveStore.delete(entry.id) }
-                )
-              }
-            }
+      VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 6) {
+          ForEach(preview) { entry in
+            ArchiveEntryRow(
+              entry: entry,
+              appState: appState,
+              showActions: false,
+              onDelete: { appState.archiveStore.delete(entry.id) }
+            )
           }
         }
 
-        clearArchiveButton
+        HStack {
+          Spacer()
+          clearArchiveButton
+        }
       }
       .padding(.top, 4)
     }
@@ -85,24 +123,23 @@ struct ArchiveSettingsView: View {
   private var clearArchiveButton: some View {
     HStack {
       Spacer()
-      if showClearArchiveConfirm {
-        Button("Abbrechen") { showClearArchiveConfirm = false }
-          .font(.system(size: 10, weight: .medium))
-          .buttonStyle(SubtleButtonStyle())
-          .foregroundStyle(.secondary)
-        Button("Wirklich löschen") {
-          appState.clearArchive()
-          showClearArchiveConfirm = false
-        }
+      Button("Archiv löschen") { showClearArchiveConfirm = true }
         .font(.system(size: 10, weight: .medium))
         .buttonStyle(SubtleButtonStyle())
         .foregroundStyle(.red)
-      } else {
-        Button("Archiv löschen") { showClearArchiveConfirm = true }
-          .font(.system(size: 10, weight: .medium))
-          .buttonStyle(SubtleButtonStyle())
-          .foregroundStyle(.red)
-      }
+        .accessibilityLabel("Archiv löschen")
+        .confirmationDialog(
+          "Archiv löschen?",
+          isPresented: $showClearArchiveConfirm,
+          titleVisibility: .visible
+        ) {
+          Button("Löschen", role: .destructive) { appState.clearArchive() }
+          Button("Abbrechen", role: .cancel) {}
+        } message: {
+          Text(
+            "Alle archivierten Transkriptionen werden on-device entfernt. Das lässt sich nicht rückgängig machen."
+          )
+        }
     }
   }
 
@@ -126,6 +163,7 @@ struct ArchiveSettingsView: View {
       )
       .toggleStyle(.switch)
       .controlSize(.small)
+      .disabled(!appState.isArchiveEnabled)
 
       Text(
         "Leitet on-device wiederkehrende Namen, Fachbegriffe und Fremdwörter aus deinem "
@@ -135,6 +173,12 @@ struct ArchiveSettingsView: View {
       .font(.system(size: 10.5))
       .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
+
+      if !appState.isArchiveEnabled {
+        Text("Zuerst Archiv aktivieren.")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+      }
 
       if appState.isMemoryContextEnabled {
         HStack(spacing: 8) {
@@ -151,10 +195,25 @@ struct ArchiveSettingsView: View {
           }
         }
 
+        memoryEmptyStateLine
         suggestionsBlock
         confirmedBlock
         clearMemoryButton
       }
+    }
+  }
+
+  /// Shown when Memory is on but nothing has surfaced yet — keeps the section from looking broken.
+  @ViewBuilder
+  private var memoryEmptyStateLine: some View {
+    if appState.memorySuggestions.isEmpty && appState.memoryConfirmedTerms.isEmpty {
+      Text(
+        "Noch keine Begriffe gefunden. Nimm etwas auf und tippe „Jetzt analysieren“, "
+          + "um Vorschläge aus deinem Archiv zu erzeugen."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
 
@@ -164,7 +223,7 @@ struct ArchiveSettingsView: View {
 
     if !suggestions.isEmpty {
       VStack(alignment: .leading, spacing: 10) {
-        Text("Vorschläge")
+        Text("Vorschläge (\(suggestions.count))")
           .font(.system(size: 10, weight: .semibold))
           .foregroundStyle(.secondary)
 
@@ -198,7 +257,7 @@ struct ArchiveSettingsView: View {
 
     if !confirmed.isEmpty {
       VStack(alignment: .leading, spacing: 6) {
-        Text("Bestätigt — fließt als Kontext in deine Modi")
+        Text("Bestätigt (\(confirmed.count)) — fließt als Kontext in deine Modi")
           .font(.system(size: 10, weight: .semibold))
           .foregroundStyle(.secondary)
 
@@ -217,24 +276,94 @@ struct ArchiveSettingsView: View {
   private var clearMemoryButton: some View {
     HStack {
       Spacer()
-      if showClearMemoryConfirm {
-        Button("Abbrechen") { showClearMemoryConfirm = false }
-          .font(.system(size: 10, weight: .medium))
-          .buttonStyle(SubtleButtonStyle())
-          .foregroundStyle(.secondary)
-        Button("Wirklich löschen") {
-          appState.clearMemory()
-          showClearMemoryConfirm = false
-        }
+      Button("Memory löschen") { showClearMemoryConfirm = true }
         .font(.system(size: 10, weight: .medium))
         .buttonStyle(SubtleButtonStyle())
         .foregroundStyle(.red)
-      } else {
-        Button("Memory löschen") { showClearMemoryConfirm = true }
-          .font(.system(size: 10, weight: .medium))
-          .buttonStyle(SubtleButtonStyle())
-          .foregroundStyle(.red)
+        .accessibilityLabel("Memory löschen")
+        .confirmationDialog(
+          "Memory löschen?",
+          isPresented: $showClearMemoryConfirm,
+          titleVisibility: .visible
+        ) {
+          Button("Löschen", role: .destructive) { appState.clearMemory() }
+          Button("Abbrechen", role: .cancel) {}
+        } message: {
+          Text(
+            "Alle abgeleiteten und bestätigten Begriffe werden entfernt. Das lässt sich nicht rückgängig machen."
+          )
+        }
+    }
+  }
+
+  // MARK: - Improvement detection (MEM-2, experimental)
+
+  /// Opt-in "Verbesserungs-Erkennung": re-reads the field after a paste to learn from manual
+  /// corrections. PRIVACY-SENSITIVE → gated on the archive opt-in, default OFF, clearly labeled.
+  private var improvementSection: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      SectionLabel(text: "Verbesserungen erkennen")
+
+      Toggle(
+        "Verbesserungen erkennen (experimentell)",
+        isOn: $appState.isImprovementDetectionEnabled
+      )
+      .toggleStyle(.switch)
+      .controlSize(.small)
+      .disabled(!appState.isArchiveEnabled)
+
+      Text(
+        "Liest nach dem Einfügen den Feldinhalt erneut, um aus deinen Korrekturen zu lernen. "
+          + "Bleibt lokal."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+
+      improvementSuggestionsNudge
+
+      // When detection is ON but nothing has been mined yet, say where results will appear so the
+      // feature doesn't read as "advertised but empty" (the popover shows no inline list by design).
+      if appState.isImprovementDetectionEnabled, appState.improvementSuggestions.isEmpty {
+        Text(
+          "Erkannte Korrekturen und Lern-Vorschläge erscheinen im Archiv-Fenster unter Verbesserungen."
+        )
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       }
+
+      if !appState.isArchiveEnabled {
+        Text("Zuerst Archiv aktivieren.")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  /// Discoverability nudge for MEM-2b: the mined "Lern-Vorschläge" only live in the standalone
+  /// archive window's Verbesserungen facet, so surface their count here with a one-tap jump.
+  @ViewBuilder
+  private var improvementSuggestionsNudge: some View {
+    let count = appState.improvementSuggestions.count
+    if count > 0 {
+      Button {
+        NotificationCenter.default.post(name: .openArchiveWindow, object: nil)
+      } label: {
+        HStack(spacing: 6) {
+          Image(systemName: "wand.and.stars")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.blue)
+          Text(
+            count == 1
+              ? "1 neuer Lern-Vorschlag — ansehen"
+              : "\(count) neue Lern-Vorschläge — ansehen"
+          )
+          .font(.system(size: 10.5, weight: .medium))
+          .foregroundStyle(.blue)
+        }
+      }
+      .buttonStyle(SubtleButtonStyle())
     }
   }
 
@@ -251,102 +380,6 @@ struct ArchiveSettingsView: View {
   }
 }
 
-// MARK: - Archive entry row (raw -> final on disclosure)
-
-private struct ArchiveEntryRow: View {
-  let entry: ArchiveEntry
-  let displayName: String
-  let onDelete: () -> Void
-
-  @State private var expanded = false
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Button {
-        withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
-      } label: {
-        HStack(spacing: 8) {
-          Circle()
-            .fill(entry.mode.accentColorValue)
-            .frame(width: 6, height: 6)
-
-          VStack(alignment: .leading, spacing: 1) {
-            Text(displayName)
-              .font(.system(size: 11.5, weight: .semibold))
-              .foregroundStyle(.primary)
-            Text(timeLabel)
-              .font(.system(size: 10))
-              .foregroundStyle(.secondary)
-          }
-
-          Spacer()
-
-          Image(systemName: expanded ? "chevron.up" : "chevron.down")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(.tertiary)
-        }
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(SubtleButtonStyle())
-
-      if !expanded {
-        Text(entry.finalText)
-          .font(.system(size: 10.5))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.tail)
-      } else {
-        VStack(alignment: .leading, spacing: 8) {
-          labelledText(label: "Roh", text: entry.rawTranscript)
-          if entry.finalText != entry.rawTranscript {
-            labelledText(label: "Endtext", text: entry.finalText)
-          }
-          HStack {
-            Spacer()
-            Button {
-              onDelete()
-            } label: {
-              Image(systemName: "trash")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.red.opacity(0.85))
-            }
-            .buttonStyle(SubtleButtonStyle())
-          }
-        }
-        .padding(.top, 2)
-      }
-    }
-    .padding(10)
-    .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
-    )
-  }
-
-  private func labelledText(label: String, text: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(label.uppercased())
-        .font(.system(size: 9, weight: .medium))
-        .foregroundStyle(.tertiary)
-      Text(text.isEmpty ? "—" : text)
-        .font(.system(size: 11))
-        .foregroundStyle(.primary)
-        .textSelection(.enabled)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  private var timeLabel: String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "de_DE")
-    formatter.dateFormat = "HH:mm"
-    let time = formatter.string(from: entry.date)
-    let duration = String(format: "%.0f s", entry.durationSec)
-    return "\(time) · \(duration)"
-  }
-}
-
 // MARK: - Memory chips
 
 /// A suggested candidate: leading "+" confirms (append to confirmed), trailing "x" denies.
@@ -354,6 +387,8 @@ private struct SuggestionChip: View {
   let candidate: MemoryCandidate
   let onConfirm: () -> Void
   let onDeny: () -> Void
+
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     HStack(spacing: 4) {
@@ -383,8 +418,9 @@ private struct SuggestionChip: View {
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 4)
-    .background(Capsule().fill(Color(nsColor: .controlBackgroundColor)))
-    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.04), lineWidth: 0.5))
+    .background(Capsule().fill(MenuBarTokens.cardFill(colorScheme: colorScheme)))
+    .overlay(
+      Capsule().strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5))
   }
 }
 
@@ -392,6 +428,8 @@ private struct SuggestionChip: View {
 private struct ConfirmedChip: View {
   let term: MemoryConfirmedTerm
   let onRemove: () -> Void
+
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     HStack(spacing: 3) {
@@ -411,22 +449,12 @@ private struct ConfirmedChip: View {
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 4)
-    .background(Capsule().fill(Color.green.opacity(0.10)))
-    .overlay(Capsule().strokeBorder(Color.green.opacity(0.18), lineWidth: 0.5))
+    .background(Capsule().fill(MenuBarTokens.tintFill(.green, colorScheme: colorScheme)))
+    .overlay(
+      Capsule().strokeBorder(
+        MenuBarTokens.tintStroke(.green, colorScheme: colorScheme), lineWidth: 0.5)
+    )
   }
 }
 
-// MARK: - Mode accent color
-
-extension WorkflowType {
-  /// The mode accent as a SwiftUI Color (DESIGN.md per-mode palette).
-  var accentColorValue: Color {
-    switch self {
-    case .transcription: return .blue
-    case .localTranscription: return .green
-    case .textImprover: return .purple
-    case .dampfAblassen: return .orange
-    case .emojiText: return .cyan
-    }
-  }
-}
+// accentColorValue is defined in MenuBarStyle.swift

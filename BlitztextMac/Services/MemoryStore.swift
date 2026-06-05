@@ -63,11 +63,16 @@ struct MemoryCandidate: Codable, Identifiable, Sendable {
 struct MemoryConfirmedTerm: Codable, Identifiable, Sendable, Hashable {
   var id: String { term.lowercased() }
   var term: String
+  /// The base (lemma) form this confirmation came from. Used to dedupe suggestions, which are keyed
+  /// by lemma — otherwise an inflected confirmation (surfaceForm "Herrn" / lemma "Herr") keeps
+  /// reappearing as a candidate. Optional so legacy memory.json files decode (missing key → nil).
+  var lemma: String?
   var category: MemoryCategory
   var addedAt: Date
 
-  init(term: String, category: MemoryCategory, addedAt: Date = Date()) {
+  init(term: String, lemma: String? = nil, category: MemoryCategory, addedAt: Date = Date()) {
     self.term = term
+    self.lemma = lemma
     self.category = category
     self.addedAt = addedAt
   }
@@ -155,12 +160,16 @@ final class MemoryStore {
   /// confirmed and not denied. Highest score first.
   var suggestions: [MemoryCandidate] {
     let confirmedIDs = Set(snapshot.confirmed.map { $0.id })
+    // Candidates are keyed by lemma; confirmations store the (possibly inflected) surface form, so
+    // also dedupe against confirmed LEMMAs to stop an already-confirmed term reappearing.
+    let confirmedLemmas = Set(snapshot.confirmed.compactMap { $0.lemma?.lowercased() })
     let denied = Set(snapshot.denylist.map { $0.lowercased() })
     return
       snapshot.candidates
       .filter {
         $0.docFrequency >= Self.suggestionMinDocFrequency
           && !confirmedIDs.contains($0.id)
+          && !confirmedLemmas.contains($0.lemma.lowercased())
           && !denied.contains($0.lemma.lowercased())
       }
       .sorted { $0.score > $1.score }
@@ -212,13 +221,21 @@ final class MemoryStore {
 
   /// Promote a candidate (or arbitrary term) into the confirmed/injected set.
   func confirm(_ candidate: MemoryCandidate) {
-    confirm(term: candidate.surfaceForm, category: candidate.category)
+    confirm(term: candidate.surfaceForm, lemma: candidate.lemma, category: candidate.category)
   }
 
   func confirm(term: String, category: MemoryCategory) {
+    confirm(term: term, lemma: term, category: category)
+  }
+
+  func confirm(term: String, lemma: String, category: MemoryCategory) {
     let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
-    let entry = MemoryConfirmedTerm(term: trimmed, category: category)
+    let entry = MemoryConfirmedTerm(
+      term: trimmed,
+      lemma: lemma.trimmingCharacters(in: .whitespacesAndNewlines),
+      category: category
+    )
     if !snapshot.confirmed.contains(where: { $0.id == entry.id }) {
       snapshot.confirmed.append(entry)
     }

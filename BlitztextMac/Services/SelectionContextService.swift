@@ -7,7 +7,8 @@ import ApplicationServices
 @MainActor
 enum SelectionContextService {
   private static let maxSelectedChars = 4000
-  private static let maxSurroundingChars = 1500
+  // DR-4: cursor-relatives Fenster statt ganzes Feld — kleineres Budget aus Datenschutzgründen.
+  static let maxSurroundingChars = 600
 
   /// Captures the current selection synchronously. Call while the target app is still frontmost.
   static func capture() -> SelectionContext? {
@@ -17,10 +18,13 @@ enum SelectionContextService {
     guard let focused = copyElement(systemWide, kAXFocusedUIElementAttribute) else { return nil }
 
     let selected = copyString(focused, kAXSelectedTextAttribute)
-    let surrounding = copyString(focused, kAXValueAttribute)
+    let fullText = copyString(focused, kAXValueAttribute)
+    let selectedRange = copySelectedRange(focused)
 
     let selectedText = clamp(selected, to: maxSelectedChars)
-    let surroundingText = clamp(surrounding, to: maxSurroundingChars)
+    // DR-4: nur ein Fenster um den Cursor/die Auswahl senden, nicht das ganze Feld.
+    let surroundingText = surroundingWindow(
+      fullText: fullText, selectedRange: selectedRange, maxChars: maxSurroundingChars)
 
     let context = SelectionContext(
       selectedText: selectedText,
@@ -30,7 +34,68 @@ enum SelectionContextService {
     return context.isEmpty ? nil : context
   }
 
+  // MARK: - Windowing (testbar, rein)
+
+  /// DR-4: liefert ein cursor-relatives Fenster um `selectedRange` (max. `maxChars` Zeichen,
+  /// grob zentriert auf die Auswahl). Ist die Range nil/ungültig, wird wie bisher auf die
+  /// ersten `maxChars` Zeichen zurückgefallen. Arbeitet auf der UTF-16-View, um die
+  /// `NSRange`-Semantik der Accessibility-API zu treffen, und ist gegen Out-of-Bounds gesichert.
+  static func surroundingWindow(
+    fullText: String, selectedRange: NSRange?, maxChars: Int = 600
+  ) -> String {
+    let units = Array(fullText.utf16)
+    let total = units.count
+    guard total > 0, maxChars > 0 else { return "" }
+
+    // Ungültige / fehlende Range → erste maxChars Zeichen (heutiges Verhalten, kleineres Budget).
+    guard let range = selectedRange,
+      range.location != NSNotFound,
+      range.location >= 0,
+      range.length >= 0,
+      range.location <= total
+    else {
+      return clamp(String(decoding: units.prefix(maxChars), as: UTF16.self), to: maxChars)
+    }
+
+    if total <= maxChars { return clamp(fullText, to: maxChars) }
+
+    let rangeEnd = min(range.location + range.length, total)
+    // Restbudget gleichmäßig vor/hinter die Auswahl legen, dann an die Stringgrenzen klemmen.
+    let budget = max(0, maxChars - (rangeEnd - range.location))
+    var start = range.location - budget / 2
+    var end = rangeEnd + (budget - budget / 2)
+    if start < 0 {
+      end += -start
+      start = 0
+    }
+    if end > total {
+      start -= end - total
+      end = total
+    }
+    start = max(0, start)
+    let window = String(decoding: units[start..<end], as: UTF16.self)
+    return clamp(window, to: maxChars)
+  }
+
   // MARK: - AX helpers
+
+  /// Liest `kAXSelectedTextRangeAttribute` als `NSRange`. Gibt nil zurück, wenn das Attribut
+  /// fehlt, kein `AXValue` vom Typ `.cfRange` ist oder die Extraktion scheitert. Kein Force-Unwrap.
+  private static func copySelectedRange(_ element: AXUIElement) -> NSRange? {
+    var value: CFTypeRef?
+    let result = AXUIElementCopyAttributeValue(
+      element, kAXSelectedTextRangeAttribute as CFString, &value)
+    guard result == .success, let value,
+      CFGetTypeID(value) == AXValueGetTypeID()
+    else { return nil }
+    // value ist als CFTypeRef bereits ein AXValue; getrennt prüfen wir den Wert-Typ unten.
+    let axValue = value as! AXValue
+    guard AXValueGetType(axValue) == .cfRange else { return nil }
+    var cfRange = CFRange()
+    guard AXValueGetValue(axValue, .cfRange, &cfRange) else { return nil }
+    guard cfRange.location >= 0, cfRange.length >= 0 else { return nil }
+    return NSRange(location: cfRange.location, length: cfRange.length)
+  }
 
   private static func copyElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
     var value: CFTypeRef?

@@ -1,0 +1,179 @@
+import SwiftUI
+
+/// "Kontext / Wo du diktierst" — the on-device Office-Memory overview shown in the archive window.
+/// A compact aggregate of the most-used destinations plus a short recent list. Metadata only,
+/// never the dictated text. Reuses `SettingsSection`, `MenuBarTokens` and the project type styles.
+struct PasteContextSection: View {
+  @Bindable var appState: AppState
+
+  private static let recentLimit = 8
+
+  var body: some View {
+    SettingsSection(
+      "Kontext · Wo du diktierst",
+      caption: "Lokal protokolliert (0600), nur mit dem Archiv. Kein Text — nur, wo du diktierst."
+    ) {
+      VStack(alignment: .leading, spacing: 12) {
+        if appState.pasteContexts.isEmpty {
+          emptyState
+        } else {
+          aggregate
+          recentList
+          clearButton
+        }
+      }
+    }
+  }
+
+  // MARK: - Empty state
+
+  private var emptyState: some View {
+    Text(
+      "Noch nichts protokolliert. Sobald du diktierst, erscheint hier, wo der Text gelandet ist."
+    )
+    .font(.system(size: 11))
+    .foregroundStyle(.secondary)
+    .fixedSize(horizontal: false, vertical: true)
+  }
+
+  // MARK: - Aggregate
+
+  private var aggregate: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Du diktierst meist in:")
+        .font(.system(size: 11, weight: .semibold))
+      FlowLayout(spacing: 6) {
+        ForEach(appState.topPasteContexts.prefix(6), id: \.0) { category, count in
+          CategoryChip(category: category, count: count)
+        }
+      }
+    }
+  }
+
+  // MARK: - Recent list
+
+  private var recentList: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Zuletzt")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(.secondary)
+      VStack(spacing: 6) {
+        ForEach(appState.pasteContexts.prefix(Self.recentLimit)) { context in
+          PasteContextRow(context: context)
+        }
+      }
+    }
+  }
+
+  // MARK: - Clear
+
+  private var clearButton: some View {
+    DestructiveClearButton(
+      "Verlauf löschen",
+      message:
+        "Das lokale Kontext-Protokoll (nur Metadaten — wo du diktiert hast) wird entfernt. Das lässt sich nicht rückgängig machen."
+    ) {
+      appState.clearPasteContexts()
+    }
+  }
+}
+
+// MARK: - Category chip
+
+/// Capsule chip with the category's SF symbol + German name + count. Colorscheme-aware tint.
+private struct CategoryChip: View {
+  let category: PasteContextCategory
+  let count: Int
+
+  @Environment(\.colorScheme) private var colorScheme
+
+  private var accent: Color { Color.accentColor }
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Image(systemName: category.symbolName)
+        .font(.system(size: 9, weight: .semibold))
+      Text("\(category.displayName) (\(count))")
+        .font(.system(size: 10.5, weight: .medium))
+    }
+    .foregroundStyle(.primary)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .background(
+      Capsule().fill(MenuBarTokens.tintFill(accent, colorScheme: colorScheme))
+    )
+    .overlay(
+      Capsule().strokeBorder(
+        MenuBarTokens.tintStroke(accent, colorScheme: colorScheme), lineWidth: 0.5)
+    )
+  }
+}
+
+// MARK: - Recent row
+
+/// One destination: app name + window title + a small category badge + relative time.
+private struct PasteContextRow: View {
+  let context: PasteContext
+
+  @Environment(\.colorScheme) private var colorScheme
+
+  private static let relativeFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.locale = Locale(identifier: "de_DE")
+    formatter.unitsStyle = .short
+    return formatter
+  }()
+
+  private var appLabel: String {
+    let name = (context.appName ?? "").trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? "Unbekannte App" : name
+  }
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      Image(systemName: context.category.symbolName)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .frame(width: 16)
+
+      VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 6) {
+          Text(appLabel)
+            .font(.system(size: 11.5, weight: .semibold))
+            .lineLimit(1)
+          Text(context.category.displayName)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(
+              Capsule().fill(MenuBarTokens.tintFill(.secondary, colorScheme: colorScheme))
+            )
+        }
+        if let title = context.windowTitle, !title.isEmpty {
+          Text(title)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+      }
+
+      Spacer(minLength: 6)
+
+      Text(Self.relativeFormatter.localizedString(for: context.date, relativeTo: Date()))
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .fixedSize()
+    }
+    .padding(8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 8)
+        .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 8)
+        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
+    )
+  }
+}

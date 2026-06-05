@@ -1,0 +1,247 @@
+import SwiftUI
+
+/// "Verbesserungen · was du nach dem Diktat änderst" — the on-device improvement-detection overview
+/// (MEM-2) shown in the archive window. A short recent list of corrections (app + compact
+/// before/after + relative time). PRIVACY-SENSITIVE → only meaningful when the opt-in toggle is on;
+/// renders nothing while off so it never implies data is being collected. DESIGN.md tokens.
+struct ImprovementSection: View {
+  @Bindable var appState: AppState
+
+  private static let recentLimit = 8
+
+  var body: some View {
+    if appState.isImprovementDetectionEnabled {
+      SettingsSection(
+        "Verbesserungen · was du nach dem Diktat änderst",
+        caption:
+          "Lokal protokolliert (0600). Lernt aus deinen Korrekturen — wiederkehrende schlägt es "
+          + "als festes Wörterbuch-Wort vor."
+      ) {
+        VStack(alignment: .leading, spacing: 12) {
+          if !appState.improvementSuggestions.isEmpty {
+            suggestionsBlock
+          }
+          if appState.improvementObservations.isEmpty {
+            emptyState
+          } else {
+            recentList
+            clearButton
+          }
+        }
+      }
+    }
+  }
+
+  // MARK: - Suggestions (MEM-2b)
+
+  /// Learnable replacements mined from recurring corrections. One-tap "Übernehmen" adds the pair to
+  /// the dictation dictionary; "Verwerfen" hides it for this session.
+  private var suggestionsBlock: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Lern-Vorschläge")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(.secondary)
+      Text("Wiederkehrende Korrekturen — als festes Wörterbuch-Wort übernehmen?")
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      VStack(spacing: 6) {
+        ForEach(appState.improvementSuggestions) { suggestion in
+          ImprovementSuggestionRow(
+            suggestion: suggestion,
+            onAccept: { appState.acceptImprovementSuggestion(suggestion) },
+            onDismiss: { appState.dismissImprovementSuggestion(suggestion) }
+          )
+        }
+      }
+    }
+  }
+
+  // MARK: - Empty state
+
+  private var emptyState: some View {
+    Text(
+      "Noch keine Korrekturen erkannt. Sobald du eingefügten Text im Feld änderst, erscheint die "
+        + "Verbesserung hier."
+    )
+    .font(.system(size: 11))
+    .foregroundStyle(.secondary)
+    .fixedSize(horizontal: false, vertical: true)
+  }
+
+  // MARK: - Recent list
+
+  private var recentList: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Zuletzt")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(.secondary)
+      VStack(spacing: 6) {
+        ForEach(appState.improvementObservations.prefix(Self.recentLimit)) { observation in
+          ImprovementRow(observation: observation)
+        }
+      }
+    }
+  }
+
+  // MARK: - Clear
+
+  private var clearButton: some View {
+    DestructiveClearButton(
+      "Verlauf löschen",
+      message:
+        "Alle erkannten Verbesserungen (eingefügter Text und deine Korrektur) werden on-device entfernt. Das lässt sich nicht rückgängig machen."
+    ) {
+      appState.clearImprovements()
+    }
+  }
+}
+
+// MARK: - Row
+
+/// One correction: app name + a compact before/after (truncated) + relative time. Unchanged
+/// observations are dimmed; edited ones show the diff with an arrow.
+private struct ImprovementRow: View {
+  let observation: ImprovementObservation
+
+  @Environment(\.colorScheme) private var colorScheme
+
+  private static let relativeFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.locale = Locale(identifier: "de_DE")
+    formatter.unitsStyle = .short
+    return formatter
+  }()
+
+  private var appLabel: String {
+    let name = (observation.appName ?? "").trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? "Unbekannte App" : name
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      header
+      if observation.changed {
+        beforeAfter
+      } else {
+        Text("Unverändert übernommen.")
+          .font(.system(size: 10))
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .padding(8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 8)
+        .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 8)
+        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
+    )
+  }
+
+  private var header: some View {
+    HStack(spacing: 6) {
+      Image(systemName: observation.changed ? "pencil.line" : "checkmark")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(observation.changed ? .orange : .secondary)
+      Text(appLabel)
+        .font(.system(size: 11.5, weight: .semibold))
+        .lineLimit(1)
+      Spacer(minLength: 6)
+      Text(Self.relativeFormatter.localizedString(for: observation.date, relativeTo: Date()))
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .fixedSize()
+    }
+  }
+
+  private var beforeAfter: some View {
+    // "Eingefügt" = the text Blitztext pasted; "Korrektur" = what the user changed it to. Clearer
+    // than the ambiguous "Vorher/Nachher" (it was unclear which side was Blitztext's output).
+    VStack(alignment: .leading, spacing: 2) {
+      diffLine(label: "Eingefügt", text: observation.inserted, accent: .secondary)
+      diffLine(label: "Korrektur", text: observation.finalText, accent: .primary)
+    }
+  }
+
+  private func diffLine(label: String, text: String, accent: HierarchicalShapeStyle) -> some View {
+    HStack(alignment: .top, spacing: 6) {
+      Text(label)
+        .font(.system(size: 9, weight: .medium))
+        .foregroundStyle(.tertiary)
+        .frame(width: 52, alignment: .leading)
+      Text(truncated(text))
+        .font(.system(size: 10.5))
+        .foregroundStyle(accent)
+        .lineLimit(2)
+        .truncationMode(.tail)
+    }
+  }
+
+  private func truncated(_ text: String, limit: Int = 160) -> String {
+    let collapsed = text.replacingOccurrences(of: "\n", with: " ")
+    guard collapsed.count > limit else { return collapsed }
+    return String(collapsed.prefix(limit)) + "…"
+  }
+}
+
+// MARK: - Suggestion row (MEM-2b)
+
+/// One mined replacement: "from → to (N×)" with Übernehmen / Verwerfen. Tinted distinct from the
+/// recorded-correction rows so the actionable suggestion reads as a call to action, not history.
+private struct ImprovementSuggestionRow: View {
+  let suggestion: ImprovementMiner.Suggestion
+  let onAccept: () -> Void
+  let onDismiss: () -> Void
+
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "wand.and.stars")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.blue)
+
+      HStack(spacing: 4) {
+        Text(suggestion.from)
+          .font(.system(size: 11.5, weight: .semibold))
+          .lineLimit(1)
+        Image(systemName: "arrow.right")
+          .font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(.secondary)
+        Text(suggestion.to)
+          .font(.system(size: 11.5, weight: .semibold))
+          .foregroundStyle(.blue)
+          .lineLimit(1)
+        Text("\(suggestion.count)×")
+          .font(.system(size: 9))
+          .foregroundStyle(.secondary)
+      }
+
+      Spacer(minLength: 6)
+
+      Button("Übernehmen", action: onAccept)
+        .font(.system(size: 10, weight: .medium))
+        .buttonStyle(SubtleButtonStyle())
+        .foregroundStyle(.blue)
+        .accessibilityLabel("Vorschlag übernehmen: \(suggestion.from) zu \(suggestion.to)")
+      Button("Verwerfen", action: onDismiss)
+        .font(.system(size: 10, weight: .medium))
+        .buttonStyle(SubtleButtonStyle())
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("Vorschlag verwerfen: \(suggestion.from) zu \(suggestion.to)")
+    }
+    .padding(8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 8)
+        .fill(MenuBarTokens.tintFill(.blue, colorScheme: colorScheme))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 8)
+        .strokeBorder(MenuBarTokens.tintStroke(.blue, colorScheme: colorScheme), lineWidth: 0.5)
+    )
+  }
+}

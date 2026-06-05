@@ -31,6 +31,17 @@ enum AppSupportPaths {
     appSupportDirectoryURL.appendingPathComponent("memory.json")
   }
 
+  /// On-device "Office Memory" context log (MEM-1). Metadata only — no dictated text. 0600, opt-in.
+  static var contextLogURL: URL {
+    archiveDirectoryURL.appendingPathComponent("context-log.json")
+  }
+
+  /// On-device "Verbesserungs-Erkennung" log (MEM-2). Records before → after of the user's manual
+  /// corrections to learn from them. 0600, opt-in (requires archive + improvement detection on).
+  static var improvementLogURL: URL {
+    archiveDirectoryURL.appendingPathComponent("improvement-log.json")
+  }
+
   static var whisperKitModelsDirectoryURL: URL {
     localModelsDirectoryURL.appendingPathComponent("whisperkit", isDirectory: true)
   }

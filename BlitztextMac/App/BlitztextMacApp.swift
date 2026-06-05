@@ -32,7 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     popover = NSPopover()
-    popover.contentSize = NSSize(width: 340, height: 480)
+    // Wider popover (was 340) so the 5 settings tabs + denser content read clearly.
+    popover.contentSize = NSSize(width: 410, height: 500)
     popover.behavior = .transient
     popover.delegate = self
     popover.contentViewController = NSHostingController(rootView: MenuBarView(appState: appState))

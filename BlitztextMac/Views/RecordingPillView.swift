@@ -75,52 +75,81 @@ struct RecordingPillView: View {
 
   /// Fallback card when auto-paste couldn't land: the dictated text in a scrollable, selectable area
   /// with a Copy button (and a ⌘V hint), so the result is never silently stuck on the clipboard.
+  ///
+  /// Design: three-zone card (header / body / footer) on a rounded-rect glass surface — NOT a
+  /// capsule — so the expanded layout reads cleanly. A thin `.separator`-opacity stroke traces the
+  /// card edge. The Copy action is a filled accent capsule (prominent CTA); ⌘V hint sits in muted
+  /// caption beside it. The dismiss target is a 20×20 circle with a `.tertiary`-foreground ✕.
   private var copyOnlyContent: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 0) {
+
+      // ── Header ──────────────────────────────────────────────────────────
       HStack(spacing: 6) {
-        Image(systemName: "doc.on.clipboard")
+        Image(systemName: "clipboard")
           .font(.system(size: 11, weight: .semibold))
           .foregroundStyle(accentColor)
-        Text("Konnte nicht direkt einfügen")
+        Text("Nicht eingefügt")
           .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(.primary)
         Spacer(minLength: 8)
-        Button(action: onDismiss) {
-          Image(systemName: "xmark")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .frame(width: 18, height: 18)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Schließen")
+        CopyOnlyDismissButton(action: onDismiss)
       }
+      .padding(.horizontal, 12)
+      .padding(.top, 11)
+      .padding(.bottom, 8)
 
-      ScrollView {
+      // ── Divider ─────────────────────────────────────────────────────────
+      Rectangle()
+        .fill(Color.primary.opacity(0.06))
+        .frame(height: 0.5)
+        .padding(.horizontal, 0)
+
+      // ── Body ────────────────────────────────────────────────────────────
+      ScrollView(.vertical, showsIndicators: false) {
         Text(copyOnlyText ?? "")
           .font(.system(size: 11.5))
           .foregroundStyle(.primary)
           .textSelection(.enabled)
+          .lineSpacing(2)
           .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 9)
       }
-      .frame(maxHeight: 120)
+      .frame(maxHeight: 140)
 
+      // ── Divider ─────────────────────────────────────────────────────────
+      Rectangle()
+        .fill(Color.primary.opacity(0.06))
+        .frame(height: 0.5)
+
+      // ── Footer ──────────────────────────────────────────────────────────
       HStack(spacing: 8) {
         Button {
           onCopy(copyOnlyText ?? "")
         } label: {
-          Label("Kopieren", systemImage: "doc.on.doc")
-            .font(.system(size: 10.5, weight: .medium))
+          Text("Kopieren")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(accentColor, in: Capsule())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Text kopieren")
+        .help("Text in die Zwischenablage kopieren")
+
         Text("oder ⌘V")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
-        Spacer()
+          .font(.system(size: 10.5))
+          .foregroundStyle(Color.secondary.opacity(0.75))
+
+        Spacer(minLength: 0)
       }
+      .padding(.horizontal, 12)
+      .padding(.top, 8)
+      .padding(.bottom, 10)
     }
-    .padding(12)
-    .frame(width: 300)
-    .modifier(PillGlassModifier())
+    .frame(width: 320)
+    .modifier(CardGlassModifier())
   }
 
   // MARK: - Layout
@@ -234,7 +263,7 @@ struct RecordingPillView: View {
   }
 }
 
-// MARK: - Glass Modifier
+// MARK: - Glass Modifiers
 
 /// Applies the pill's background surface.
 /// macOS 26+: native Liquid Glass capsule (the real design).
@@ -250,5 +279,62 @@ private struct PillGlassModifier: ViewModifier {
         .clipShape(Capsule(style: .continuous))
         .shadow(color: .black.opacity(0.14), radius: 8, y: 2)
     }
+  }
+}
+
+/// Applies a rounded-rect glass surface for expanded cards (copyOnly, etc.).
+/// macOS 26+: native Liquid Glass in a rounded rect (radius 14).
+/// macOS 14–25: regularMaterial + stroke border + shaped shadow.
+private struct CardGlassModifier: ViewModifier {
+  private let radius: CGFloat = 14
+
+  func body(content: Content) -> some View {
+    if #available(macOS 26.0, *) {
+      content
+        .glassEffect(.regular, in: .rect(cornerRadius: radius))
+    } else {
+      content
+        .background(
+          RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(.regularMaterial)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 16, y: 4)
+    }
+  }
+}
+
+// MARK: - Dismiss Button
+
+/// Small circular dismiss (✕) used in the copyOnly card header.
+/// Shows a subtle tinted background on hover so the hit target is visible without being heavy.
+private struct CopyOnlyDismissButton: View {
+  let action: () -> Void
+  @State private var isHovering = false
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: "xmark")
+        .font(.system(size: 9, weight: .bold))
+        .foregroundStyle(isHovering ? Color.primary.opacity(0.7) : Color.primary.opacity(0.35))
+        .frame(width: 20, height: 20)
+        .background(
+          Circle()
+            .fill(Color.primary.opacity(isHovering ? 0.1 : 0))
+        )
+        .contentShape(Circle())
+    }
+    .buttonStyle(.plain)
+    .onHover { hovering in
+      withAnimation(.easeInOut(duration: 0.12)) {
+        isHovering = hovering
+      }
+    }
+    .accessibilityLabel("Schließen")
+    .help("Schließen")
   }
 }

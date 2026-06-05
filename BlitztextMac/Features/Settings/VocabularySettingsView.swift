@@ -25,9 +25,74 @@ struct VocabularySettingsView: View {
       Divider().opacity(0.5)
       learnSection
       Divider().opacity(0.5)
+      improvementSection
+      Divider().opacity(0.5)
       DictationDictionarySection(appState: appState)
     }
     .padding(16)
+  }
+
+  // MARK: - Learn from corrections (MEM-2, moved out of Archiv)
+
+  /// Opt-in: re-reads the field after a paste to learn from your manual corrections — a vocabulary
+  /// learning mechanism, so it lives here, not in Archiv. Gated on the archive opt-in (it needs the
+  /// post-paste re-read infra).
+  private var improvementSection: some View {
+    SettingsSection(
+      "Aus deinen Korrekturen lernen",
+      caption:
+        "Liest nach dem Einfügen den Feldinhalt erneut und lernt, wie du Text danach korrigierst. "
+        + "Wiederkehrende Korrekturen schlägt es als Wörterbuch-Wort vor. Bleibt on-device."
+    ) {
+      Toggle(
+        "Verbesserungen erkennen (experimentell)",
+        isOn: $appState.isImprovementDetectionEnabled
+      )
+      .toggleStyle(.switch)
+      .controlSize(.small)
+      .disabled(!appState.isArchiveEnabled)
+
+      improvementSuggestionsNudge
+
+      if appState.isImprovementDetectionEnabled, appState.improvementSuggestions.isEmpty {
+        Text(
+          "Erkannte Korrekturen und Lern-Vorschläge erscheinen im Archiv-Fenster unter Verbesserungen."
+        )
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+
+      if !appState.isArchiveEnabled {
+        Text("Zuerst das Archiv aktivieren (Tab „Archiv“).")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var improvementSuggestionsNudge: some View {
+    let count = appState.improvementSuggestions.count
+    if count > 0 {
+      Button {
+        NotificationCenter.default.post(name: .openArchiveWindow, object: nil)
+      } label: {
+        HStack(spacing: 6) {
+          Image(systemName: "wand.and.stars")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.blue)
+          Text(
+            count == 1
+              ? "1 neuer Lern-Vorschlag — ansehen"
+              : "\(count) neue Lern-Vorschläge — ansehen"
+          )
+          .font(.system(size: 10.5, weight: .medium))
+          .foregroundStyle(.blue)
+        }
+      }
+      .buttonStyle(SubtleButtonStyle())
+    }
   }
 
   private var intro: some View {

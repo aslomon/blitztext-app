@@ -21,8 +21,6 @@ struct ArchiveSettingsView: View {
       .fixedSize(horizontal: false, vertical: true)
 
       archiveSection
-      Divider().opacity(0.5)
-      improvementSection
     }
     .padding(16)
   }
@@ -140,88 +138,6 @@ struct ArchiveSettingsView: View {
     }
   }
 
-  // MARK: - Improvement detection (MEM-2, experimental)
-
-  /// Opt-in "Verbesserungs-Erkennung": re-reads the field after a paste to learn from manual
-  /// corrections. PRIVACY-SENSITIVE → gated on the archive opt-in, default OFF, clearly labeled.
-  private var improvementSection: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      SectionLabel(text: "Verbesserungen erkennen")
-
-      Toggle(
-        "Verbesserungen erkennen (experimentell)",
-        isOn: $appState.isImprovementDetectionEnabled
-      )
-      .toggleStyle(.switch)
-      .controlSize(.small)
-      .disabled(!appState.isArchiveEnabled)
-
-      Text(
-        "Liest nach dem Einfügen den Feldinhalt erneut, um aus deinen Korrekturen zu lernen. "
-          + "Bleibt lokal."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-
-      improvementSuggestionsNudge
-
-      // When detection is ON but nothing has been mined yet, say where results will appear so the
-      // feature doesn't read as "advertised but empty" (the popover shows no inline list by design).
-      if appState.isImprovementDetectionEnabled, appState.improvementSuggestions.isEmpty {
-        Text(
-          "Erkannte Korrekturen und Lern-Vorschläge erscheinen im Archiv-Fenster unter Verbesserungen."
-        )
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-      }
-
-      if !appState.isArchiveEnabled {
-        Text("Zuerst Archiv aktivieren.")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
-      }
-    }
-  }
-
-  /// Discoverability nudge for MEM-2b: the mined "Lern-Vorschläge" only live in the standalone
-  /// archive window's Verbesserungen facet, so surface their count here with a one-tap jump.
-  @ViewBuilder
-  private var improvementSuggestionsNudge: some View {
-    let count = appState.improvementSuggestions.count
-    if count > 0 {
-      Button {
-        NotificationCenter.default.post(name: .openArchiveWindow, object: nil)
-      } label: {
-        HStack(spacing: 6) {
-          Image(systemName: "wand.and.stars")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.blue)
-          Text(
-            count == 1
-              ? "1 neuer Lern-Vorschlag — ansehen"
-              : "\(count) neue Lern-Vorschläge — ansehen"
-          )
-          .font(.system(size: 10.5, weight: .medium))
-          .foregroundStyle(.blue)
-        }
-      }
-      .buttonStyle(SubtleButtonStyle())
-    }
-  }
-
-  // MARK: - Helpers
-
-  private func dayHeader(for day: Date) -> String {
-    let calendar = Calendar.current
-    if calendar.isDateInToday(day) { return "Heute" }
-    if calendar.isDateInYesterday(day) { return "Gestern" }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "de_DE")
-    formatter.dateFormat = "EEEE, d. MMMM"
-    return formatter.string(from: day)
-  }
 }
 
 // accentColorValue is defined in MenuBarStyle.swift

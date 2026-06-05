@@ -5,7 +5,9 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 ## Tonalität
 
 - Ruhig, dicht, funktional. Deutschsprachige UI-Texte (du-Form, knapp).
-- Menüleisten-Popover, feste Breite **340pt**.
+- Menüleisten-Popover, feste Breite **410pt** (vorher 340) — mehr Luft für die 5 Settings-Tabs + dichten Inhalt.
+- Settings-Tabs (segmented): **Prompts · Modelle · Vokabular · Archiv · System**. Alles Wort-bezogene (Eigennamen, gelernte Memory-Begriffe, „aus Korrekturen lernen", Ersetzungen) lebt im **Vokabular**-Tab; **Archiv** = nur Verlauf/Statistik/Kontext.
+- Schwebende **Pille**: Kapsel-Glass (`PillGlassModifier`) für Aufnahme/Status; für die erweiterte **Copy-Karte** ein eigener `CardGlassModifier` (abgerundetes Rechteck, 14pt-Radius, tieferer Schatten) statt Kapsel — sonst „eckiger Inhalt im Pillen-Loch".
 
 ## Farben
 

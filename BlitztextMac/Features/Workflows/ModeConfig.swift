@@ -5,14 +5,14 @@ import Foundation
 /// What a slot actually DOES, independent of its user-facing name.
 /// Stored but not user-editable in this phase (the active-view downcasts in
 /// MenuBarView depend on a slot keeping its workflow class).
-enum ModeKind: String, Codable {
+enum ModeKind: String, Codable, Sendable {
   case transcribeOnly
   case transcribeThenRewrite
   case transcribeThenEmoji
 }
 
 /// Where the rewrite step runs.
-enum RewriteBackend: String, Codable, CaseIterable, Identifiable {
+enum RewriteBackend: String, Codable, Sendable, CaseIterable, Identifiable {
   case openai
   case local
 
@@ -37,7 +37,7 @@ enum RewriteBackend: String, Codable, CaseIterable, Identifiable {
 }
 
 /// How a mode incorporates the text the user has selected in the frontmost app.
-enum ReplyContextMode: String, Codable, CaseIterable, Identifiable {
+enum ReplyContextMode: String, Codable, Sendable, CaseIterable, Identifiable {
   case off
   case replyUsingContext
   case editSelection
@@ -54,7 +54,7 @@ enum ReplyContextMode: String, Codable, CaseIterable, Identifiable {
 }
 
 /// Everything that controls the optional rewrite step of a mode.
-struct RewriteConfig: Codable {
+struct RewriteConfig: Codable, Sendable {
   var systemPrompt: String = ""
   var rewriteBackend: RewriteBackend = .openai
   var modelID: String = RewriteModelRegistry.defaultModelID
@@ -117,7 +117,7 @@ struct RewriteConfig: Codable {
 // MARK: - Per-slot configuration
 
 /// A configurable, renamable mode layered over the fixed `WorkflowType` slot.
-struct ModeConfig: Codable, Identifiable {
+struct ModeConfig: Codable, Sendable, Identifiable {
   var slot: WorkflowType
   var id: String { slot.rawValue }
   var userName: String = ""
@@ -199,6 +199,26 @@ struct ModeConfig: Codable, Identifiable {
       kind: defaultKind(for: slot),
       rewrite: defaultRewrite(for: slot)
     )
+  }
+
+  // MARK: - Progressive disclosure
+
+  /// True when any "advanced" rewrite setting deviates from this slot's curated default:
+  /// a custom system prompt, or a tone / context / reply-context / memory choice that differs.
+  /// Drives the "angepasst" dot shown next to the collapsed "Erweitert" toggle in `ModeCardView`.
+  /// Pure (no SwiftUI / AppState), so it is directly unit-testable.
+  var isAdvancedNonDefault: Bool {
+    let defaults = ModeConfig.defaultRewrite(for: slot)
+    // "angepasst" = a genuinely custom prompt (non-empty AND different from the curated default —
+    // an empty/cleared prompt reverts to tone/context, so it's NOT a customization), or any
+    // tone/context/reply/memory deviation from the slot defaults.
+    let promptIsCustom =
+      !rewrite.systemPrompt.isEmpty && rewrite.systemPrompt != defaults.systemPrompt
+    return promptIsCustom
+      || rewrite.tone != defaults.tone
+      || rewrite.context != defaults.context
+      || rewrite.replyContextMode != defaults.replyContextMode
+      || rewrite.useMemoryContext != defaults.useMemoryContext
   }
 }
 

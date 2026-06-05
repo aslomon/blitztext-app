@@ -1,0 +1,266 @@
+import AppKit
+import SwiftUI
+
+// MARK: - System Settings (Tab 3: System)
+
+struct SystemSettingsView: View {
+  @Bindable var appState: AppState
+
+  @State private var launchAtLoginService = LaunchAtLoginService()
+  @State private var currentInstallLocation = BlitztextInstallLocationService.currentInstallLocation
+  @State private var installActionErrorText: String?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 20) {
+      AccessibilityPermissionSection(appState: appState)
+
+      setupSection
+
+      hotkeysSection
+
+      feedbackSection
+
+      installationAndStartSection
+
+      CleanupSection()
+    }
+    .padding(16)
+    .onAppear {
+      launchAtLoginService.refresh()
+      refreshInstallState()
+    }
+  }
+
+  // MARK: - Installation & Start (install location + login start, consolidated)
+
+  private var installationAndStartSection: some View {
+    SettingsSection(
+      "Installation & Start",
+      caption:
+        "Für direktes Einfügen und stabile Hotkeys: Blitztext einmal nach /Applications legen, "
+        + "danach Mikrofon und Bedienungshilfen erlauben."
+    ) {
+      Text(installationHeadline)
+        .font(.system(size: 11.5, weight: .semibold))
+        .foregroundStyle(.primary)
+
+      Text(installationDetail)
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      Text(BlitztextInstallLocationService.bundleURL.path)
+        .font(.system(size: 10.5, design: .monospaced))
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+
+      if !BlitztextInstallLocationService.otherInstalledBundleURLs.isEmpty {
+        Text("Weitere Blitztext-Kopien auf diesem Mac können doppelte Login-Items auslösen.")
+          .font(.system(size: 10.5))
+          .foregroundStyle(.orange)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+
+      installActionButtons
+
+      if let installActionErrorText {
+        Text(installActionErrorText)
+          .font(.system(size: 10.5))
+          .foregroundStyle(.red)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+
+      launchAtLoginRow
+    }
+  }
+
+  private var installActionButtons: some View {
+    HStack(spacing: 8) {
+      if BlitztextInstallLocationService.shouldOfferMoveToApplications {
+        Button("Nach /Applications bewegen") {
+          moveToApplications()
+        }
+        .buttonStyle(SubtleButtonStyle())
+      }
+
+      Button("Im Finder zeigen") {
+        revealInFinder(urls: [BlitztextInstallLocationService.bundleURL])
+      }
+      .buttonStyle(SubtleButtonStyle())
+
+      if !BlitztextInstallLocationService.otherInstalledBundleURLs.isEmpty {
+        Button("Weitere Kopien zeigen") {
+          revealInFinder(urls: BlitztextInstallLocationService.otherInstalledBundleURLs)
+        }
+        .buttonStyle(SubtleButtonStyle())
+      }
+    }
+  }
+
+  private var launchAtLoginRow: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Toggle(
+        "Blitztext automatisch starten",
+        isOn: Binding(
+          get: { launchAtLoginService.isEnabled },
+          set: { launchAtLoginService.setEnabled($0) }
+        )
+      )
+      .toggleStyle(.switch)
+      .controlSize(.small)
+
+      Text(launchAtLoginService.errorText ?? launchAtLoginService.helperText)
+        .font(.system(size: 10.5))
+        .foregroundStyle(
+          launchAtLoginService.errorText == nil
+            ? AnyShapeStyle(.secondary)
+            : AnyShapeStyle(.red)
+        )
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  // MARK: - Einrichtung
+
+  private var setupSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionLabel(text: "Einrichtung")
+
+      Text("Die geführte Ersteinrichtung jederzeit erneut durchlaufen.")
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      Button("Einrichtung erneut starten") {
+        NotificationCenter.default.post(name: .openOnboardingWindow, object: nil)
+      }
+      .buttonStyle(SubtleButtonStyle())
+    }
+  }
+
+  // MARK: - Akustisches Feedback
+
+  private var feedbackSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionLabel(text: "Akustisches Feedback")
+
+      Toggle(
+        "Töne bei Start, Fertig und Fehler",
+        isOn: $appState.appSettings.soundFeedbackEnabled
+      )
+      .toggleStyle(.switch)
+      .controlSize(.small)
+
+      Text(
+        "Kurze Systemtöne als Rückmeldung — praktisch für Diktate per Hintergrund-Hotkey, ohne "
+          + "hinzusehen."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+
+      if appState.appSettings.soundFeedbackEnabled {
+        HStack(spacing: 12) {
+          Text("Anhören:")
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+          Button("Start") { EarconPlayer.play(.start) }
+            .buttonStyle(SubtleButtonStyle())
+            .font(.system(size: 10.5, weight: .medium))
+          Button("Fertig") { EarconPlayer.play(.done) }
+            .buttonStyle(SubtleButtonStyle())
+            .font(.system(size: 10.5, weight: .medium))
+          Button("Fehler") { EarconPlayer.play(.error) }
+            .buttonStyle(SubtleButtonStyle())
+            .font(.system(size: 10.5, weight: .medium))
+        }
+      }
+    }
+  }
+
+  // MARK: - Tastenkürzel
+
+  private var hotkeysSection: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      SectionLabel(text: "Tastenkürzel")
+
+      VStack(spacing: 6) {
+        ForEach(WorkflowType.mainMenuCases) { type in
+          HStack {
+            Text(type.hotkeyLabel)
+              .font(.system(size: 11, design: .monospaced))
+              .foregroundStyle(.secondary)
+              .frame(width: 124, alignment: .leading)
+            Text(appState.displayName(for: type))
+              .font(.system(size: 11.5, weight: .medium))
+            Spacer()
+          }
+        }
+      }
+
+      // Mode picker
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Modus")
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
+
+        Picker("", selection: $appState.appSettings.hotkeyMode) {
+          ForEach(HotkeyMode.allCases) { mode in
+            Text(mode.displayName).tag(mode)
+          }
+        }
+        .pickerStyle(.segmented)
+      }
+    }
+  }
+
+  private var installationHeadline: String {
+    switch currentInstallLocation {
+    case .applications:
+      return "Blitztext liegt am richtigen Ort."
+    case .userApplications:
+      return "Blitztext liegt noch in ~/Applications."
+    case .outsideApplications:
+      return "Blitztext liegt noch nicht in /Applications."
+    case .unknown:
+      return "Der Installationsort konnte nicht sicher erkannt werden."
+    }
+  }
+
+  private var installationDetail: String {
+    switch currentInstallLocation {
+    case .applications:
+      if BlitztextInstallLocationService.otherInstalledBundleURLs.isEmpty {
+        return "Für stabile Login-Items und Updates nur diese Kopie weiterverwenden."
+      }
+      return "Diese Kopie ist korrekt. Zusätzliche Kopien solltest du später entfernen."
+    case .userApplications:
+      return "Für stabile Hotkeys und Login-Items sollte Blitztext nur aus /Applications laufen."
+    case .outsideApplications:
+      return
+        "Verschiebe Blitztext einmal nach /Applications, damit Anmeldestart und Hotkeys sauber bleiben."
+    case .unknown:
+      return "Öffne Blitztext möglichst direkt aus /Applications."
+    }
+  }
+
+  private func refreshInstallState() {
+    currentInstallLocation = BlitztextInstallLocationService.currentInstallLocation
+    installActionErrorText = nil
+  }
+
+  private func moveToApplications() {
+    installActionErrorText = nil
+
+    do {
+      try BlitztextInstallLocationService.moveToApplicationsAndRelaunch()
+    } catch {
+      installActionErrorText = error.localizedDescription
+    }
+  }
+
+  private func revealInFinder(urls: [URL]) {
+    guard !urls.isEmpty else { return }
+    NSWorkspace.shared.activateFileViewerSelecting(urls)
+  }
+}

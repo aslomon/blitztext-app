@@ -5,69 +5,31 @@ import SwiftUI
 /// ONE page for everything word-related, grouped by INTENT instead of being scattered across the
 /// Modelle and Archiv tabs as three overlapping mechanisms:
 ///  1. "Richtig erkennen" — known words Whisper should hear + spell correctly. This MERGES the old
-///     Eigennamen (manual) and the confirmed Memory terms (learned) into ONE list, since they were
+///     Eigennamen (manual) and the auto-learned Memory terms into ONE list, since they were
 ///     functionally identical and edited in two places.
-///  2. "Aus dem Archiv lernen" — the Memory engine that proposes recurring terms to confirm.
+///  2. "Memory" — one master for vocabulary memory, semantic email memory and optional correction
+///     learning.
 ///  3. "Fest ersetzen" — the dictation dictionary (say A → write B) + spoken punctuation.
 /// The underlying stores and the term-injection pipeline are unchanged; this only unifies the UI.
 struct VocabularySettingsView: View {
   @Bindable var appState: AppState
 
-  @Environment(\.colorScheme) private var colorScheme
-
   @State private var newTerm = ""
-  @State private var showClearMemoryConfirm = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
       intro
+      identitySection
+      vocabularyExplanation
       recognizeSection
       Divider().opacity(0.5)
-      learnSection
-      Divider().opacity(0.5)
-      improvementSection
+      memorySection
       Divider().opacity(0.5)
       DictationDictionarySection(appState: appState)
     }
     .padding(16)
-  }
-
-  // MARK: - Learn from corrections (MEM-2, moved out of Archiv)
-
-  /// Opt-in: re-reads the field after a paste to learn from your manual corrections — a vocabulary
-  /// learning mechanism, so it lives here, not in Archiv. Gated on the archive opt-in (it needs the
-  /// post-paste re-read infra).
-  private var improvementSection: some View {
-    SettingsSection(
-      "Aus deinen Korrekturen lernen",
-      caption:
-        "Liest nach dem Einfügen den Feldinhalt erneut und lernt, wie du Text danach korrigierst. "
-        + "Wiederkehrende Korrekturen schlägt es als Wörterbuch-Wort vor. Bleibt on-device."
-    ) {
-      Toggle(
-        "Verbesserungen erkennen (experimentell)",
-        isOn: $appState.isImprovementDetectionEnabled
-      )
-      .toggleStyle(.switch)
-      .controlSize(.small)
-      .disabled(!appState.isArchiveEnabled)
-
-      improvementSuggestionsNudge
-
-      if appState.isImprovementDetectionEnabled, appState.improvementSuggestions.isEmpty {
-        Text(
-          "Erkannte Korrekturen und Lern-Vorschläge erscheinen im Archiv-Fenster unter Verbesserungen."
-        )
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-      }
-
-      if !appState.isArchiveEnabled {
-        Text("Zuerst das Archiv aktivieren (Tab „Archiv“).")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
-      }
+    .task {
+      await appState.localModelManager.refresh()
     }
   }
 
@@ -96,24 +58,46 @@ struct VocabularySettingsView: View {
   }
 
   private var intro: some View {
-    Text(
-      "Alles rund um Wörter an einem Ort. Begriffe richtig erkennen lassen (Namen, Marken, "
-        + "Fachbegriffe), aus deinem Archiv lernen — und feste Ersetzungen, wenn du A sagst, aber B "
-        + "geschrieben haben willst."
-    )
+    Text("Schreibweisen, gelernter Kontext und feste Ersetzungen.")
     .font(.system(size: 10.5))
     .foregroundStyle(.secondary)
     .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var vocabularyExplanation: some View {
+    InfoDisclosure("Unterschiede") {
+      VStack(alignment: .leading, spacing: 5) {
+        Text("Begriffe: Namen, Marken und Fachwörter. Sie helfen Transkription und Rewrite, Wörter korrekt zu schreiben. Sie sind keine Erinnerung an ganze Texte.")
+        Text("Memory: lernt aus deinem Archiv. Wiederkehrende Eigen- und Fachbegriffe werden automatisch normale Begriffe; bei E-Mail kann Memory zusätzlich ähnliche frühere Antworten als lokalen Hintergrund finden.")
+        Text("Wenn ein automatisch gelernter Begriff nicht passt, entfernst du ihn aus der Begriffsliste. Danach wird er nicht erneut gelernt.")
+        Text("Ersetzungen: feste Regeln wie gesagtes Wort A → geschriebener Text B. Sie werden direkt auf den transkribierten Text angewendet.")
+      }
+    }
+  }
+
+  private var identitySection: some View {
+    SettingsSection(
+      "Eigene Identität",
+      caption: "Dein Name als feste Schreibperspektive für E-Mail und Umschreiben."
+    ) {
+      TextField("Dein Name", text: $appState.appSettings.userDisplayName)
+        .textFieldStyle(.roundedBorder)
+        .font(.system(size: 11))
+
+      Text("Wird lokal gespeichert, als Schreibweise-Hinweis genutzt und im E-Mail-Modus als „Ich schreibe als …“ mitgegeben.")
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
   }
 
   // MARK: - Recognize (merged manual + memory)
 
   private var recognizeSection: some View {
     SettingsSection(
-      "Begriffe richtig erkennen",
+      "Begriffe",
       caption:
-        "Namen, Marken und Fachwörter, die korrekt gehört und geschrieben werden sollen. "
-        + "Manuell hinzugefügte und aus dem Archiv gelernte Begriffe stehen hier gemeinsam."
+        "Exakte Schreibweisen für Namen, Marken und Fachwörter."
     ) {
       let terms = appState.recognizeTerms
       if terms.isEmpty {
@@ -142,13 +126,21 @@ struct VocabularySettingsView: View {
         Button {
           addTerm()
         } label: {
-        Image(systemName: "plus.circle.fill")
-      }
+          Image(systemName: "plus.circle.fill")
+        }
         .buttonStyle(PopoverIconButtonStyle(.primary))
         .disabled(newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
       }
 
       fuzzyToggle
+
+      InfoDisclosure("Wie Begriffe genutzt werden") {
+        VStack(alignment: .leading, spacing: 5) {
+          Text("Beim Diktieren werden sie als Whisper-Hinweis mitgegeben, damit ähnlich klingende Wörter eher richtig erkannt werden.")
+          Text("Beim Umschreiben werden sie dem Sprachmodell als Schreibweisen-Liste gegeben: Wenn der Begriff vorkommt, soll er exakt so geschrieben werden.")
+          Text("Manuell hinzugefügte und automatisch gelernte Begriffe landen in derselben sichtbaren Liste.")
+        }
+      }
     }
   }
 
@@ -178,96 +170,147 @@ struct VocabularySettingsView: View {
     newTerm = ""
   }
 
-  // MARK: - Learn from archive (Memory engine)
+  // MARK: - Memory
 
-  private var learnSection: some View {
+  private var memorySection: some View {
     SettingsSection(
-      "Aus dem Archiv lernen",
-      caption:
-        "Findet on-device wiederkehrende Namen, Fachbegriffe und Fremdwörter in deinem Archiv und "
-        + "schlägt sie vor. Du bestätigst jeden Begriff selbst — bestätigte erscheinen oben."
+      "Memory",
+      action: (
+        label: "Prüfen",
+        perform: { Task { await appState.localModelManager.refresh() } }
+      )
     ) {
       HStack {
-        Toggle("Begriffe aus dem Archiv lernen", isOn: $appState.isMemoryContextEnabled)
+        Toggle("Memory aktivieren", isOn: $appState.isUnifiedMemoryEnabled)
           .toggleStyle(.switch)
           .controlSize(.small)
-          .disabled(!appState.isArchiveEnabled)
         Spacer()
+        BlitzStatusPill(state: memoryPillState, label: appState.unifiedMemoryStatusLabel)
+      }
+
+      if appState.isUnifiedMemoryEnabled {
+        InfoDisclosure("Was Memory macht") {
+          VStack(alignment: .leading, spacing: 5) {
+            Text("Vokabular-Memory: sucht im Archiv nach wiederkehrenden Namen und Fachbegriffen. Namen/Fremdwörter werden nach zwei Vorkommen übernommen, Fachbegriffe nach drei.")
+            Text("E-Mail Memory: speichert fertige E-Mail-Antworten lokal mit Embeddings und findet beim nächsten E-Mail-Modus ähnliche frühere Antworten als Hintergrund.")
+            Text("Korrekturlernen: liest nach dem Einfügen optional nochmal den Feldinhalt, um deine manuellen Korrekturen als Vorschläge zu erkennen.")
+            Text("Memory aus stoppt Lernen und Kontextsuche. Bereits gelernte Begriffe bleiben als Vokabular aktiv.")
+          }
+        }
+
+        emailMemoryStatusRow
+
         if appState.isRecomputingMemory {
           ProgressView().controlSize(.small).scaleEffect(0.7)
         }
-      }
 
-      if !appState.isArchiveEnabled {
-        Text("Zuerst das Archiv aktivieren (Tab „Archiv“).")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
-      }
-
-      if appState.isMemoryContextEnabled {
         Button("Jetzt analysieren") { appState.recomputeMemory() }
           .buttonStyle(PopoverActionButtonStyle(.primary))
           .disabled(appState.isRecomputingMemory || !appState.isArchiveEnabled)
 
-        memoryEmptyStateLine
-        suggestionsBlock
-        clearMemoryButton
+        Toggle("Aus Korrekturen lernen", isOn: $appState.isImprovementDetectionEnabled)
+          .toggleStyle(.switch)
+          .controlSize(.small)
+
+        improvementSuggestionsNudge
+        clearMemoryControls
       }
     }
   }
 
-  @ViewBuilder
-  private var memoryEmptyStateLine: some View {
-    if appState.memorySuggestions.isEmpty && appState.memoryConfirmedTerms.isEmpty {
-      Text(
-        "Noch keine Begriffe gefunden. Nimm etwas auf und tippe „Jetzt analysieren“, um Vorschläge "
-          + "aus deinem Archiv zu erzeugen."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  @ViewBuilder
-  private var suggestionsBlock: some View {
-    let suggestions = appState.memorySuggestions
-    if !suggestions.isEmpty {
-      VStack(alignment: .leading, spacing: 10) {
-        Text("Vorschläge (\(suggestions.count))")
-          .font(.system(size: 10, weight: .semibold))
+  private var emailMemoryStatusRow: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 8) {
+        Text("E-Mail Memory")
+          .font(.system(size: 11))
           .foregroundStyle(.secondary)
-
-        ForEach(MemoryCategory.allCases, id: \.self) { category in
-          let inCategory = suggestions.filter { $0.category == category }
-          if !inCategory.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-              Text(category.displayName)
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-              FlowLayout(spacing: 5) {
-                ForEach(inCategory) { candidate in
-                  SuggestionChip(
-                    candidate: candidate,
-                    onConfirm: { appState.confirmMemory(candidate) },
-                    onDeny: { appState.denyMemory(candidate) }
-                  )
-                }
-              }
-            }
-          }
-        }
+        BlitzStatusPill(state: emailMemoryPillState, label: appState.semanticEmailMemoryStatusLabel)
+        Spacer(minLength: 0)
       }
+
+      HStack(spacing: 8) {
+        Text("Embedding-Modell")
+          .font(.system(size: 10.5))
+          .foregroundStyle(.tertiary)
+        Text(appState.selectedEmbeddingModelName)
+          .font(.system(size: 11, design: .monospaced))
+          .padding(.horizontal, 7)
+          .padding(.vertical, 3)
+          .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
+      }
+
+      embeddingProgress
+
     }
+  }
+
+  @ViewBuilder
+  private var embeddingProgress: some View {
+    let modelID = appState.selectedEmbeddingModelName
+    if let pull = appState.localModelManager.pulls[modelID] {
+      VStack(alignment: .leading, spacing: 4) {
+        ProgressView(value: pull.fraction)
+        Text(pull.statusText)
+          .font(.system(size: 10.5))
+          .foregroundStyle(.secondary)
+      }
+    } else if let ollama = appState.localModelManager.ollamaInstallState {
+      VStack(alignment: .leading, spacing: 4) {
+        ProgressView(value: ollama.fraction)
+        Text(ollama.statusText)
+          .font(.system(size: 10.5))
+          .foregroundStyle(.secondary)
+      }
+    } else if let error = appState.localModelManager.lastError,
+      appState.appSettings.semanticEmailMemoryEnabled
+    {
+      Text(error)
+        .font(.system(size: 10.5))
+        .foregroundStyle(.red)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private var emailMemoryPillState: BlitzStatusPill.State {
+    if !appState.appSettings.semanticEmailMemoryEnabled { return .muted }
+    if appState.semanticEmailMemoryIsReady { return .ready }
+    if appState.semanticEmailEmbeddingIsPreparing { return .download }
+    return .warning
+  }
+
+  private var memoryPillState: BlitzStatusPill.State {
+    if !appState.isUnifiedMemoryEnabled { return .muted }
+    if appState.semanticEmailEmbeddingIsPreparing { return .download }
+    if appState.appSettings.semanticEmailMemoryEnabled, !appState.semanticEmailEmbeddingIsReady {
+      return .warning
+    }
+    return .ready
   }
 
   private var clearMemoryButton: some View {
     DestructiveClearButton(
       "Memory löschen",
       message:
-        "Alle abgeleiteten und bestätigten Begriffe werden entfernt. Das lässt sich nicht rückgängig machen."
+        "Alle automatisch gelernten Begriffe werden entfernt. Das lässt sich nicht rückgängig machen."
     ) {
       appState.clearMemory()
+    }
+  }
+
+  private var clearEmailMemoryButton: some View {
+    DestructiveClearButton(
+      "E-Mail Memory löschen",
+      message:
+        "Alle semantisch gespeicherten E-Mail-Texte werden entfernt. Das lässt sich nicht rückgängig machen."
+    ) {
+      appState.clearEmailSemanticMemory()
+    }
+  }
+
+  private var clearMemoryControls: some View {
+    HStack(spacing: 8) {
+      clearMemoryButton
+      clearEmailMemoryButton
     }
   }
 }
@@ -300,49 +343,6 @@ private struct RecognizeChip: View {
       }
       .buttonStyle(SubtleButtonStyle())
       .help("Entfernen")
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .background(Capsule().fill(MenuBarTokens.cardFill(colorScheme: colorScheme)))
-    .overlay(
-      Capsule().strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5))
-  }
-}
-
-/// A Memory suggestion: leading "+" confirms, trailing "x" denies. (Moved here from ArchiveSettings
-/// when the Memory curation UI joined the unified Vokabular page.)
-private struct SuggestionChip: View {
-  let candidate: MemoryCandidate
-  let onConfirm: () -> Void
-  let onDeny: () -> Void
-
-  @Environment(\.colorScheme) private var colorScheme
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Button {
-        withAnimation(.easeOut(duration: 0.15)) { onConfirm() }
-      } label: {
-        Image(systemName: "plus")
-          .font(.system(size: 8, weight: .bold))
-          .foregroundStyle(.green)
-      }
-      .buttonStyle(SubtleButtonStyle())
-      .help("Bestätigen")
-
-      Text(candidate.surfaceForm)
-        .font(.system(size: 10.5))
-        .foregroundStyle(.primary)
-
-      Button {
-        withAnimation(.easeOut(duration: 0.15)) { onDeny() }
-      } label: {
-        Image(systemName: "xmark")
-          .font(.system(size: 7, weight: .bold))
-          .foregroundStyle(.tertiary)
-      }
-      .buttonStyle(SubtleButtonStyle())
-      .help("Nie vorschlagen")
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 4)

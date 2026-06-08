@@ -33,6 +33,7 @@ final class TextImprovementWorkflow: Workflow {
   private let selection: SelectionContext?
   private let automaticContext: AutomaticRewriteContext?
   private let memoryContext: MemoryContext?
+  private let userIdentity: UserIdentityContext?
   private let emailMemoryLevel: SemanticEmailEnrichmentLevel
   private let emailMemoryLoader: EmailMemoryMatchLoader?
   private var processingTask: Task<Void, Never>?
@@ -50,6 +51,7 @@ final class TextImprovementWorkflow: Workflow {
     selection: SelectionContext? = nil,
     automaticContext: AutomaticRewriteContext? = nil,
     memoryContext: MemoryContext? = nil,
+    userIdentity: UserIdentityContext? = nil,
     emailMemoryLevel: SemanticEmailEnrichmentLevel = .medium,
     emailMemoryLoader: EmailMemoryMatchLoader? = nil
   ) {
@@ -65,6 +67,7 @@ final class TextImprovementWorkflow: Workflow {
     self.selection = selection
     self.automaticContext = automaticContext
     self.memoryContext = memoryContext
+    self.userIdentity = userIdentity
     self.emailMemoryLevel = emailMemoryLevel
     self.emailMemoryLoader = emailMemoryLoader
   }
@@ -187,6 +190,7 @@ final class TextImprovementWorkflow: Workflow {
           selection: selection,
           automaticContext: automaticContext,
           memory: memoryContext,
+          userIdentity: userIdentity,
           emailMemory: emailMemoryContext)
         let outcome = try await provider.rewrite(
           systemPrompt: systemPrompt,

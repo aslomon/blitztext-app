@@ -44,6 +44,21 @@ final class EmailMemoryPromptTests: XCTestCase {
     XCTAssertLessThan(vocabularyRange?.lowerBound ?? prompt.endIndex, emailRange?.lowerBound ?? prompt.startIndex)
   }
 
+  func testRewritePromptInjectsUserIdentityPerspective() {
+    let prompt = LLMService.rewriteSystemPrompt(
+      RewriteConfig(),
+      customTerms: [],
+      selection: nil,
+      memory: nil,
+      userIdentity: UserIdentityContext(displayName: "Jason Rinnert")
+    )
+
+    XCTAssertTrue(prompt.contains("[Schreibperspektive]"))
+    XCTAssertTrue(prompt.contains("Ich schreibe als: Jason Rinnert"))
+    XCTAssertTrue(prompt.contains("Absenderperspektive"))
+    XCTAssertTrue(prompt.contains("Erfinde keine Empfänger"))
+  }
+
   private func makeContext(
     level: SemanticEmailEnrichmentLevel,
     count: Int

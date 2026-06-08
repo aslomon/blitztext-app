@@ -24,14 +24,20 @@ enum RewriteReuse {
     kind: ModeKind,
     rewrite: RewriteConfig,
     customTerms: [String],
-    memory: MemoryContext?
+    memory: MemoryContext?,
+    userIdentity: UserIdentityContext? = nil
   ) -> String {
     switch kind {
     case .transcribeThenEmoji:
       return LLMService.emojiSystemPrompt(rewrite, customTerms: customTerms)
     case .transcribeThenRewrite, .transcribeOnly:
       return LLMService.rewriteSystemPrompt(
-        rewrite, customTerms: customTerms, selection: nil, memory: memory)
+        rewrite,
+        customTerms: customTerms,
+        selection: nil,
+        memory: memory,
+        userIdentity: userIdentity
+      )
     }
   }
 }

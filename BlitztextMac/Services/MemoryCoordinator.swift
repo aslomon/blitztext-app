@@ -9,11 +9,11 @@ private let coordinatorLogger = Logger(
 /// Drives the two-speed Memory cadence (docs/MEMORY-spezifikation.md):
 /// - per-run incremental fold off the main actor (`Task.detached(.utility)`), never blocking,
 /// - a daily decay/prune pass,
-/// - a manual full recompute over the archive,
+/// - a manual full recompute over the archive, which can auto-promote recurring domain terms,
 /// - app-launch catch-up gated by an archive content hash.
 ///
-/// Candidate computation NEVER promotes to the injected set — only the user's
-/// confirm/deny (on `MemoryStore`) changes what is actually injected.
+/// Candidate computation is conservative: recurring names/foreign terms auto-promote after two
+/// documents, generic domain terms after three; denylist/manual removal always wins.
 @Observable
 @MainActor
 final class MemoryCoordinator {
@@ -65,8 +65,9 @@ final class MemoryCoordinator {
 
   // MARK: - Manual full recompute
 
-  /// Full pass over the entire archive ("Jetzt analysieren"). Rebuilds the candidate index;
-  /// confirmed/denylist (the injected set) are preserved. Extraction runs off the main actor.
+  /// Full pass over the entire archive ("Jetzt analysieren"). Rebuilds the candidate index and
+  /// auto-promotes recurring domain terms. Existing learned terms/denylist are preserved.
+  /// Extraction runs off the main actor.
   func recomputeMemory() async {
     guard !isRecomputing else { return }
     isRecomputing = true

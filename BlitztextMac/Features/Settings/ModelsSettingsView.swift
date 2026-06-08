@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Tab "Modelle": the engines that power Blitztext — "Online" (the OpenAI API key) and "Lokal" (the
 /// local Whisper transcription engine, the local Ollama rewrite model and the secure-local master
-/// switch). All word handling (Eigennamen, gelernte Begriffe, Ersetzungen) lives in the Vokabular tab.
+/// switch). Memory, vocabulary and learned terms live in the Vokabular tab.
 struct ModelsSettingsView: View {
   @Bindable var appState: AppState
   /// Reserved for cross-tab navigation from empty-state CTAs (kept for parity with Prompts tab).
@@ -48,19 +48,8 @@ struct ModelsSettingsView: View {
       onlineBand
       Divider().opacity(0.5)
       localBand
-      vocabularyPointer
     }
     .padding(16)
-  }
-
-  /// Vocabulary moved to its own "Vokabular" tab — leave a one-line pointer so anyone who looks for
-  /// Eigennamen/Wörterbuch here finds them.
-  private var vocabularyPointer: some View {
-    Text("Eigennamen, gelernte Begriffe und Ersetzungen findest du jetzt im Tab „Vokabular“.")
-      .font(.system(size: 10))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-      .padding(.top, 4)
   }
 
   // MARK: - Online band (OpenAI)
@@ -84,11 +73,7 @@ struct ModelsSettingsView: View {
   // MARK: - Local band (Whisper + Ollama + secure-local switch)
 
   private var localBand: some View {
-    SettingsSection(
-      "Lokal",
-      caption:
-        "Zwei getrennte lokale Engines: Whisper wandelt Sprache → Text, Ollama formuliert um."
-    ) {
+    SettingsSection("Lokal") {
       Toggle("Sicherer Lokaler Modus", isOn: $appState.appSettings.secureLocalModeEnabled)
         .toggleStyle(.switch)
         .controlSize(.small)
@@ -100,7 +85,6 @@ struct ModelsSettingsView: View {
 
       localTranscriptionSection
       localLLMSection
-      localEmbeddingSection
     }
   }
 
@@ -215,82 +199,9 @@ struct ModelsSettingsView: View {
   // MARK: - Lokales Sprachmodell (Ollama) — rewrite/LLM, NOT transcription
 
   private var localLLMSection: some View {
-    SettingsSection(
-      "Lokales Sprachmodell (Ollama)",
-      caption:
-        "Etwas anderes als die Transkription oben: Dieses Sprachmodell formuliert Texte um "
-        + "(E-Mail, Prompt, Social) und läuft über Ollama lokal auf diesem Mac. Kein Server, keine Cloud."
-    ) {
+    SettingsSection("Lokales Sprachmodell (Ollama)") {
       LocalLLMModelPicker(appState: appState)
     }
-  }
-
-  private var localEmbeddingSection: some View {
-    SettingsSection(
-      "Lokale Embeddings (E-Mail Memory)",
-      caption:
-        "Dieses Ollama-Modell erzeugt Vektoren für die semantische E-Mail-Memory. Speicherung bleibt separat opt-in."
-    ) {
-      HStack(spacing: 6) {
-        Image(systemName: embeddingModelReady ? "checkmark.circle.fill" : "arrow.down.circle.fill")
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(embeddingModelReady ? .green : .blue)
-        Text(embeddingStatusText)
-          .font(.system(size: 10.5))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-        Spacer(minLength: 0)
-      }
-
-      HStack(spacing: 8) {
-        Text("Embedding-Modell")
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-        TextField(
-          OllamaEmbeddingProvider.defaultModelID,
-          text: $appState.appSettings.selectedEmbeddingModelName
-        )
-        .textFieldStyle(.roundedBorder)
-        .font(.system(size: 11, design: .monospaced))
-      }
-
-      Toggle("Semantische E-Mail Memory aktivieren", isOn: $appState.appSettings.semanticEmailMemoryEnabled)
-        .toggleStyle(.switch)
-        .controlSize(.small)
-
-      Text(
-        "Erfordert Archiv und ein lokal geladenes Embedding-Modell. Speichert fertige E-Mail-Texte "
-          + "mit lokalen Vektoren für 30 Tage. Sichere Felder werden nie gespeichert."
-      )
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-
-      Button("Semantische E-Mail Memory löschen") {
-        appState.clearEmailSemanticMemory()
-      }
-      .buttonStyle(PopoverActionButtonStyle(.danger))
-      .font(.system(size: 10.5, weight: .medium))
-    }
-  }
-
-  private var selectedEmbeddingModelName: String {
-    appState.appSettings.selectedEmbeddingModelName
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-  }
-
-  private var embeddingModelReady: Bool {
-    appState.localModelManager.isInstalled(selectedEmbeddingModelName)
-  }
-
-  private var embeddingStatusText: String {
-    if selectedEmbeddingModelName.isEmpty {
-      return "Kein Embedding-Modell ausgewählt."
-    }
-    if embeddingModelReady {
-      return "„\(selectedEmbeddingModelName)“ ist lokal geladen."
-    }
-    return "„\(selectedEmbeddingModelName)“ ist noch nicht in Ollama geladen."
   }
 
 }

@@ -92,84 +92,21 @@ extension ModeCardView {
 
   @ViewBuilder
   var automaticFieldContextToggle: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Toggle("Fensterkontext automatisch lesen", isOn: bind(\.rewrite.useAutomaticFieldContext))
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .font(.system(size: 11))
-
-      if config.rewrite.useAutomaticFieldContext {
-        automaticFieldContextHint
-      }
-    }
+    Toggle("Fensterkontext automatisch lesen", isOn: bind(\.rewrite.useAutomaticFieldContext))
+      .toggleStyle(.switch)
+      .controlSize(.small)
+      .font(.system(size: 11))
   }
 
   @ViewBuilder
-  private var automaticFieldContextHint: some View {
-    if effectiveBackend == .openai {
-      Text(
-        "Liest beim Start Text aus dem aktuellen Fenster als Kontext. Bei Online-Verarbeitung wird dieser Kontext mit an die OpenAI-API gesendet."
-      )
-      .font(.system(size: 10))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-    } else {
-      Text("Liest beim Start Text aus dem aktuellen Fenster als lokalen Kontext.")
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  @ViewBuilder
-  var memoryToggle: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Toggle("Memory-Kontext nutzen", isOn: bind(\.rewrite.useMemoryContext))
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .font(.system(size: 11))
-        .disabled(!appState.isMemoryContextEnabled)
-
-      if !appState.isMemoryContextEnabled {
-        Text("Zuerst global „Memory als Kontext nutzen“ im Archiv aktivieren.")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
-      } else if config.rewrite.useMemoryContext {
-        memoryActiveHint
-      }
-    }
-  }
-
-  @ViewBuilder
-  private var memoryActiveHint: some View {
-    if effectiveBackend == .openai {
-      Text(
-        "Dein persönliches Vokabular (Namen, Fachbegriffe, Fremdwörter) wird als "
-          + "Schreibhinweis mitgesendet — bei dieser Online-Verarbeitung an die OpenAI-API."
-      )
-      .font(.system(size: 10))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-    } else {
-      Text("Dein persönliches Vokabular fließt als Schreibhinweis ein — lokal auf dem Gerät.")
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  // MARK: - Semantic E-Mail Memory
-
-  @ViewBuilder
-  var semanticEmailMemoryControls: some View {
+  var unifiedMemoryControls: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Toggle("Ähnliche E-Mails einbeziehen", isOn: bind(\.rewrite.useSemanticEmailMemory))
+      Toggle("Memory nutzen", isOn: unifiedMemoryBinding)
         .toggleStyle(.switch)
         .controlSize(.small)
         .font(.system(size: 11))
-        .disabled(!semanticEmailMemoryReady)
 
-      if config.rewrite.useSemanticEmailMemory {
+      if type == .textImprover, config.rewrite.useSemanticEmailMemory {
         Picker("", selection: bind(\.rewrite.semanticEmailEnrichmentLevel)) {
           ForEach(SemanticEmailEnrichmentLevel.allCases) { level in
             Text(level.displayName).tag(level)
@@ -178,57 +115,34 @@ extension ModeCardView {
         .pickerStyle(.segmented)
         .controlSize(.small)
       }
-
-      semanticEmailMemoryHint
     }
+  }
+
+  private var unifiedMemoryBinding: Binding<Bool> {
+    Binding(
+      get: {
+        if type == .textImprover {
+          return config.rewrite.useMemoryContext || config.rewrite.useSemanticEmailMemory
+        }
+        return config.rewrite.useMemoryContext
+      },
+      set: { value in
+        appState.updateMode(id: modeID) { mode in
+          mode.rewrite.useMemoryContext = value
+          if type == .textImprover {
+            mode.rewrite.useSemanticEmailMemory = value
+          }
+        }
+      }
+    )
   }
 
   @ViewBuilder
   var variantChoiceToggle: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Toggle("Immer zwei Versionen zeigen", isOn: bind(\.rewrite.showTwoVariants))
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .font(.system(size: 11))
-
-      if config.rewrite.showTwoVariants {
-        Text("Nach dem Umschreiben öffnet die Pille zwei Versionen. Eingefügt wird erst nach deiner Auswahl.")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-    }
-  }
-
-  private var semanticEmailMemoryReady: Bool {
-    appState.appSettings.archiveEnabled && appState.appSettings.semanticEmailMemoryEnabled
-  }
-
-  @ViewBuilder
-  private var semanticEmailMemoryHint: some View {
-    if !appState.appSettings.archiveEnabled {
-      Text("Benötigt das Archiv, weil nur archivierte E-Mail-Rewrites gelernt werden.")
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-    } else if !appState.appSettings.semanticEmailMemoryEnabled {
-      Text("Zuerst im Modelle-Tab „Semantische E-Mail Memory“ aktivieren.")
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-    } else if effectiveBackend == .openai {
-      Text(
-        "Ähnliche frühere E-Mails werden als Hintergrund mitgesendet. Sichere Felder werden nie gespeichert."
-      )
-      .font(.system(size: 10))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-    } else {
-      Text("Ähnliche frühere E-Mails werden lokal als Hintergrund genutzt.")
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
+    Toggle("Immer zwei Versionen zeigen", isOn: bind(\.rewrite.showTwoVariants))
+      .toggleStyle(.switch)
+      .controlSize(.small)
+      .font(.system(size: 11))
   }
 
   // MARK: - Footer

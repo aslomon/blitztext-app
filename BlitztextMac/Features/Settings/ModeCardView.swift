@@ -45,10 +45,6 @@ struct ModeCardView: View {
     type == .textImprover || type == .dampfAblassen
   }
 
-  var supportsSemanticEmailMemory: Bool {
-    type == .textImprover
-  }
-
   func bind<V>(_ keyPath: WritableKeyPath<ModeConfig, V>) -> Binding<V> {
     Binding(
       get: { config[keyPath: keyPath] },
@@ -263,10 +259,7 @@ struct ModeCardView: View {
         automaticFieldContextToggle
       }
       if supportsMemoryContext {
-        memoryToggle
-      }
-      if supportsSemanticEmailMemory {
-        semanticEmailMemoryControls
+        unifiedMemoryControls
       }
       if isRewriteMode {
         variantChoiceToggle

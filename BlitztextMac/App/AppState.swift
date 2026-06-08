@@ -211,41 +211,50 @@ final class AppState {
   }
 
   /// User-facing "Jetzt analysieren": full recompute of the candidate index over the archive.
-  /// The injected (confirmed) set is preserved — only suggestions change.
+  /// Recurring domain terms can auto-promote into the visible vocabulary.
   func recomputeMemory() {
     Task { await memoryCoordinator.recomputeMemory() }
   }
 
-  /// Confirmed-memory terms + the user's customTerms, ranked and capped, for the Whisper hint.
-  /// The user's own terms come first; ranked memory terms follow (best last in the joined hint).
+  /// Confirmed learned terms + the user's manual terms, ranked and capped, for the Whisper hint.
+  /// Once Memory learns a term it becomes a normal vocabulary term, so it stays active even when
+  /// the Memory master is later turned off. Remove it from "Begriffe" to stop using it.
   var effectiveCustomTerms: [String] {
     // MOST-IMPORTANT-FIRST: explicit user terms, then memory terms best-first
     // (rankedInjectionTerms is best-LAST → reverse).
-    let memoryTerms =
-      appSettings.memoryContextEnabled
-      ? memoryStore.rankedInjectionTerms().reversed().map { $0 } : []
+    let memoryTerms = memoryStore.rankedInjectionTerms().reversed().map { $0 }
     let merged = Self.mergedTerms(
-      userTerms: textImprovementSettings.customTerms, memoryTerms: memoryTerms)
+      userTerms: stableUserTerms + textImprovementSettings.customTerms, memoryTerms: memoryTerms)
     // Cap to the top-priority terms, then reverse so the best terms sit LAST in the Whisper hint
     // (whisper-1 drops the earliest tokens when the prompt overflows its budget).
     return Array(merged.prefix(MemoryStore.injectionCap)).reversed()
   }
 
   /// Terms for the REWRITE prompt (TextImprover / DampfAblassen / Emoji): the user's own terms
-  /// plus confirmed memory terms in NATURAL (most-important-first) order — NO Whisper cap+reverse.
+  /// plus confirmed learned terms in NATURAL (most-important-first) order — NO Whisper cap+reverse.
   /// The chat LLM has no 224-token budget, so capping/reversing would only drop terms pointlessly.
   var effectiveRewriteTerms: [String] {
-    let memoryTerms =
-      appSettings.memoryContextEnabled
-      ? memoryStore.rankedInjectionTerms().reversed().map { $0 } : []
+    let memoryTerms = memoryStore.rankedInjectionTerms().reversed().map { $0 }
     let merged = Self.mergedTerms(
-      userTerms: textImprovementSettings.customTerms, memoryTerms: memoryTerms)
+      userTerms: stableUserTerms + textImprovementSettings.customTerms, memoryTerms: memoryTerms)
     // Generous cap as a safety bound; the rewrite path has no tight token budget.
     return Array(merged.prefix(Self.rewriteTermsCap))
   }
 
   /// Generous upper bound for the rewrite-prompt term list (no tight token budget here).
   nonisolated static let rewriteTermsCap = 200
+
+  var userIdentityContext: UserIdentityContext? {
+    let name = appSettings.userDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else { return nil }
+    return UserIdentityContext(displayName: name)
+  }
+
+  private var stableUserTerms: [String] {
+    let name = appSettings.userDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else { return [] }
+    return [name]
+  }
 
   /// Canonical KNOWN terms for the on-device fuzzy corrector (Eigennamen + confirmed Memory terms),
   /// in natural most-important-first order. Empty when the feature is off → the corrector no-ops.
@@ -286,7 +295,7 @@ final class AppState {
 
   // MARK: - Memory curation (changes the injected set)
 
-  /// Suggestions surfaced in the archive UI (scored, recurring, not yet confirmed/denied).
+  /// Lower-confidence candidates retained for diagnostics/legacy UI; strong candidates auto-learn.
   var memorySuggestions: [MemoryCandidate] { memoryStore.suggestions }
   var memoryConfirmedTerms: [MemoryConfirmedTerm] { memoryStore.confirmed }
   var isRecomputingMemory: Bool { memoryCoordinator.isRecomputing }
@@ -301,14 +310,14 @@ final class AppState {
   // MARK: - Unified vocabulary "recognize" list (Vokabular page)
 
   /// One merged "richtig erkennen & schreiben" list for the Vokabular page: the user's manual
-  /// Eigennamen PLUS the confirmed Memory terms, deduped (manual wins), each tagged with its source.
-  /// They were functionally identical and edited in two places — this is the single surface. The
-  /// underlying stores (customTerms + memoryStore.confirmed) and the injection pipeline are unchanged.
+  /// terms PLUS automatically learned Memory terms, deduped (manual wins), each tagged with its
+  /// source.
   struct RecognizeTerm: Identifiable, Hashable {
     let id: String  // lowercased text — stable list identity
     let text: String
     let fromMemory: Bool
     let memoryID: MemoryConfirmedTerm.ID?
+    let memoryLemma: String?
   }
 
   var recognizeTerms: [RecognizeTerm] {
@@ -319,18 +328,20 @@ final class AppState {
       let key = trimmed.lowercased()
       guard !trimmed.isEmpty, !seen.contains(key) else { continue }
       seen.insert(key)
-      result.append(RecognizeTerm(id: key, text: trimmed, fromMemory: false, memoryID: nil))
+      result.append(
+        RecognizeTerm(
+          id: key, text: trimmed, fromMemory: false, memoryID: nil, memoryLemma: nil))
     }
-    // Confirmed Memory terms only when Memory is on — that's exactly when they're injected, so the
-    // list matches reality (turning Memory off hides them; the terms themselves are kept on disk).
-    if appSettings.memoryContextEnabled {
-      for confirmed in memoryConfirmedTerms {
-        let key = confirmed.term.lowercased()
-        guard !seen.contains(key) else { continue }
-        seen.insert(key)
-        result.append(
-          RecognizeTerm(id: key, text: confirmed.term, fromMemory: true, memoryID: confirmed.id))
-      }
+    // Confirmed Memory terms are now normal vocabulary: Memory can be off while already-learned
+    // terms still help transcription/rewrite spelling. Remove one here to deny it permanently.
+    for confirmed in memoryConfirmedTerms {
+      let key = confirmed.term.lowercased()
+      guard !seen.contains(key) else { continue }
+      seen.insert(key)
+      result.append(
+        RecognizeTerm(
+          id: key, text: confirmed.term, fromMemory: true, memoryID: confirmed.id,
+          memoryLemma: confirmed.lemma))
     }
     return result
   }
@@ -346,10 +357,14 @@ final class AppState {
     textImprovementSettings.customTerms.append(trimmed)
   }
 
-  /// Removes a recognize term from whichever store owns it (manual list or confirmed Memory).
+  /// Removes a recognize term from whichever store owns it. Learned terms are denylisted so they do
+  /// not immediately auto-learn again.
   func removeRecognizeTerm(_ term: RecognizeTerm) {
-    if let memoryID = term.memoryID {
-      unconfirmMemory(memoryID)
+    if term.memoryID != nil {
+      memoryStore.deny(term: term.text)
+      if let lemma = term.memoryLemma, lemma.caseInsensitiveCompare(term.text) != .orderedSame {
+        memoryStore.deny(term: lemma)
+      }
     } else {
       textImprovementSettings.customTerms.removeAll {
         $0.caseInsensitiveCompare(term.text) == .orderedSame
@@ -364,11 +379,81 @@ final class AppState {
     set { appSettings.archiveEnabled = newValue }
   }
 
+  var isSemanticEmailMemoryEnabled: Bool {
+    get { appSettings.semanticEmailMemoryEnabled }
+    set {
+      appSettings.semanticEmailMemoryEnabled = newValue
+      if newValue { prepareSemanticEmailMemory() }
+    }
+  }
+
+  var selectedEmbeddingModelName: String {
+    appSettings.selectedEmbeddingModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var semanticEmailEmbeddingIsReady: Bool {
+    !selectedEmbeddingModelName.isEmpty && localModelManager.isInstalled(selectedEmbeddingModelName)
+  }
+
+  var semanticEmailEmbeddingIsPreparing: Bool {
+    !selectedEmbeddingModelName.isEmpty
+      && (localModelManager.isRefreshing
+        || localModelManager.isPulling(selectedEmbeddingModelName)
+        || localModelManager.isPreparingOllama)
+  }
+
+  var semanticEmailMemoryIsReady: Bool {
+    appSettings.archiveEnabled && appSettings.semanticEmailMemoryEnabled && semanticEmailEmbeddingIsReady
+  }
+
+  func prepareSemanticEmailMemory() {
+    appSettings.archiveEnabled = true
+    if selectedEmbeddingModelName.isEmpty {
+      appSettings.selectedEmbeddingModelName = OllamaEmbeddingProvider.defaultModelID
+    }
+    let modelID = selectedEmbeddingModelName
+    guard !modelID.isEmpty else { return }
+    guard !localModelManager.isInstalled(modelID), !localModelManager.isPulling(modelID) else { return }
+    Task { [weak self] in
+      guard let self else { return }
+      await self.localModelManager.refresh()
+      guard !self.localModelManager.isInstalled(modelID),
+        !self.localModelManager.isPulling(modelID)
+      else {
+        return
+      }
+      self.localModelManager.prepareOllamaAndPull(modelID)
+    }
+  }
+
+  var isUnifiedMemoryEnabled: Bool {
+    get {
+      appSettings.memoryContextEnabled
+        || appSettings.semanticEmailMemoryEnabled
+        || appSettings.improvementDetectionEnabled
+    }
+    set {
+      appSettings.memoryContextEnabled = newValue
+      appSettings.semanticEmailMemoryEnabled = newValue
+      if !newValue {
+        appSettings.improvementDetectionEnabled = false
+      }
+      if newValue {
+        appSettings.archiveEnabled = true
+        runMemoryLaunchMaintenanceIfNeeded()
+        prepareSemanticEmailMemory()
+      }
+    }
+  }
+
   var isMemoryContextEnabled: Bool {
     get { appSettings.memoryContextEnabled }
     set {
       appSettings.memoryContextEnabled = newValue
-      if newValue { runMemoryLaunchMaintenanceIfNeeded() }
+      if newValue {
+        appSettings.archiveEnabled = true
+        runMemoryLaunchMaintenanceIfNeeded()
+      }
     }
   }
 
@@ -396,7 +481,10 @@ final class AppState {
   /// and only effective while the archive is on (improvement detection is a superset of archiving).
   var isImprovementDetectionEnabled: Bool {
     get { appSettings.improvementDetectionEnabled && appSettings.archiveEnabled }
-    set { appSettings.improvementDetectionEnabled = newValue }
+    set {
+      appSettings.improvementDetectionEnabled = newValue
+      if newValue { appSettings.archiveEnabled = true }
+    }
   }
 
   /// Recorded corrections, newest first — backs the "Verbesserungen" overview.
@@ -512,9 +600,24 @@ final class AppState {
   }
 
   var semanticEmailMemoryStatusLabel: String {
+    guard appSettings.semanticEmailMemoryEnabled else { return "Aus" }
     guard appSettings.archiveEnabled else { return "Archiv aus" }
-    guard appSettings.semanticEmailMemoryEnabled else { return "Memory aus" }
+    guard semanticEmailEmbeddingIsReady else {
+      return semanticEmailEmbeddingIsPreparing ? "Lädt" : "Modell fehlt"
+    }
     return "\(emailSemanticMemoryStore.records.count) Einträge"
+  }
+
+  var unifiedMemoryStatusLabel: String {
+    guard isUnifiedMemoryEnabled else { return "Aus" }
+    if semanticEmailEmbeddingIsPreparing { return "Lädt" }
+    if appSettings.semanticEmailMemoryEnabled, !semanticEmailEmbeddingIsReady {
+      return "Modell fehlt"
+    }
+    let confirmed = memoryConfirmedTerms.count
+    let emails = emailSemanticMemoryStore.records.count
+    if confirmed == 0, emails == 0 { return "Bereit" }
+    return "\(confirmed) Begriffe · \(emails) E-Mails"
   }
 
   var effectiveHotkeyConfigs: [ModeConfig.ID: HotkeyConfig] {
@@ -769,7 +872,8 @@ final class AppState {
       kind: config.kind,
       rewrite: config.rewrite,
       customTerms: effectiveRewriteTerms,
-      memory: memoryContext(for: config)
+      memory: memoryContext(for: config),
+      userIdentity: userIdentityContext
     )
 
     do {
@@ -890,7 +994,7 @@ final class AppState {
   /// the current one. A mode whose stored prompt differs from the old default (i.e. the user
   /// customized it) is left untouched. Versioned via `modesSchemaVersion` so it runs exactly once.
   private func refreshDefaultPromptsIfNeeded() {
-    let targetVersion = 3
+    let targetVersion = 4
     guard appSettings.modesSchemaVersion < targetVersion else { return }
 
     /// Bumps a mode whose stored prompt still equals ANY previous curated default to the current one.
@@ -913,8 +1017,30 @@ final class AppState {
       ],
       newDefault: ModeDefaults.promptCraftSystemPrompt)
 
+    if appSettings.modesSchemaVersion < 4 {
+      normalizeDefaultModeFeatureToggles()
+    }
+
     appSettings.modesSchemaVersion = targetVersion
     saveSettings()
+  }
+
+  private func normalizeDefaultModeFeatureToggles() {
+    for key in Array(appSettings.modes.keys) {
+      guard var config = appSettings.modes[key] else { continue }
+      switch config.slot {
+      case .textImprover:
+        config.rewrite.useAutomaticFieldContext = true
+        config.rewrite.useMemoryContext = true
+        config.rewrite.useSemanticEmailMemory = true
+      case .dampfAblassen:
+        config.rewrite.useAutomaticFieldContext = true
+        config.rewrite.useMemoryContext = true
+      case .transcription, .localTranscription, .emojiText:
+        break
+      }
+      appSettings.modes[key] = config
+    }
   }
 
   // MARK: - Custom Display Names
@@ -1100,10 +1226,11 @@ final class AppState {
         language: transcriptionSettings.language,
         backend: rewriteTranscriptionBackend,
         localModelName: selectedLocalModelName,
-        selection: selection,
-        automaticContext: automaticContext,
-        memoryContext: memoryContext(for: config),
-        emailMemoryLevel: config.rewrite.semanticEmailEnrichmentLevel,
+          selection: selection,
+          automaticContext: automaticContext,
+          memoryContext: memoryContext(for: config),
+          userIdentity: userIdentityContext,
+          emailMemoryLevel: config.rewrite.semanticEmailEnrichmentLevel,
         emailMemoryLoader: emailMemoryLoader(for: config)
       )
       configureWorkflowHandlers(workflow)
@@ -1124,8 +1251,9 @@ final class AppState {
         language: transcriptionSettings.language,
         backend: rewriteTranscriptionBackend,
         localModelName: selectedLocalModelName,
-        automaticContext: automaticContext,
-        memoryContext: memoryContext(for: config)
+          automaticContext: automaticContext,
+          memoryContext: memoryContext(for: config),
+          userIdentity: userIdentityContext
       )
       configureWorkflowHandlers(workflow)
       workflow.onVariants = { [weak self] variants in
@@ -1181,15 +1309,32 @@ final class AppState {
 
   /// Captures the user's text selection for reply/edit modes, only when that mode opts in.
   /// For `.manual` (popover) starts the live frontmost app is Blitztext itself, so we use the
-  /// snapshot taken in `prepareForPopoverPresentation` before activation; hotkey/background starts
-  /// can capture live because Blitztext (`.accessory`) never steals focus there.
+  /// snapshot taken in `prepareForPopoverPresentation` before activation. Hotkey starts prefer the
+  /// captured target PID too, because some apps/focus states can race the system-wide AX focus.
   private func captureSelectionContext(for config: ModeConfig, source: WorkflowLaunchSource)
     -> SelectionContext?
   {
     // Only the E-Mail mode exposes the reply-context control today.
     guard config.slot == .textImprover else { return nil }
     guard config.rewrite.replyContextMode != .off else { return nil }
-    return source == .manual ? pendingPopoverSelection : SelectionContextService.capture()
+    switch source {
+    case .manual:
+      if let target = activePasteTarget {
+        return SelectionContextService.capture(
+          pid: target.processIdentifier,
+          appBundleID: target.bundleIdentifier
+        ) ?? pendingPopoverSelection
+      }
+      return pendingPopoverSelection
+    case .hotkeyBackground:
+      if let target = activePasteTarget {
+        return SelectionContextService.capture(
+          pid: target.processIdentifier,
+          appBundleID: target.bundleIdentifier
+        ) ?? SelectionContextService.capture()
+      }
+      return SelectionContextService.capture()
+    }
   }
 
   /// Captures the current field text as opt-in rewrite context without requiring a selection.
@@ -1200,9 +1345,23 @@ final class AppState {
   {
     guard config.slot == .textImprover || config.slot == .dampfAblassen else { return nil }
     guard config.rewrite.useAutomaticFieldContext else { return nil }
-    if source == .manual { return pendingPopoverAutomaticContext }
     guard let target = activePasteTarget else { return nil }
+    if source == .manual {
+      return SelectionContextService.captureAutomaticFieldContext(
+        pid: target.processIdentifier,
+        appBundleID: target.bundleIdentifier,
+        appName: target.appName,
+        windowTitle: target.windowTitle,
+        isSecureField: target.isSecureField
+      ) ?? pendingPopoverAutomaticContext
+    }
     return SelectionContextService.captureAutomaticFieldContext(
+      pid: target.processIdentifier,
+      appBundleID: target.bundleIdentifier,
+      appName: target.appName,
+      windowTitle: target.windowTitle,
+      isSecureField: target.isSecureField
+    ) ?? SelectionContextService.captureAutomaticFieldContext(
       appBundleID: target.bundleIdentifier,
       appName: target.appName,
       windowTitle: target.windowTitle,
@@ -1222,7 +1381,10 @@ final class AppState {
       launchSource: source,
       config: config,
       selection: selection,
-      automaticContext: automaticContext
+      automaticContext: automaticContext,
+      targetAppName: activePasteTarget?.appName,
+      targetBundleID: activePasteTarget?.bundleIdentifier,
+      targetWindowTitle: activePasteTarget?.windowTitle
     )
     contextCaptureLogger.notice("\(diagnostic.logLine, privacy: .public)")
   }
@@ -1594,6 +1756,7 @@ final class AppState {
   }
 
   private func ingestEmailSemanticMemoryIfNeeded(_ record: ArchiveRunRecord) {
+    guard appSettings.archiveEnabled else { return }
     guard appSettings.semanticEmailMemoryEnabled else { return }
     guard record.mode == .textImprover else { return }
     let modeID = record.modeID ?? activeModeID ?? record.mode.rawValue
@@ -1677,6 +1840,7 @@ final class AppState {
   }
 
   private func emailMemoryLoader(for config: ModeConfig) -> EmailMemoryMatchLoader? {
+    guard appSettings.archiveEnabled else { return nil }
     guard appSettings.semanticEmailMemoryEnabled else { return nil }
     guard config.slot == .textImprover else { return nil }
     guard config.rewrite.useSemanticEmailMemory else { return nil }
@@ -1820,6 +1984,7 @@ final class AppState {
     else { return nil }
 
     return SelectionContextService.captureAutomaticFieldContext(
+      pid: target.processIdentifier,
       appBundleID: target.bundleIdentifier,
       appName: target.appName,
       windowTitle: target.windowTitle,

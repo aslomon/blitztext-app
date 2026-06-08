@@ -226,6 +226,8 @@ struct AppSettings: Codable, Sendable {
   var hotkeyMode: HotkeyMode = .hold
   var hotkeys: [String: HotkeyConfig] = [:]
   var hasSeenOnboarding: Bool = false
+  /// Stable local identity used as writing perspective in rewrite prompts and as a vocabulary hint.
+  var userDisplayName: String = ""
   /// Set true only when the user clicks "Fertig" in the first-run onboarding wizard. Distinct from
   /// `hasSeenOnboarding`: gates the launch auto-open so closing the window early (without "Fertig")
   /// keeps it re-opening next launch until the wizard is actually completed.
@@ -283,6 +285,7 @@ struct AppSettings: Codable, Sendable {
     hotkeyMode: HotkeyMode = .hold,
     hotkeys: [String: HotkeyConfig] = [:],
     hasSeenOnboarding: Bool = false,
+    userDisplayName: String = "",
     hasCompletedOnboarding: Bool = false,
     secureLocalModeEnabled: Bool = false,
     selectedLocalTranscriptionModelName: String = LocalTranscriptionService
@@ -303,6 +306,7 @@ struct AppSettings: Codable, Sendable {
     self.hotkeyMode = hotkeyMode
     self.hotkeys = hotkeys
     self.hasSeenOnboarding = hasSeenOnboarding
+    self.userDisplayName = userDisplayName
     self.hasCompletedOnboarding = hasCompletedOnboarding
     self.secureLocalModeEnabled = secureLocalModeEnabled
     self.selectedLocalTranscriptionModelName = selectedLocalTranscriptionModelName
@@ -324,6 +328,7 @@ struct AppSettings: Codable, Sendable {
     case hotkeyMode
     case hotkeys
     case hasSeenOnboarding
+    case userDisplayName
     case hasCompletedOnboarding
     case secureLocalModeEnabled
     case selectedLocalTranscriptionModelName
@@ -351,6 +356,8 @@ struct AppSettings: Codable, Sendable {
     hotkeys = try container.decodeIfPresent([String: HotkeyConfig].self, forKey: .hotkeys) ?? [:]
     hasSeenOnboarding =
       try container.decodeIfPresent(Bool.self, forKey: .hasSeenOnboarding) ?? false
+    userDisplayName =
+      try container.decodeIfPresent(String.self, forKey: .userDisplayName) ?? ""
     hasCompletedOnboarding =
       try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
     secureLocalModeEnabled =

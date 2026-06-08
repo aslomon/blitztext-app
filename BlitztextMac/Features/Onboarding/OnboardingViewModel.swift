@@ -1,7 +1,7 @@
 import Observation
 import SwiftUI
 
-/// Drives the 6-step first-run wizard. Owns the step cursor, the per-step advance gating, and the
+/// Drives the first-run wizard. Owns the step cursor, the per-step advance gating, and the
 /// editable example-prompt drafts that get persisted into the E-Mail and Prompt modes on advance.
 /// All persistence routes through `AppState` so the wizard never touches `settings.json` directly.
 @Observable
@@ -9,6 +9,7 @@ import SwiftUI
 final class OnboardingViewModel {
   enum OnboardingStep: Int, CaseIterable, Identifiable {
     case welcome
+    case identity
     case installLocation
     case permissions
     case processing
@@ -24,6 +25,7 @@ final class OnboardingViewModel {
     var title: String {
       switch self {
       case .welcome: return "Start"
+      case .identity: return "Identität"
       case .installLocation: return "Speicherort"
       case .permissions: return "Rechte"
       case .processing: return "Verarbeitung"
@@ -36,6 +38,7 @@ final class OnboardingViewModel {
     var systemImage: String {
       switch self {
       case .welcome: return "sparkles"
+      case .identity: return "person.text.rectangle"
       case .installLocation: return "arrow.down.app"
       case .permissions: return "hand.raised.fill"
       case .processing: return "cpu"
@@ -48,6 +51,7 @@ final class OnboardingViewModel {
     var accent: Color {
       switch self {
       case .welcome, .processing: return .blue
+      case .identity: return .indigo
       case .installLocation, .permissions: return .orange
       case .models, .finish: return .green
       case .modes: return .purple
@@ -113,6 +117,9 @@ final class OnboardingViewModel {
     switch step {
     case .welcome, .installLocation, .permissions, .modes, .finish:
       return true
+    case .identity:
+      return !appState.appSettings.userDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        .isEmpty
     case .processing:
       return appState.appSettings.secureLocalModeEnabled || isOpenAIKeyConfigured()
     case .models:

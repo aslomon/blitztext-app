@@ -118,6 +118,89 @@ final class MemoryInjectionCapTests: XCTestCase {
     XCTAssertEqual(store.confirmed.count, 1)
   }
 
+  // MARK: - Auto vocabulary
+
+  func testNamesAutoConfirmAfterTwoDocuments() {
+    let store = makeStore()
+    let term = ExtractedTerm(lemma: "Rinnert", surfaceForm: "Rinnert", category: .name)
+
+    store.fold(extracted: [term], at: Date(timeIntervalSince1970: 1))
+    XCTAssertTrue(store.confirmed.isEmpty)
+
+    store.fold(extracted: [term], at: Date(timeIntervalSince1970: 2))
+    XCTAssertEqual(store.confirmed.map(\.term), ["Rinnert"])
+  }
+
+  func testGenericTermsAutoConfirmAfterThreeDocuments() {
+    let store = makeStore()
+    let term = ExtractedTerm(lemma: "Kubernetes", surfaceForm: "Kubernetes", category: .term)
+
+    store.fold(extracted: [term], at: Date(timeIntervalSince1970: 1))
+    store.fold(extracted: [term], at: Date(timeIntervalSince1970: 2))
+    XCTAssertTrue(store.confirmed.isEmpty)
+
+    store.fold(extracted: [term], at: Date(timeIntervalSince1970: 3))
+    XCTAssertEqual(store.confirmed.map(\.term), ["Kubernetes"])
+  }
+
+  func testCommonTermsDoNotAutoConfirm() {
+    let store = makeStore()
+    let term = ExtractedTerm(lemma: "Termin", surfaceForm: "Termin", category: .term)
+
+    for offset in 0..<5 {
+      store.fold(extracted: [term], at: Date(timeIntervalSince1970: Double(offset)))
+    }
+
+    XCTAssertTrue(store.confirmed.isEmpty)
+  }
+
+  func testHighFrequencyGermanWordsDoNotAutoConfirm() {
+    let store = makeStore()
+    let terms = ["der", "und", "für", "nicht", "haben", "werden"].map {
+      ExtractedTerm(lemma: $0, surfaceForm: $0, category: .term)
+    }
+
+    for offset in 0..<5 {
+      store.fold(extracted: terms, at: Date(timeIntervalSince1970: Double(offset)))
+    }
+
+    XCTAssertTrue(store.confirmed.isEmpty)
+  }
+
+  func testHighFrequencyEnglishWordsDoNotAutoConfirm() {
+    let store = makeStore()
+    let terms = ["the", "and", "because", "have", "would", "people"].map {
+      ExtractedTerm(lemma: $0, surfaceForm: $0, category: .term)
+    }
+
+    for offset in 0..<5 {
+      store.fold(extracted: terms, at: Date(timeIntervalSince1970: Double(offset)))
+    }
+
+    XCTAssertTrue(store.confirmed.isEmpty)
+  }
+
+  func testCommonWordListsHaveTwoHundredWordsPerLanguage() {
+    XCTAssertGreaterThanOrEqual(MemoryCommonWords.germanTopWords.count, 200)
+    XCTAssertGreaterThanOrEqual(MemoryCommonWords.englishTopWords.count, 200)
+    XCTAssertTrue(MemoryCommonWords.contains("für"))
+    XCTAssertTrue(MemoryCommonWords.contains("fuer"))
+    XCTAssertTrue(MemoryCommonWords.contains("The"))
+  }
+
+  func testDeniedTermDoesNotAutoConfirmAgain() {
+    let store = makeStore()
+    let term = ExtractedTerm(lemma: "Kubernetes", surfaceForm: "Kubernetes", category: .term)
+
+    store.deny(term: "Kubernetes")
+    for offset in 0..<5 {
+      store.fold(extracted: [term], at: Date(timeIntervalSince1970: Double(offset)))
+    }
+
+    XCTAssertTrue(store.confirmed.isEmpty)
+    XCTAssertTrue(store.candidates.isEmpty)
+  }
+
   // MARK: - LLMService memory block rendering (pure)
 
   func testMemoryContextBlockRendersCategoriesAndIsNilWhenEmpty() {

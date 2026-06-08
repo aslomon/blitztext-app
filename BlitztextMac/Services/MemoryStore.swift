@@ -31,8 +31,9 @@ enum MemoryCategory: String, Codable, Sendable, CaseIterable {
   }
 }
 
-/// A computed, not-yet-injected candidate. Persisted in the candidate index and
-/// folded incrementally per run. Promotion to `confirmed` happens ONLY on user action.
+/// A computed vocabulary candidate. Persisted in the candidate index and folded incrementally per
+/// run. Strong recurring candidates are auto-promoted to `confirmed`; the visible suggestions list
+/// remains a review surface for lower-confidence items.
 struct MemoryCandidate: Codable, Identifiable, Sendable {
   var id: String { lemma.lowercased() }
   var lemma: String
@@ -59,7 +60,8 @@ struct MemoryCandidate: Codable, Identifiable, Sendable {
   }
 }
 
-/// A user-confirmed term. This — plus the user's global `customTerms` — is what gets injected.
+/// A learned or manually confirmed term. This — plus the user's global `customTerms` — is what
+/// gets injected as vocabulary.
 struct MemoryConfirmedTerm: Codable, Identifiable, Sendable, Hashable {
   var id: String { term.lowercased() }
   var term: String
@@ -116,8 +118,9 @@ struct MemoryContext: Sendable {
 // MARK: - Memory store
 
 /// Two-speed Memory (see docs/MEMORY-spezifikation.md):
-/// candidate computation (frequent, background, incremental) is decoupled from the
-/// INJECTED set, which changes ONLY on user confirm/deny or a manual full recompute.
+/// candidate computation (frequent, background, incremental) is decoupled from prompt injection.
+/// Recurring domain terms auto-promote into the confirmed vocabulary; denylist/manual removal still
+/// wins and prevents re-adding noisy terms.
 @Observable
 @MainActor
 final class MemoryStore {
@@ -130,6 +133,15 @@ final class MemoryStore {
   nonisolated static let retentionDays = 90
   /// Minimum cross-document frequency before a candidate surfaces as a suggestion.
   nonisolated static let suggestionMinDocFrequency = 2
+  /// Auto vocabulary thresholds: names/foreign words are usually distinctive after two separate
+  /// appearances; generic terms need a third document to avoid normal nouns.
+  nonisolated static let autoConfirmNameOrForeignDocFrequency = 2
+  nonisolated static let autoConfirmTermDocFrequency = 3
+
+  /// Conservative guardrail against normal function/business words becoming vocabulary just
+  /// because they recur. Normalized keys come from 200+ German words, 200+ English words and a
+  /// small app-specific noise list.
+  nonisolated static let commonTermDenylist: Set<String> = MemoryCommonWords.all
 
   private(set) var snapshot: MemorySnapshot
 
@@ -160,8 +172,8 @@ final class MemoryStore {
   /// confirmed and not denied. Highest score first.
   var suggestions: [MemoryCandidate] {
     let confirmedIDs = Set(snapshot.confirmed.map { $0.id })
-    // Candidates are keyed by lemma; confirmations store the (possibly inflected) surface form, so
-    // also dedupe against confirmed LEMMAs to stop an already-confirmed term reappearing.
+    // Candidates are keyed by lemma; learned terms store the (possibly inflected) surface form, so
+    // also dedupe against learned LEMMAs to stop an already-learned term reappearing.
     let confirmedLemmas = Set(snapshot.confirmed.compactMap { $0.lemma?.lowercased() })
     let denied = Set(snapshot.denylist.map { $0.lowercased() })
     return
@@ -219,7 +231,7 @@ final class MemoryStore {
 
   // MARK: - Curation (changes the INJECTED set)
 
-  /// Promote a candidate (or arbitrary term) into the confirmed/injected set.
+  /// Promote a candidate (or arbitrary term) into the learned/injected set.
   func confirm(_ candidate: MemoryCandidate) {
     confirm(term: candidate.surfaceForm, lemma: candidate.lemma, category: candidate.category)
   }
@@ -244,7 +256,7 @@ final class MemoryStore {
     persist()
   }
 
-  /// Remove a confirmed term (it stays out of injection but may resurface as a candidate).
+  /// Remove a learned term without denylisting it. UI removal should usually call `deny(term:)`.
   func unconfirm(_ id: MemoryConfirmedTerm.ID) {
     snapshot.confirmed.removeAll { $0.id == id }
     persist()
@@ -307,11 +319,12 @@ final class MemoryStore {
 
     snapshot.candidates = Array(index.values)
     rescore(now: date)
+    autoConfirmRecurringCandidates()
     persist()
   }
 
   /// Daily decay + prune: ages out stale candidates (90-day window) and bounds the index.
-  /// Does NOT touch confirmed/denylist — the injected set is unaffected.
+  /// Does NOT touch learned terms/denylist — the injected set is unaffected.
   func decayAndPrune(now: Date = Date()) {
     let cutoff = Calendar.current.date(byAdding: .day, value: -Self.retentionDays, to: now)
     if let cutoff {
@@ -329,7 +342,8 @@ final class MemoryStore {
   }
 
   /// Replaces the entire candidate index from a full recompute over the archive.
-  /// Confirmed/denylist are preserved; injection is unaffected unless the user re-curates.
+  /// Learned terms/denylist are preserved; injection only changes when recurring candidates cross
+  /// the auto-vocabulary threshold.
   func replaceCandidates(_ extractedPerDoc: [[ExtractedTerm]], dates: [Date], now: Date = Date()) {
     var index: [String: MemoryCandidate] = [:]
     let denied = Set(snapshot.denylist.map { $0.lowercased() })
@@ -361,6 +375,7 @@ final class MemoryStore {
 
     snapshot.candidates = Array(index.values)
     rescore(now: now)
+    autoConfirmRecurringCandidates()
     decayAndPrune(now: now)
   }
 
@@ -388,6 +403,47 @@ final class MemoryStore {
       let recencyWeight = pow(0.5, ageDays / 30.0)
       let frequencyComponent = log(Double(candidate.docFrequency) + 1)
       snapshot.candidates[index].score = frequencyComponent * recencyWeight
+    }
+  }
+
+  private func autoConfirmRecurringCandidates() {
+    let denied = Set(snapshot.denylist.map { $0.lowercased() })
+    let confirmedIDs = Set(snapshot.confirmed.map { $0.id })
+    let confirmedLemmas = Set(snapshot.confirmed.compactMap { $0.lemma?.lowercased() })
+
+    for candidate in snapshot.candidates {
+      let lemmaKey = candidate.lemma.lowercased()
+      let surfaceKey = candidate.surfaceForm.lowercased()
+      guard !denied.contains(lemmaKey), !denied.contains(surfaceKey) else { continue }
+      guard !confirmedIDs.contains(candidate.id), !confirmedLemmas.contains(lemmaKey) else {
+        continue
+      }
+      guard Self.shouldAutoConfirm(candidate) else { continue }
+      snapshot.confirmed.append(
+        MemoryConfirmedTerm(
+          term: candidate.surfaceForm,
+          lemma: candidate.lemma,
+          category: candidate.category
+        )
+      )
+    }
+  }
+
+  nonisolated static func shouldAutoConfirm(_ candidate: MemoryCandidate) -> Bool {
+    let lemma = candidate.lemma.trimmingCharacters(in: .whitespacesAndNewlines)
+    let surface = candidate.surfaceForm.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !lemma.isEmpty, !surface.isEmpty else { return false }
+    guard !commonTermDenylist.contains(MemoryCommonWords.normalized(lemma)),
+      !commonTermDenylist.contains(MemoryCommonWords.normalized(surface))
+    else {
+      return false
+    }
+
+    switch candidate.category {
+    case .name, .foreign:
+      return candidate.docFrequency >= autoConfirmNameOrForeignDocFrequency
+    case .term:
+      return candidate.docFrequency >= autoConfirmTermDocFrequency
     }
   }
 

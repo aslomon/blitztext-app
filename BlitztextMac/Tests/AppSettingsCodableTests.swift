@@ -21,6 +21,7 @@ final class AppSettingsCodableTests: XCTestCase {
       memoryContextEnabled: true,
       hadAccessibilityGrant: true
     )
+    settings.userDisplayName = "Jason Rinnert"
     var emailMode = ModeConfig.default(for: .textImprover)
     emailMode.userName = "Mein E-Mail Modus"
     emailMode.rewrite.rewriteBackend = .local
@@ -39,6 +40,7 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertTrue(decoded.hadAccessibilityGrant)
     XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
     XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
+    XCTAssertEqual(decoded.userDisplayName, "Jason Rinnert")
     XCTAssertEqual(decoded.modes.count, 2)
 
     let decodedEmail = try XCTUnwrap(decoded.modes[WorkflowType.textImprover.rawValue])
@@ -155,6 +157,7 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
     XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
     XCTAssertFalse(decoded.hadAccessibilityGrant)
+    XCTAssertEqual(decoded.userDisplayName, "")
     XCTAssertTrue(decoded.modes.isEmpty)
     XCTAssertTrue(decoded.modeOrder.isEmpty)
     XCTAssertFalse(decoded.didMigrateToModeConfigs)
@@ -171,6 +174,7 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
     XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
     XCTAssertFalse(decoded.hadAccessibilityGrant)
+    XCTAssertEqual(decoded.userDisplayName, "")
     // Dictation dictionary absent -> empty replacements, spoken punctuation defaults OFF.
     // OFF avoids silently mapping real words like "Punkt"/"Komma" to symbols (data-corruption).
     XCTAssertTrue(decoded.dictationDictionary.replacements.isEmpty)

@@ -63,6 +63,18 @@ struct AutomaticRewriteContext: Sendable {
   }
 }
 
+// MARK: - User identity context
+
+/// Stable local identity of the person using Blitztext. In-memory prompt context only; persisted in
+/// `AppSettings.userDisplayName` so E-Mail/Prompt modes know from whose perspective they write.
+struct UserIdentityContext: Sendable, Equatable {
+  var displayName: String
+
+  var isEmpty: Bool {
+    displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+}
+
 // MARK: - Provider seam
 
 /// Abstracts the rewrite transport so a mode can run on OpenAI or on-device.

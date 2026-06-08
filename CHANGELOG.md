@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **User Identity for Email Context**: New onboarding step (IdentityStepView) to collect user's display name
+  - Used in email rewrite prompts to generate responses from the correct perspective
+  - Injected as stable vocabulary term to help Whisper recognition
+  - Stored locally in user settings
+- **Memory Auto-Confirmation**: Recurring domain terms now automatically promote to confirmed vocabulary when they meet frequency thresholds
+  - Names and foreign words auto-confirm after 2 document appearances
+  - Generic terms require 3 document appearances to avoid normal noun contamination
+  - Common word denylist (200+ German + 200+ English words) prevents noise terms from auto-learning
+- **MemoryCommonWords**: Comprehensive denylist of high-frequency language words to prevent normal vocabulary from contaminating learned terms
+- **Selection Context Enhancements**: Improved detection and capture of document context (filename, window title, content type) for intelligent prompt adaptation
+- **LLMService Vocabulary Injection**: New support for stable user-term injection in prompt generation
 - **Fallback Pill Card (Copy-Only Mode)**: When automatic paste fails due to missing accessibility permissions or target app focus issues, the recording pill now transitions to a copy-only state with:
   - Expanded scrollable card displaying the recorded text
   - Copy button for easy clipboard transfer
@@ -17,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Memory System Semantics**: Terminology shifted from "confirmed" to "learned" terms to reflect auto-promotion behavior
+  - Learned terms remain active for transcription/rewrite even when Memory master toggle is off
+  - Removing a learned term now denylists it to prevent immediate re-learning
+  - Recognition/vocabulary lists always show learned terms (they're stable vocabulary, not ephemeral suggestions)
+- **AppState Vocabulary Terms**:
+  - User's display name is now automatically included in `effectiveCustomTerms` and `effectiveRewriteTerms`
+  - Memory terms are always injected (no longer gated by `memoryContextEnabled` toggle)
+  - New property `recognizeTerms` provides unified "richtig erkennen & schreiben" list combining manual terms and learned vocabulary
+- **Vocabulary Settings UI**: Redesigned for clarity with explicit source tags (manual vs. learned)
+  - Learned terms show auto-promotion logic and denylist behavior
+  - Denylisting prevents terms from auto-learning again
 - **Paste Reliability**: `attemptPasteTrusted` now uses `.activateIgnoringOtherApps` to reliably activate target applications
   - Fixes silent paste failures on recent macOS where background .accessory app's plain `activate()` is unreliable
   - Ensures valid pastes don't degrade to copy-only fallback unnecessarily
@@ -24,11 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed 4-edge host pin constraint that caused incorrect width calculation
   - Now uses `intrinsicContentSize` with leading/top pins for proper centering
   - Orders panel before positioning to ensure `panel.screen` is available on first show
+- **Memory Recomputation**: Now triggers auto-confirmation of recurring candidates when recompute runs
 
 ### Fixed
 
 - **Accessibility Fallback Flow**: No longer just flashes red when accessibility permission is missing; now gracefully transitions to copy-only pill with guiding text
 - **Recording Pill Visibility**: Resolved NSHostingView sizing collapse where pill was invisible due to missing constraints
+- **Memory Term Deduplication**: Fixed handling of lemma-based deduplication to prevent already-learned terms from reappearing in suggestions
 
 ### Added (Previous Phases)
 

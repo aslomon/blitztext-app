@@ -94,6 +94,8 @@ struct OnboardingWizardView: View {
     switch viewModel.step {
     case .welcome:
       WelcomeStepView()
+    case .identity:
+      IdentityStepView(appState: appState)
     case .installLocation:
       InstallLocationStepView()
     case .permissions:

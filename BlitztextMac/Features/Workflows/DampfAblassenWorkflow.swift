@@ -32,6 +32,7 @@ final class DampfAblassenWorkflow: Workflow {
   private let localModelName: String
   private let automaticContext: AutomaticRewriteContext?
   private let memoryContext: MemoryContext?
+  private let userIdentity: UserIdentityContext?
   private var processingTask: Task<Void, Never>?
 
   init(
@@ -45,7 +46,8 @@ final class DampfAblassenWorkflow: Workflow {
     backend: TranscriptionBackend = .remote,
     localModelName: String = LocalTranscriptionService.recommendedFastModelName,
     automaticContext: AutomaticRewriteContext? = nil,
-    memoryContext: MemoryContext? = nil
+    memoryContext: MemoryContext? = nil,
+    userIdentity: UserIdentityContext? = nil
   ) {
     self.rewrite = rewrite
     self.provider = provider
@@ -58,6 +60,7 @@ final class DampfAblassenWorkflow: Workflow {
     self.localModelName = localModelName
     self.automaticContext = automaticContext
     self.memoryContext = memoryContext
+    self.userIdentity = userIdentity
   }
 
   // MARK: - Recording State
@@ -162,7 +165,8 @@ final class DampfAblassenWorkflow: Workflow {
           customTerms: rewriteTerms,
           selection: nil,
           automaticContext: automaticContext,
-          memory: memoryContext)
+          memory: memoryContext,
+          userIdentity: userIdentity)
         let outcome = try await provider.rewrite(
           systemPrompt: systemPrompt,
           userText: cleanedRawText,

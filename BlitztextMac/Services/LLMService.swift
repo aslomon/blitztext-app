@@ -40,6 +40,7 @@ enum LLMService {
     selection: SelectionContext?,
     automaticContext: AutomaticRewriteContext? = nil,
     memory: MemoryContext? = nil,
+    userIdentity: UserIdentityContext? = nil,
     emailMemory: EmailSemanticMemoryContext? = nil
   ) -> String {
     var prompt: String
@@ -64,6 +65,10 @@ enum LLMService {
       prompt += block
     }
 
+    if let userIdentity, let block = userIdentityBlock(userIdentity) {
+      prompt += block
+    }
+
     if let emailMemory, let block = semanticEmailMemoryBlock(emailMemory) {
       prompt += block
     }
@@ -79,6 +84,21 @@ enum LLMService {
     }
 
     return prompt
+  }
+
+  static func userIdentityBlock(_ identity: UserIdentityContext) -> String? {
+    let name = identity.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else { return nil }
+    return """
+
+
+      [Schreibperspektive]
+      Ich schreibe als: \(name)
+      Nutze diese Identität, um Pronomen, Absenderperspektive und Signaturbezug korrekt zu verstehen. \
+      Wenn der aktuelle Fenster- oder Auswahlkontext E-Mail-Felder wie Von, An, Betreff oder \
+      bisherigen Nachrichtentext enthält, leite daraus ab, an wen ich schreibe und wer mir geschrieben \
+      hat. Erfinde keine Empfänger, Absender, Zusagen oder Fakten.
+      """
   }
 
   static func semanticEmailMemoryBlock(_ context: EmailSemanticMemoryContext) -> String? {

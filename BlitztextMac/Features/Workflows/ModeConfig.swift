@@ -137,12 +137,12 @@ struct RewriteConfig: Codable, Sendable {
   var context: String = ""
   var emojiDensity: EmojiTextSettings.EmojiDensity = .mittel
   var replyContextMode: ReplyContextMode = .off
-  /// When true, the current focused input field is read at recording start and injected into the
-  /// rewrite prompt as transient working context. Default OFF: potentially sensitive text is never
-  /// read or sent unless the user opts in for the mode.
+  /// When true, the current focused window is read at recording start and injected into the rewrite
+  /// prompt as transient working context. Curated rewrite modes enable this by default; users can
+  /// disable it per mode.
   var useAutomaticFieldContext: Bool = false
-  /// Phase 4b: when true (and the global master is on), the confirmed Memory block is
-  /// rendered into this mode's rewrite system prompt. Default OFF so plain Diktat stays untouched.
+  /// When true (and the global master is on), the confirmed Memory block is rendered into this
+  /// mode's rewrite system prompt. Curated rewrite modes enable this by default.
   var useMemoryContext: Bool = false
   var useSemanticEmailMemory: Bool = false
   var semanticEmailEnrichmentLevel: SemanticEmailEnrichmentLevel = .medium
@@ -293,11 +293,17 @@ struct ModeConfig: Codable, Sendable, Identifiable {
     switch slot {
     case .textImprover:
       return RewriteConfig(
-        systemPrompt: ModeDefaults.emailSystemPrompt, modelID: RewriteModelRegistry.strongModelID)
+        systemPrompt: ModeDefaults.emailSystemPrompt,
+        modelID: RewriteModelRegistry.strongModelID,
+        useAutomaticFieldContext: true,
+        useMemoryContext: true,
+        useSemanticEmailMemory: true)
     case .dampfAblassen:
       return RewriteConfig(
         systemPrompt: ModeDefaults.promptCraftSystemPrompt,
-        modelID: RewriteModelRegistry.strongModelID)
+        modelID: RewriteModelRegistry.strongModelID,
+        useAutomaticFieldContext: true,
+        useMemoryContext: true)
     case .emojiText:
       return RewriteConfig(modelID: RewriteModelRegistry.fastModelID)
     case .transcription, .localTranscription:

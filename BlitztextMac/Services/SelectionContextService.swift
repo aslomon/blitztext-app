@@ -20,7 +20,23 @@ enum SelectionContextService {
 
     let systemWide = AXUIElementCreateSystemWide()
     guard let focused = copyElement(systemWide, kAXFocusedUIElementAttribute) else { return nil }
+    let appBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    return captureSelection(from: focused, appBundleID: appBundleID)
+  }
 
+  /// Captures selection from a known app process. This is the safer path for menu-bar starts,
+  /// because the click/popover can change the system-wide focused element before recording starts.
+  static func capture(pid: pid_t, appBundleID: String?) -> SelectionContext? {
+    guard AXIsProcessTrusted() else { return nil }
+    let app = AXUIElementCreateApplication(pid)
+    guard let focused = copyElement(app, kAXFocusedUIElementAttribute) else { return nil }
+    return captureSelection(from: focused, appBundleID: appBundleID)
+  }
+
+  private static func captureSelection(
+    from focused: AXUIElement,
+    appBundleID: String?
+  ) -> SelectionContext? {
     let selected = copyString(focused, kAXSelectedTextAttribute)
     let fullText = copyString(focused, kAXValueAttribute)
     let selectedRange = copySelectedRange(focused)
@@ -33,7 +49,7 @@ enum SelectionContextService {
     let context = SelectionContext(
       selectedText: selectedText,
       surroundingText: selectedText.isEmpty ? surroundingText : "",
-      appBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+      appBundleID: appBundleID
     )
     return context.isEmpty ? nil : context
   }
@@ -53,11 +69,48 @@ enum SelectionContextService {
     let systemWide = AXUIElementCreateSystemWide()
     guard let focused = copyElement(systemWide, kAXFocusedUIElementAttribute) else { return nil }
 
+    return captureAutomaticFieldContext(
+      focused: focused,
+      window: copyElement(systemWide, kAXFocusedWindowAttribute),
+      appBundleID: appBundleID,
+      appName: appName,
+      windowTitle: windowTitle
+    )
+  }
+
+  /// Captures automatic context from a known app process. Prefer this for menu-bar starts, where
+  /// system-wide focus may already have moved away from the user's original target.
+  static func captureAutomaticFieldContext(
+    pid: pid_t,
+    appBundleID: String?,
+    appName: String?,
+    windowTitle: String?,
+    isSecureField: Bool
+  ) -> AutomaticRewriteContext? {
+    guard !isSecureField, AXIsProcessTrusted() else { return nil }
+
+    let app = AXUIElementCreateApplication(pid)
+    guard let focused = copyElement(app, kAXFocusedUIElementAttribute) else { return nil }
+    let window = copyElement(app, kAXFocusedWindowAttribute)
+    return captureAutomaticFieldContext(
+      focused: focused,
+      window: window,
+      appBundleID: appBundleID,
+      appName: appName,
+      windowTitle: windowTitle
+    )
+  }
+
+  private static func captureAutomaticFieldContext(
+    focused: AXUIElement,
+    window: AXUIElement?,
+    appBundleID: String?,
+    appName: String?,
+    windowTitle: String?
+  ) -> AutomaticRewriteContext? {
     let fullText = copyString(focused, kAXValueAttribute)
     let selectedRange = copySelectedRange(focused)
-    let windowText =
-      copyElement(systemWide, kAXFocusedWindowAttribute)
-      .map { automaticWindowText($0, maxChars: maxAutomaticWindowContextChars) } ?? ""
+    let windowText = window.map { automaticWindowText($0, maxChars: maxAutomaticWindowContextChars) } ?? ""
     let text = automaticWindowContext(
       focusedFieldText: fullText,
       selectedRange: selectedRange,
@@ -168,7 +221,7 @@ enum SelectionContextService {
       }
 
       guard item.depth < maxWindowTraversalDepth else { continue }
-      for child in copyElements(item.element, kAXChildrenAttribute) {
+      for child in children(of: item.element) {
         queue.append((child, item.depth + 1))
       }
     }
@@ -180,7 +233,12 @@ enum SelectionContextService {
     let role = copyString(element, kAXRoleAttribute).lowercased()
     guard isReadableRole(role) else { return nil }
 
-    for attribute in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+    for attribute in [
+      kAXValueAttribute,
+      kAXTitleAttribute,
+      kAXDescriptionAttribute,
+      kAXHelpAttribute,
+    ] {
       let text = copyString(element, attribute)
       if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         return text
@@ -194,6 +252,11 @@ enum SelectionContextService {
       || role.contains("textfield")
       || role.contains("textarea")
       || role.contains("webarea")
+      || role.contains("group")
+      || role.contains("scrollarea")
+      || role.contains("outline")
+      || role.contains("row")
+      || role.contains("cell")
       || role.contains("heading")
       || role.contains("link")
   }
@@ -301,6 +364,20 @@ enum SelectionContextService {
       elements.append(child)
     }
     return elements
+  }
+
+  private static func children(of element: AXUIElement) -> [AXUIElement] {
+    var result: [AXUIElement] = []
+    var seen = Set<UInt>()
+    for attribute in [kAXChildrenAttribute, kAXVisibleChildrenAttribute, kAXRowsAttribute] {
+      for child in copyElements(element, attribute) {
+        let identity = UInt(CFHash(child))
+        guard !seen.contains(identity) else { continue }
+        seen.insert(identity)
+        result.append(child)
+      }
+    }
+    return result
   }
 
   private static func copyString(_ element: AXUIElement, _ attribute: String) -> String {

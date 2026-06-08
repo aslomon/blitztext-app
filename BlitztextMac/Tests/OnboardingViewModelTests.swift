@@ -20,15 +20,16 @@ final class OnboardingViewModelTests: XCTestCase {
   // MARK: - Step shape
 
   func testJourneyStepsInExpectedOrder() {
-    XCTAssertEqual(OnboardingViewModel.stepCount, 7)
+    XCTAssertEqual(OnboardingViewModel.stepCount, 8)
     XCTAssertEqual(
       OnboardingViewModel.OnboardingStep.allCases,
-      [.welcome, .installLocation, .permissions, .processing, .models, .modes, .finish])
+      [.welcome, .identity, .installLocation, .permissions, .processing, .models, .modes, .finish])
     XCTAssertEqual(OnboardingViewModel.OnboardingStep.welcome.displayIndex, 1)
-    XCTAssertEqual(OnboardingViewModel.OnboardingStep.finish.displayIndex, 7)
+    XCTAssertEqual(OnboardingViewModel.OnboardingStep.finish.displayIndex, 8)
   }
 
   func testJourneyStepsExposeShortMetadata() {
+    XCTAssertEqual(OnboardingViewModel.OnboardingStep.identity.title, "Identität")
     XCTAssertEqual(OnboardingViewModel.OnboardingStep.installLocation.title, "Speicherort")
     XCTAssertEqual(OnboardingViewModel.OnboardingStep.permissions.systemImage, "hand.raised.fill")
     XCTAssertEqual(OnboardingViewModel.OnboardingStep.processing.primaryActionLabel, "Auswahl prüfen")
@@ -47,6 +48,18 @@ final class OnboardingViewModelTests: XCTestCase {
       vm.step = step
       XCTAssertTrue(vm.canAdvance(appState), "\(step) must always advance (soft gating)")
     }
+  }
+
+  func testIdentityNeedsName() {
+    let appState = makeAppState()
+    let vm = OnboardingViewModel(appState: appState)
+    vm.step = .identity
+
+    appState.appSettings.userDisplayName = "   "
+    XCTAssertFalse(vm.canAdvance(appState))
+
+    appState.appSettings.userDisplayName = "Jason Rinnert"
+    XCTAssertTrue(vm.canAdvance(appState))
   }
 
   func testProcessingOnlineNeedsKey() {
@@ -100,11 +113,15 @@ final class OnboardingViewModelTests: XCTestCase {
 
     XCTAssertTrue(vm.isFirstStep)
     vm.next()
+    XCTAssertEqual(vm.step, .identity)
+    vm.next()
     XCTAssertEqual(vm.step, .installLocation)
     vm.next()
     XCTAssertEqual(vm.step, .permissions)
     vm.back()
     XCTAssertEqual(vm.step, .installLocation)
+    vm.back()
+    XCTAssertEqual(vm.step, .identity)
     vm.back()
     XCTAssertEqual(vm.step, .welcome)
     // Back at the first step is a no-op.

@@ -5,15 +5,16 @@ import XCTest
 @MainActor
 final class AutomaticContextTests: XCTestCase {
 
-  func testRewriteConfigDefaultsAutomaticFieldContextOff() {
+  func testCuratedRewriteModesDefaultToAutomaticWindowContext() {
     XCTAssertFalse(RewriteConfig().useAutomaticFieldContext)
-    XCTAssertFalse(ModeConfig.default(for: .textImprover).rewrite.useAutomaticFieldContext)
-    XCTAssertFalse(ModeConfig.default(for: .dampfAblassen).rewrite.useAutomaticFieldContext)
+    XCTAssertTrue(ModeConfig.default(for: .textImprover).rewrite.useAutomaticFieldContext)
+    XCTAssertTrue(ModeConfig.default(for: .dampfAblassen).rewrite.useAutomaticFieldContext)
+    XCTAssertFalse(ModeConfig.default(for: .emojiText).rewrite.useAutomaticFieldContext)
   }
 
-  func testEnabledAutomaticFieldContextFlagsAdvancedDisclosure() {
+  func testDisabledAutomaticFieldContextFlagsAdvancedDisclosure() {
     var email = ModeConfig.default(for: .textImprover)
-    email.rewrite.useAutomaticFieldContext = true
+    email.rewrite.useAutomaticFieldContext = false
 
     XCTAssertTrue(email.isAdvancedNonDefault)
   }

@@ -13,13 +13,19 @@ struct RewriteContextCaptureDiagnostic: Equatable {
   let automaticAppName: String
   let automaticBundleID: String
   let automaticWindowTitlePresent: Bool
+  let targetAppName: String
+  let targetBundleID: String
+  let targetWindowTitlePresent: Bool
 
   init(
     modeID: ModeConfig.ID,
     launchSource: WorkflowLaunchSource,
     config: ModeConfig,
     selection: SelectionContext?,
-    automaticContext: AutomaticRewriteContext?
+    automaticContext: AutomaticRewriteContext?,
+    targetAppName: String? = nil,
+    targetBundleID: String? = nil,
+    targetWindowTitle: String? = nil
   ) {
     self.modeID = modeID
     self.launchSource = launchSource
@@ -37,6 +43,10 @@ struct RewriteContextCaptureDiagnostic: Equatable {
     self.automaticWindowTitlePresent =
       !((automaticContext?.windowTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         .isEmpty)
+    self.targetAppName = Self.publicValue(targetAppName)
+    self.targetBundleID = Self.publicValue(targetBundleID)
+    self.targetWindowTitlePresent =
+      !((targetWindowTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 
   var logLine: String {
@@ -53,6 +63,9 @@ struct RewriteContextCaptureDiagnostic: Equatable {
       "automaticApp=\(automaticAppName)",
       "automaticBundle=\(automaticBundleID)",
       "automaticWindowTitlePresent=\(automaticWindowTitlePresent)",
+      "targetApp=\(targetAppName)",
+      "targetBundle=\(targetBundleID)",
+      "targetWindowTitlePresent=\(targetWindowTitlePresent)",
     ].joined(separator: " ")
   }
 

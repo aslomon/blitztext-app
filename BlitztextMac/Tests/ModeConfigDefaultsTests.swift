@@ -73,6 +73,9 @@ final class ModeConfigDefaultsTests: XCTestCase {
     XCTAssertEqual(email.rewrite.systemPrompt, ModeDefaults.emailSystemPrompt)
     XCTAssertEqual(email.rewrite.modelID, RewriteModelRegistry.strongModelID)
     XCTAssertTrue(email.rewrite.systemPrompt.contains("email"))
+    XCTAssertTrue(email.rewrite.useAutomaticFieldContext)
+    XCTAssertTrue(email.rewrite.useMemoryContext)
+    XCTAssertTrue(email.rewrite.useSemanticEmailMemory)
   }
 
   func testPromptSlotUsesCuratedPromptCraftPrompt() {
@@ -80,6 +83,9 @@ final class ModeConfigDefaultsTests: XCTestCase {
     XCTAssertEqual(prompt.rewrite.systemPrompt, ModeDefaults.promptCraftSystemPrompt)
     XCTAssertEqual(prompt.rewrite.modelID, RewriteModelRegistry.strongModelID)
     XCTAssertTrue(prompt.rewrite.systemPrompt.contains("Claude Code"))
+    XCTAssertTrue(prompt.rewrite.useAutomaticFieldContext)
+    XCTAssertTrue(prompt.rewrite.useMemoryContext)
+    XCTAssertFalse(prompt.rewrite.useSemanticEmailMemory)
   }
 
   func testEmojiSlotUsesFastModelAndNoSystemPrompt() {
@@ -117,7 +123,6 @@ final class ModeConfigDefaultsTests: XCTestCase {
 
   func testSemanticEmailMemorySettingsRoundTrip() throws {
     var config = ModeConfig.default(for: .textImprover)
-    config.rewrite.useSemanticEmailMemory = true
     config.rewrite.semanticEmailEnrichmentLevel = .strong
 
     let data = try JSONEncoder().encode(config)

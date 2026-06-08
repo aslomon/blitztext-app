@@ -6,7 +6,7 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 
 - Ruhig, dicht, funktional. Deutschsprachige UI-Texte (du-Form, knapp).
 - Menüleisten-Popover, feste Breite **410pt** (vorher 340) — mehr Luft für die 5 Settings-Tabs + dichten Inhalt.
-- Settings-Tabs (segmented): **Prompts · Modelle · Vokabular · Archiv · System**. Alles Wort-bezogene (Eigennamen, gelernte Memory-Begriffe, „aus Korrekturen lernen", Ersetzungen) lebt im **Vokabular**-Tab; **Archiv** = nur Verlauf/Statistik/Kontext.
+- Settings-Tabs (segmented): **Prompts · Modelle · Vokabular · Archiv · System**. Alles Wort- und Memory-bezogene lebt im **Vokabular**-Tab: Begriffe, ein zentraler Memory-Master, E-Mail Memory, Korrekturlernen und Ersetzungen. **Archiv** = nur Verlauf/Statistik/Kontext.
 - Schwebende **Pille**: Kapsel-Glass (`PillGlassModifier`) für Aufnahme/Status; für erweiterte **Copy- und Varianten-Karten** ein eigener `CardGlassModifier` (abgerundetes Rechteck, 14pt-Radius, tieferer Schatten) statt Kapsel — sonst „eckiger Inhalt im Pillen-Loch".
 
 ## Farben
@@ -57,9 +57,17 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
   nicht auslösen. Unterstützt Modifier-only, einzelne Taste, Modifier + Taste und mehrere Tasten.
   Konflikte erscheinen direkt unter dem betroffenen Modus und blockieren `Übernehmen`.
   Tastenkürzel bleiben monospaced, aber nicht dominant.
-- **Semantische E-Mail Memory**: opt-in Controls nur in E-Mail-Modi. Toggle + 3er-Segmented
-  Picker (`Wenig/Mittel/Viel`) und knappe Privacy-Caption; keine langen Memory-Erklärungen in
-  der Moduskarte.
+- **Memory**: Im Vokabular-Tab ein zentraler Master-Schalter mit Status-Pill. Dieser aktiviert
+  Archiv, Vokabular-Memory und E-Mail Memory inklusive Modellvorbereitung; Korrekturlernen bleibt
+  ein kleiner Unter-Schalter. Vokabular-Memory lernt konservativ automatisch: Namen/Fremdwörter nach
+  zwei getrennten Vorkommen, Fachbegriffe nach drei; normale Alltagswörter werden über 200+
+  deutsche, 200+ englische und app-spezifische Noise-Wörter gefiltert. In Modi gibt es nur einen
+  per-mode Toggle `Memory nutzen`; E-Mail zeigt zusätzlich den 3er-Segmented Picker
+  (`Wenig/Mittel/Viel`). Keine langen Memory-Erklärungen in der Moduskarte.
+- **Eigene Identität**: Onboarding fragt einmal nach dem eigenen Namen. Derselbe Wert steht im
+  Vokabular-Tab und wird lokal als feste Schreibperspektive (`Ich schreibe als ...`) sowie als
+  Spracherkennungs-Hinweis verwendet. Das ist kein E-Mail-Memory, sondern Basis-Kontext für alle
+  Rewrite-Modi; E-Mail-Kontext kann damit Absender/Empfänger sauberer aus `Von`/`An` ableiten.
 - **Varianten-Karte in der Pille**: zwei gleich gewichtete Textkarten, je `Einfügen` und
   `Kopieren`. Keine automatische Paste, solange die Karte sichtbar ist.
 - **Verfügbarkeits-Badges**: vorhandene Icons `checkmark.circle.fill` (grün) /

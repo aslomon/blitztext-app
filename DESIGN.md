@@ -64,3 +64,11 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
   Berechtigungs-/Installationsstatus.
 - Liquid Glass nicht stapeln: Popover/Floating-Pill bekommen Glass; innere Settings-Flächen nutzen
   native SwiftUI-Controls, damit macOS 26 den Systemlook selbst rendern kann.
+
+## App- und Menüleisten-Icons
+
+- App-Icon: dunkles macOS-Squircle mit ruhigem Glass-Verlauf, bestehendem Blitztext-Balkenmark
+  und kleinem Wave/Local-AI-Akzent. Keine lauten Illustrationen, keine Marketing-Grafik, keine
+  großen dekorativen Bögen.
+- Menüleisten-Icon: Idle bleibt das einfache Template-Icon. Während Aufnahme/Verarbeitung keine
+  mode-spezifischen Badge-Symbole; nur das normale Zeichen plus kleiner pulsierender Statuspunkt.

@@ -70,5 +70,8 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 - App-Icon: alte schwarze Originalfläche mit linksbündigem Blitztext-Balkenmark. Das Mark darf
   größer skaliert werden, um unnötigen transparenten/ungenutzten Rand zu reduzieren. Keine diagonal
   versetzten Balken, keine neuen Zusatzsymbole, keine lauten Illustrationen.
+- macOS 26 Icon: `AppIcon.icon` ist die primäre Liquid-Glass-Quelle. Der schwarze Hintergrund liegt
+  als Icon-Composer-Fill an, die weißen Balken als separates SVG-Layer; `AppIcon.icns` bleibt nur
+  Fallback für ältere macOS-Darstellungen.
 - Menüleisten-Icon: Idle bleibt das einfache Template-Icon. Während Aufnahme/Verarbeitung keine
   mode-spezifischen Badge-Symbole; nur das normale Zeichen plus kleiner pulsierender Statuspunkt.

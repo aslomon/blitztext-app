@@ -181,6 +181,10 @@ echo "📋 Kopiere Resources ..."
 RESOURCES_DIR="$APP_PATH/Contents/Resources"
 mkdir -p "$RESOURCES_DIR"
 cp -f "$PROJECT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/" 2>/dev/null || true
+if [ -d "$PROJECT_DIR/Resources/AppIcon.icon" ]; then
+    rm -rf "$RESOURCES_DIR/AppIcon.icon"
+    ditto "$PROJECT_DIR/Resources/AppIcon.icon" "$RESOURCES_DIR/AppIcon.icon"
+fi
 cp -f "$PROJECT_DIR/Resources/menubar_icon.png" "$RESOURCES_DIR/" 2>/dev/null || true
 cp -f "$PROJECT_DIR/Resources/menubar_icon@2x.png" "$RESOURCES_DIR/" 2>/dev/null || true
 

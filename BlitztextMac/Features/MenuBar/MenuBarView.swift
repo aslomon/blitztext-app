@@ -83,15 +83,6 @@ private struct MainPageView: View {
         } label: {
           ZStack(alignment: .topTrailing) {
             Image(systemName: "gear")
-              .font(.system(size: 13, weight: .medium))
-              // Was .tertiary — raised to .secondary for legibility in dark mode
-              .foregroundStyle(.secondary)
-              .frame(width: 28, height: 28)
-              .background(
-                RoundedRectangle(cornerRadius: 6)
-                  .fill(Color.primary.opacity(0.00001))  // hit target only
-              )
-              .contentShape(Rectangle())
 
             if !appState.accessibilityPermissionGranted {
               Circle()
@@ -101,7 +92,9 @@ private struct MainPageView: View {
             }
           }
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverIconButtonStyle(.quiet))
+        .help("Einstellungen")
+        .accessibilityLabel("Einstellungen")
       }
       .padding(.horizontal, 16)
       .padding(.top, 12)
@@ -160,21 +153,9 @@ private struct MainPageView: View {
       Button {
         NotificationCenter.default.post(name: .openOnboardingWindow, object: nil)
       } label: {
-        Text("Blitztext einrichten")
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(.primary)
-          .padding(.horizontal, 20)
-          .padding(.vertical, 7)
-          .background(
-            RoundedRectangle(cornerRadius: 8)
-              .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-          )
-          .overlay(
-            RoundedRectangle(cornerRadius: 8)
-              .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-          )
+        Label("Einrichten", systemImage: "sparkles")
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.primary))
     }
   }
 
@@ -254,6 +235,7 @@ private struct MainPageView: View {
             appState.installSelectedLocalModel()
           }
           .controlSize(.small)
+          .buttonStyle(PopoverActionButtonStyle(.primary))
         }
 
         if let errorText = appState.localModelDownloadErrorText {
@@ -339,7 +321,7 @@ private struct MainPageView: View {
         appState.requestAccessibilityPermission()
       }
       .font(.system(size: 10.5, weight: .medium))
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.warning))
     }
     .padding(10)
     .background(
@@ -377,7 +359,7 @@ private struct MainPageView: View {
         appState.page = .settings
       }
       .font(.system(size: 10.5, weight: .medium))
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.warning))
     }
     .padding(10)
     .background(
@@ -429,7 +411,7 @@ private struct SettingsPageView: View {
           }
           .foregroundStyle(.secondary)
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverActionButtonStyle(.quiet))
 
         Spacer()
 
@@ -467,7 +449,7 @@ private struct SettingsPageView: View {
         }
         .foregroundStyle(.orange)
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.warning))
     } else {
       Color.clear.frame(width: 58, height: 18)
     }
@@ -535,7 +517,7 @@ private struct WorkflowPageView: View {
         }
         .foregroundStyle(.secondary)
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.quiet))
 
       Spacer()
 
@@ -583,9 +565,7 @@ private var appFooter: some View {
       NSApplication.shared.terminate(nil)
     }
     .font(.system(size: 10, weight: .medium))
-    // Was .quaternary — too low contrast in dark mode; raised to .secondary
-    .foregroundStyle(.secondary)
-    .buttonStyle(SubtleButtonStyle())
+    .buttonStyle(PopoverActionButtonStyle(.quiet))
     Spacer()
   }
   .padding(.vertical, 8)
@@ -918,7 +898,7 @@ private struct _ErrorView: View {
               .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
           )
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.primary))
       .keyboardShortcut(.defaultAction)
 
       Spacer().frame(height: 4)

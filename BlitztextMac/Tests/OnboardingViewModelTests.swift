@@ -4,8 +4,8 @@ import XCTest
 
 /// Locks down the wizard's gating, prompt-draft seeding, and completion side effects. The view
 /// model is the headless core of the onboarding flow, so testing it covers the wizard's behaviour
-/// without driving SwiftUI. Keychain-dependent branches are asserted against the live
-/// `KeychainService.isConfigured` value (never mutated) so the suite stays deterministic.
+/// without driving SwiftUI. Keychain-dependent branches use injected stubs so the suite never
+/// blocks on macOS security prompts.
 @MainActor
 final class OnboardingViewModelTests: XCTestCase {
 
@@ -19,23 +19,30 @@ final class OnboardingViewModelTests: XCTestCase {
 
   // MARK: - Step shape
 
-  func testSixStepsInExpectedOrder() {
-    XCTAssertEqual(OnboardingViewModel.stepCount, 6)
+  func testJourneyStepsInExpectedOrder() {
+    XCTAssertEqual(OnboardingViewModel.stepCount, 7)
     XCTAssertEqual(
       OnboardingViewModel.OnboardingStep.allCases,
-      [.welcome, .permissions, .processing, .models, .modes, .finish])
+      [.welcome, .installLocation, .permissions, .processing, .models, .modes, .finish])
     XCTAssertEqual(OnboardingViewModel.OnboardingStep.welcome.displayIndex, 1)
-    XCTAssertEqual(OnboardingViewModel.OnboardingStep.finish.displayIndex, 6)
+    XCTAssertEqual(OnboardingViewModel.OnboardingStep.finish.displayIndex, 7)
+  }
+
+  func testJourneyStepsExposeShortMetadata() {
+    XCTAssertEqual(OnboardingViewModel.OnboardingStep.installLocation.title, "Speicherort")
+    XCTAssertEqual(OnboardingViewModel.OnboardingStep.permissions.systemImage, "hand.raised.fill")
+    XCTAssertEqual(OnboardingViewModel.OnboardingStep.processing.primaryActionLabel, "Auswahl prüfen")
+    XCTAssertEqual(OnboardingViewModel.OnboardingStep.finish.primaryActionLabel, "Fertig")
   }
 
   // MARK: - canAdvance gating
 
-  func testWelcomePermissionsModesFinishAlwaysAdvanceable() {
+  func testSoftStepsAlwaysAdvanceable() {
     let appState = makeAppState()
     let vm = OnboardingViewModel(appState: appState)
 
     for step in [
-      OnboardingViewModel.OnboardingStep.welcome, .permissions, .modes, .finish,
+      OnboardingViewModel.OnboardingStep.welcome, .installLocation, .permissions, .modes, .finish,
     ] {
       vm.step = step
       XCTAssertTrue(vm.canAdvance(appState), "\(step) must always advance (soft gating)")
@@ -45,11 +52,14 @@ final class OnboardingViewModelTests: XCTestCase {
   func testProcessingOnlineNeedsKey() {
     let appState = makeAppState()
     appState.appSettings.secureLocalModeEnabled = false
-    let vm = OnboardingViewModel(appState: appState)
+    let vm = OnboardingViewModel(appState: appState, isOpenAIKeyConfigured: { false })
     vm.step = .processing
 
-    // Online: advance is allowed exactly when an OpenAI key is configured.
-    XCTAssertEqual(vm.canAdvance(appState), KeychainService.isConfigured)
+    XCTAssertFalse(vm.canAdvance(appState))
+
+    let configuredVM = OnboardingViewModel(appState: appState, isOpenAIKeyConfigured: { true })
+    configuredVM.step = .processing
+    XCTAssertTrue(configuredVM.canAdvance(appState))
   }
 
   func testProcessingLocalAdvancesWithoutKey() {
@@ -90,7 +100,11 @@ final class OnboardingViewModelTests: XCTestCase {
 
     XCTAssertTrue(vm.isFirstStep)
     vm.next()
+    XCTAssertEqual(vm.step, .installLocation)
+    vm.next()
     XCTAssertEqual(vm.step, .permissions)
+    vm.back()
+    XCTAssertEqual(vm.step, .installLocation)
     vm.back()
     XCTAssertEqual(vm.step, .welcome)
     // Back at the first step is a no-op.

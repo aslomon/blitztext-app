@@ -41,6 +41,10 @@ struct ModelsSettingsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
+      HStack(spacing: 6) {
+        BlitzStatusPill(state: appState.hasOpenAIKey ? .online : .warning, label: appState.hasOpenAIKey ? "Online bereit" : "OpenAI fehlt")
+        BlitzStatusPill(state: appState.hasAnyTranscriptionEngine ? .local : .download, label: appState.hasAnyTranscriptionEngine ? "Whisper lokal" : "Whisper laden")
+      }
       onlineBand
       Divider().opacity(0.5)
       localBand
@@ -194,6 +198,7 @@ struct ModelsSettingsView: View {
           appState.installSelectedLocalModel()
         }
         .controlSize(.small)
+        .buttonStyle(PopoverActionButtonStyle(appState.selectedLocalModelIsInstalled ? .secondary : .primary))
         .disabled(appState.selectedLocalModelIsInstalled)
 
         Link(

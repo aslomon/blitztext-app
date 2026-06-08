@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Fallback Pill Card (Copy-Only Mode)**: When automatic paste fails due to missing accessibility permissions or target app focus issues, the recording pill now transitions to a copy-only state with:
+  - Expanded scrollable card displaying the recorded text
+  - Copy button for easy clipboard transfer
+  - Cmd+V hint text to guide manual pasting
+  - Prevents dictation text from being silently stuck in clipboard
+
+### Changed
+
+- **Paste Reliability**: `attemptPasteTrusted` now uses `.activateIgnoringOtherApps` to reliably activate target applications
+  - Fixes silent paste failures on recent macOS where background .accessory app's plain `activate()` is unreliable
+  - Ensures valid pastes don't degrade to copy-only fallback unnecessarily
+- **Recording Pill Centering**: Fixed pill positioning and sizing issues
+  - Removed 4-edge host pin constraint that caused incorrect width calculation
+  - Now uses `intrinsicContentSize` with leading/top pins for proper centering
+  - Orders panel before positioning to ensure `panel.screen` is available on first show
+
+### Fixed
+
+- **Accessibility Fallback Flow**: No longer just flashes red when accessibility permission is missing; now gracefully transitions to copy-only pill with guiding text
+- **Recording Pill Visibility**: Resolved NSHostingView sizing collapse where pill was invisible due to missing constraints
+
+### Added (Previous Phases)
+
 - **Local Model Manager & Window**: Standalone UI for Ollama model discovery, download, and lifecycle management
   - **LocalModelManager**: Orchestrates Ollama connectivity, installed model inventory, and download/delete operations
   - **LocalModelsWindowController**: Resizable standalone window (separate from popover) accessible via "Modelle verwalten & laden …" button

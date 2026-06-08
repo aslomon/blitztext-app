@@ -31,7 +31,15 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 
 ## Komponenten
 
-- `SubtleButtonStyle` (Opacity-Press) für fast alle Buttons.
+- Stock SwiftUI zuerst: `GroupBox`, `Form`-artige vertikale Gruppen, native `Picker`,
+  `Toggle`, `TextField`, `TextEditor`, `.bordered` / `.borderedProminent` Buttons.
+- `SubtleButtonStyle` nur noch für sehr kleine Inline-/Chip-Aktionen, nicht für echte Buttons.
+- Neue sichtbare Action-Buttons: `PopoverActionButtonStyle(.primary/.secondary/.warning/.danger/.quiet)`.
+  Echte Aktionen dürfen nicht wie nackter Text aussehen; auch kleine Aktionen bekommen Fill/Stroke
+  oder werden als Icon-Button (`PopoverIconButtonStyle`) gerendert.
+- Status statt Erklärung: `BlitzStatusPill` für bereit/warnung/download/online/lokal/muted.
+- Längere Hinweise nur hinter `InfoDisclosure`; Settings zeigen Zustand + nächste Aktion, keine
+  dauerhafte Dokumentation.
 - `SectionLabel(text:)` für Abschnittsüberschriften.
 - Chips: Capsule + 0.5pt Border, kleines `xmark` zum Entfernen (`FlowLayout`).
 - Picker: `.segmented` für 2–3 KURZE Optionen, sonst Menu-Picker (auch wenn die Labels lang sind), `.controlSize(.small)`.
@@ -51,3 +59,8 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 - Keine neuen Akzentfarben ohne Grund; bestehende Modus-Akzente nutzen.
 - Sensible Hinweise (Datenfluss zu OpenAI, Aufnahmen) immer als 10.5pt `.secondary`-Caption.
 - Icons aus SF Symbols, gewichtet `.medium`/`.semibold`.
+- User-Journey pro Bereich: oben Status, dann primäre Aktion, dann optionale Details.
+- Onboarding ist Setup, nicht Handbuch: pro Schritt maximal eine Hauptentscheidung oder ein
+  Berechtigungs-/Installationsstatus.
+- Liquid Glass nicht stapeln: Popover/Floating-Pill bekommen Glass; innere Settings-Flächen nutzen
+  native SwiftUI-Controls, damit macOS 26 den Systemlook selbst rendern kann.

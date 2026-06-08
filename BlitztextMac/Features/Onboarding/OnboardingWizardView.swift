@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Root of the first-run wizard hosted in its own window. Provides the shared chrome — title, a
-/// "Schritt n von 6" indicator, the scrollable step body, and the footer (Zurück / Später / primary
-/// Weiter|Fertig) — and switches over the six step subviews.
+/// Root of the first-run wizard hosted in its own window. The wizard is a setup journey: each step
+/// has one decision/status, visible buttons, and compact progress.
 struct OnboardingWizardView: View {
   @Bindable var appState: AppState
   @State private var viewModel: OnboardingViewModel
@@ -33,24 +32,59 @@ struct OnboardingWizardView: View {
       Divider()
       footer
     }
-    .frame(minWidth: 560, minHeight: 520)
+    .frame(minWidth: 600, minHeight: 540)
     .animation(.easeInOut(duration: 0.18), value: viewModel.step)
   }
 
   // MARK: - Header
 
   private var header: some View {
-    HStack(alignment: .center) {
-      Text("Blitztext einrichten")
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(.primary)
-      Spacer()
-      Text("Schritt \(viewModel.step.displayIndex) von \(OnboardingViewModel.stepCount)")
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(.secondary)
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .center) {
+        Text("Blitztext einrichten")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(.primary)
+        Spacer()
+        BlitzStatusPill(
+          state: viewModel.canAdvance(appState) ? .ready : .warning,
+          label: "Schritt \(viewModel.step.displayIndex)/\(OnboardingViewModel.stepCount)"
+        )
+      }
+
+      HStack(spacing: 5) {
+        ForEach(OnboardingViewModel.OnboardingStep.allCases) { step in
+          stepIndicator(step)
+        }
+      }
     }
     .padding(.horizontal, 20)
     .padding(.vertical, 12)
+  }
+
+  private func stepIndicator(_ step: OnboardingViewModel.OnboardingStep) -> some View {
+    let isSelected = step == viewModel.step
+    let isPast = step.rawValue < viewModel.step.rawValue
+    let tint = isSelected || isPast ? step.accent : Color.secondary
+
+    return HStack(spacing: 4) {
+      Image(systemName: isPast ? "checkmark" : step.systemImage)
+        .font(.system(size: 8.5, weight: .bold))
+      if isSelected {
+        Text(step.title)
+          .font(.system(size: 10, weight: .semibold))
+      }
+    }
+    .foregroundStyle(tint)
+    .padding(.horizontal, isSelected ? 8 : 6)
+    .padding(.vertical, 4)
+    .background(
+      Capsule(style: .continuous)
+        .fill(tint.opacity(isSelected ? 0.12 : 0.06))
+    )
+    .overlay(
+      Capsule(style: .continuous)
+        .strokeBorder(tint.opacity(0.18), lineWidth: 0.5)
+    )
   }
 
   // MARK: - Step body
@@ -60,6 +94,8 @@ struct OnboardingWizardView: View {
     switch viewModel.step {
     case .welcome:
       WelcomeStepView()
+    case .installLocation:
+      InstallLocationStepView()
     case .permissions:
       PermissionsStepView(appState: appState)
     case .processing:
@@ -78,17 +114,19 @@ struct OnboardingWizardView: View {
   private var footer: some View {
     HStack(spacing: 12) {
       if !viewModel.isFirstStep {
-        Button("Zurück") { back() }
-          .buttonStyle(SubtleButtonStyle())
-          .foregroundStyle(.secondary)
+        Button {
+          back()
+        } label: {
+          Label("Zurück", systemImage: "chevron.left")
+        }
+        .buttonStyle(PopoverActionButtonStyle(.secondary))
           .font(.system(size: 12, weight: .medium))
       }
 
       Spacer()
 
       Button("Später") { onClose() }
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.secondary)
+        .buttonStyle(PopoverActionButtonStyle(.quiet))
         .font(.system(size: 11.5))
         .keyboardShortcut(.cancelAction)
 
@@ -102,17 +140,10 @@ struct OnboardingWizardView: View {
     Button {
       primaryAction()
     } label: {
-      Text(viewModel.isLastStep ? "Fertig" : "Weiter")
+      Text(viewModel.step.primaryActionLabel)
         .font(.system(size: 12.5, weight: .semibold))
-        .foregroundStyle(.white)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 7)
-        .background(
-          RoundedRectangle(cornerRadius: 8)
-            .fill(viewModel.canAdvance(appState) ? Color.accentColor : Color.secondary.opacity(0.4))
-        )
     }
-    .buttonStyle(SubtleButtonStyle())
+    .buttonStyle(PopoverActionButtonStyle(.primary))
     .disabled(!viewModel.canAdvance(appState))
     .modifier(DefaultActionShortcut(isEnabled: viewModel.canAdvance(appState)))
   }

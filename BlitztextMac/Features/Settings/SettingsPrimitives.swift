@@ -6,8 +6,8 @@ import SwiftUI
 // They keep grouping, empty-state guidance and status badges consistent across tabs and
 // codify the DESIGN.md conventions (SectionLabel, SubtleButtonStyle, card radii, du-form text).
 
-/// A labelled band that groups related controls. Renders the quiet `SectionLabel`, an optional
-/// trailing `SubtleButtonStyle` action, an optional 10.5pt secondary caption, then the content.
+/// A native macOS settings group. Prefer SwiftUI's stock `GroupBox` so macOS 26 can provide the
+/// platform surface; custom Liquid Glass should stay at the popover/window level.
 struct SettingsSection<Content: View>: View {
   let label: String
   let action: (label: String, perform: () -> Void)?
@@ -27,26 +27,29 @@ struct SettingsSection<Content: View>: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 6) {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        if let caption {
+          Text(caption)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+
+        content
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } label: {
+      HStack(spacing: 8) {
         SectionLabel(text: label)
         Spacer()
         if let action {
           Button(action.label) { action.perform() }
             .font(.system(size: 10, weight: .medium))
-            .buttonStyle(SubtleButtonStyle())
-            .foregroundStyle(.blue)
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
         }
       }
-
-      if let caption {
-        Text(caption)
-          .font(.system(size: 10.5))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-
-      content
     }
   }
 }
@@ -83,43 +86,30 @@ struct EmptyStateCard: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(spacing: 6) {
-        Image(systemName: icon)
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(accent)
-        Text(title)
-          .font(.system(size: 11.5, weight: .semibold))
-          .foregroundStyle(.primary)
-      }
+    GroupBox {
+      VStack(alignment: .leading, spacing: 8) {
+        Text(caption)
+          .font(.system(size: 10.5))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
 
-      Text(caption)
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-
-      if let buttonLabel, let action {
-        Button {
-          action()
-        } label: {
-          Label(buttonLabel, systemImage: "arrow.right.circle.fill")
-            .font(.system(size: 11, weight: .semibold))
+        if let buttonLabel, let action {
+          Button {
+            action()
+          } label: {
+            Label(buttonLabel, systemImage: "arrow.right.circle.fill")
+              .font(.system(size: 11, weight: .semibold))
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
         }
-        .buttonStyle(.borderless)
-        .foregroundStyle(accent)
-        .padding(.top, 2)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } label: {
+      Label(title, systemImage: icon)
+        .font(.system(size: 11.5, weight: .semibold))
+        .foregroundStyle(accent)
     }
-    .padding(8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 8)
-        .fill(MenuBarTokens.tintFill(accent, colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(MenuBarTokens.tintStroke(accent, colorScheme: colorScheme), lineWidth: 0.5)
-    )
   }
 }
 
@@ -194,8 +184,7 @@ struct DestructiveClearButton: View {
   var body: some View {
     Button(label) { showConfirm = true }
       .font(.system(size: 10, weight: .medium))
-      .buttonStyle(SubtleButtonStyle())
-      .foregroundStyle(.red)
+      .buttonStyle(PopoverActionButtonStyle(.danger))
       .accessibilityLabel(label)
       .confirmationDialog("\(label)?", isPresented: $showConfirm, titleVisibility: .visible) {
         Button("Löschen", role: .destructive, action: action)

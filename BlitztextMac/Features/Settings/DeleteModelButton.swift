@@ -16,9 +16,8 @@ struct DeleteModelButton: View {
 
   var body: some View {
     Button("Entfernen") { confirming = true }
-      .buttonStyle(.plain)
+      .buttonStyle(PopoverActionButtonStyle(.danger))
       .font(.system(size: 10.5, weight: .medium))
-      .foregroundStyle(.red.opacity(0.85))
       .confirmationDialog(
         "\(displayName) entfernen?",
         isPresented: $confirming,

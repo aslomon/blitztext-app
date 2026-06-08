@@ -60,6 +60,9 @@ final class AppState {
   /// Selection snapshot taken when the popover opens — BEFORE Blitztext activates and steals focus.
   /// Reused for `.manual` starts so reply/edit context isn't read from Blitztext's own window.
   private var pendingPopoverSelection: SelectionContext?
+  /// Automatic field-context snapshot taken next to `pendingPopoverSelection`, before the popover
+  /// activates Blitztext. In-memory only; it is consumed by the next manual rewrite run.
+  private var pendingPopoverAutomaticContext: AutomaticRewriteContext?
   private var menuBarStatusResetTask: Task<Void, Never>?
   private var workflowCleanupTask: Task<Void, Never>?
   /// The user's clipboard, snapshotted right before auto-paste overwrites it. Restored after a
@@ -765,6 +768,7 @@ final class AppState {
     activeLaunchSource = source
     activePasteTarget = capturePasteTarget(for: source)
     let selection = captureSelectionContext(for: type, source: source)
+    let automaticContext = captureAutomaticContext(for: type, source: source)
 
     switch type {
     case .transcription:
@@ -806,6 +810,7 @@ final class AppState {
         backend: rewriteTranscriptionBackend,
         localModelName: selectedLocalModelName,
         selection: selection,
+        automaticContext: automaticContext,
         memoryContext: memoryContext(for: .textImprover)
       )
       configureWorkflowHandlers(workflow)
@@ -823,6 +828,7 @@ final class AppState {
         language: transcriptionSettings.language,
         backend: rewriteTranscriptionBackend,
         localModelName: selectedLocalModelName,
+        automaticContext: automaticContext,
         memoryContext: memoryContext(for: .dampfAblassen)
       )
       configureWorkflowHandlers(workflow)
@@ -878,6 +884,24 @@ final class AppState {
     guard type == .textImprover else { return nil }
     guard modeConfig(for: type).rewrite.replyContextMode != .off else { return nil }
     return source == .manual ? pendingPopoverSelection : SelectionContextService.capture()
+  }
+
+  /// Captures the current field text as opt-in rewrite context without requiring a selection.
+  /// Manual starts reuse the pre-popover snapshot; background hotkeys capture live because the
+  /// target app remains frontmost.
+  private func captureAutomaticContext(for type: WorkflowType, source: WorkflowLaunchSource)
+    -> AutomaticRewriteContext?
+  {
+    guard type == .textImprover || type == .dampfAblassen else { return nil }
+    guard modeConfig(for: type).rewrite.useAutomaticFieldContext else { return nil }
+    if source == .manual { return pendingPopoverAutomaticContext }
+    guard let target = activePasteTarget else { return nil }
+    return SelectionContextService.captureAutomaticFieldContext(
+      appBundleID: target.bundleIdentifier,
+      appName: target.appName,
+      windowTitle: target.windowTitle,
+      isSecureField: target.isSecureField
+    )
   }
 
   func stopCurrentWorkflow() {
@@ -1005,6 +1029,7 @@ final class AppState {
       modeConfig(for: .textImprover).rewrite.replyContextMode != .off
       ? SelectionContextService.capture()
       : nil
+    pendingPopoverAutomaticContext = capturePopoverAutomaticContext()
     if let activeWorkflow, activeWorkflow.phase.isActive {
       page = .workflow
     } else if page == .workflow {
@@ -1346,6 +1371,21 @@ final class AppState {
     case .hotkeyBackground:
       return captureCurrentFrontmostApp()
     }
+  }
+
+  private func capturePopoverAutomaticContext() -> AutomaticRewriteContext? {
+    guard
+      modeConfig(for: .textImprover).rewrite.useAutomaticFieldContext
+        || modeConfig(for: .dampfAblassen).rewrite.useAutomaticFieldContext,
+      let target = lastPopoverPasteTarget
+    else { return nil }
+
+    return SelectionContextService.captureAutomaticFieldContext(
+      appBundleID: target.bundleIdentifier,
+      appName: target.appName,
+      windowTitle: target.windowTitle,
+      isSecureField: target.isSecureField
+    )
   }
 
   private func attemptPasteTrusted(

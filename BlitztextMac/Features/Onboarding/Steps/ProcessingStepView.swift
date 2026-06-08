@@ -13,7 +13,7 @@ struct ProcessingStepView: View {
         systemImage: "cpu",
         accent: .blue,
         title: "Verarbeitung",
-        subtitle: "Wo sollen Aufnahme und Umformung laufen? Du kannst das jederzeit umstellen."
+        subtitle: "Wähle Online-Leistung oder lokalen Datenschutz."
       )
 
       VStack(spacing: 10) {
@@ -72,6 +72,12 @@ struct ProcessingStepView: View {
             Text(title)
               .font(.system(size: 12.5, weight: .semibold))
               .foregroundStyle(.primary)
+            if selected {
+              BlitzStatusPill(
+                state: title == "Sicherer lokaler Modus" ? .local : .online,
+                label: "Gewählt"
+              )
+            }
           }
           Text(detail)
             .font(.system(size: 11))
@@ -92,7 +98,8 @@ struct ProcessingStepView: View {
           .strokeBorder(accent.opacity(selected ? 0.35 : 0.1), lineWidth: selected ? 1 : 0.5)
       )
     }
-    .buttonStyle(SubtleButtonStyle())
+    .buttonStyle(.plain)
+    .help(title)
   }
 
   private var offlineAssurance: some View {

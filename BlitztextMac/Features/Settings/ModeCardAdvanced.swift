@@ -4,7 +4,7 @@ import SwiftUI
 //
 // The "Erweitert" disclosure of a mode card: tone, custom prompt, context, reply-context,
 // memory toggle and the reset footer — plus the always-basic emoji-density picker. Split out of
-// `ModeCardView.swift` to keep each file ≤300 lines (DESIGN.md / code-quality rules).
+// `ModeCardView.swift` to keep each file compact (DESIGN.md / code-quality rules).
 extension ModeCardView {
 
   // MARK: - Tone / Prompt / Context / Reply
@@ -67,12 +67,9 @@ extension ModeCardView {
       .controlSize(.small)
       .pickerStyle(.menu)
       if config.rewrite.replyContextMode != .off {
-        Text(
-          "Liest die aktuelle Auswahl in der App und bezieht sie als Kontext ein. Bei OpenAI-Verarbeitung wird der markierte Text mitgesendet."
-        )
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+        InfoDisclosure("Kontext-Details") {
+          Text("Liest die aktuelle Auswahl in der App und bezieht sie als Kontext ein. Bei OpenAI-Verarbeitung wird der markierte Text mitgesendet.")
+        }
       }
     }
   }
@@ -92,6 +89,37 @@ extension ModeCardView {
   }
 
   // MARK: - Memory context (rewrite modes only)
+
+  @ViewBuilder
+  var automaticFieldContextToggle: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Toggle("Arbeitskontext automatisch lesen", isOn: bind(\.rewrite.useAutomaticFieldContext))
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .font(.system(size: 11))
+
+      if config.rewrite.useAutomaticFieldContext {
+        automaticFieldContextHint
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var automaticFieldContextHint: some View {
+    if effectiveBackend == .openai {
+      Text(
+        "Liest beim Start das fokussierte Eingabefeld bis zum Cursor als Kontext. Bei Online-Verarbeitung wird dieser Kontext mit an die OpenAI-API gesendet."
+      )
+      .font(.system(size: 10))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+    } else {
+      Text("Liest beim Start das fokussierte Eingabefeld bis zum Cursor als lokalen Kontext.")
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
 
   @ViewBuilder
   var memoryToggle: some View {
@@ -139,8 +167,7 @@ extension ModeCardView {
         appState.resetMode(type)
       }
       .font(.system(size: 10, weight: .medium))
-      .buttonStyle(SubtleButtonStyle())
-      .foregroundStyle(.secondary)
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
     }
   }
 }

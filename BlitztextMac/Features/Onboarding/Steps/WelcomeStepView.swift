@@ -9,28 +9,22 @@ struct WelcomeStepView: View {
         systemImage: "sparkles",
         accent: .blue,
         title: "Willkommen bei Blitztext",
-        subtitle:
-          "Einmal einrichten, dann sprichst du überall — und der fertige Text landet direkt im Feld."
+        subtitle: "Einmal einrichten. Danach sprechen, loslassen, Text sitzt im Feld."
       )
 
       VStack(alignment: .leading, spacing: 10) {
         valueBullet(
           icon: "mic.fill", accent: .blue,
           title: "Sprechen statt tippen",
-          detail:
-            "Halte das Kürzel, sprich, lass los — der Text wird an der Cursorposition eingefügt.")
+          detail: "Hotkey halten, sprechen, loslassen.")
         valueBullet(
           icon: "text.badge.checkmark", accent: .purple,
           title: "Fertig formuliert",
-          detail: "E-Mail, Prompt oder Social: Blitztext bringt das Diktat in die passende Form.")
+          detail: "E-Mail, Prompt oder Social aus deinem Diktat.")
         valueBullet(
           icon: "lock.shield.fill", accent: .green,
           title: "Online oder komplett lokal",
-          detail: "Wahlweise über OpenAI oder vollständig offline auf diesem Mac.")
-      }
-
-      if BlitztextInstallLocationService.shouldOfferMoveToApplications {
-        installCard
+          detail: "Du entscheidest, wo Verarbeitung läuft.")
       }
     }
   }
@@ -57,27 +51,4 @@ struct WelcomeStepView: View {
     }
   }
 
-  private var installCard: some View {
-    OnboardingCard(accent: .orange) {
-      HStack(alignment: .top, spacing: 10) {
-        Image(systemName: "arrow.down.app")
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(.orange)
-          .frame(width: 20, height: 20)
-
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Lege Blitztext zuerst nach /Applications.")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.primary)
-          Text(
-            "Das hält Anmeldestart, spätere Updates und das Entfernen sauber auf einer einzigen App-Kopie."
-          )
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-        }
-        Spacer(minLength: 0)
-      }
-    }
-  }
 }

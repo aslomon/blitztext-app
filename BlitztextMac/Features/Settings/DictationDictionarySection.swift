@@ -145,10 +145,8 @@ struct DictationDictionarySection: View {
         addReplacement()
       } label: {
         Image(systemName: "plus.circle.fill")
-          .font(.system(size: 16))
-          .foregroundStyle(.blue.opacity(0.7))
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverIconButtonStyle(.primary))
       .accessibilityLabel("Ersetzung hinzufügen")
       .disabled(!canAdd)
     }

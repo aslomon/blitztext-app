@@ -80,19 +80,19 @@ struct SystemSettingsView: View {
         Button("Nach /Applications bewegen") {
           moveToApplications()
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverActionButtonStyle(.warning))
       }
 
       Button("Im Finder zeigen") {
         revealInFinder(urls: [BlitztextInstallLocationService.bundleURL])
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
 
       if !BlitztextInstallLocationService.otherInstalledBundleURLs.isEmpty {
         Button("Weitere Kopien zeigen") {
           revealInFinder(urls: BlitztextInstallLocationService.otherInstalledBundleURLs)
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverActionButtonStyle(.warning))
       }
     }
   }
@@ -134,7 +134,7 @@ struct SystemSettingsView: View {
       Button("Einrichtung erneut starten") {
         NotificationCenter.default.post(name: .openOnboardingWindow, object: nil)
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
     }
   }
 
@@ -165,13 +165,13 @@ struct SystemSettingsView: View {
             .font(.system(size: 10.5))
             .foregroundStyle(.secondary)
           Button("Start") { EarconPlayer.play(.start) }
-            .buttonStyle(SubtleButtonStyle())
+            .buttonStyle(PopoverActionButtonStyle(.quiet))
             .font(.system(size: 10.5, weight: .medium))
           Button("Fertig") { EarconPlayer.play(.done) }
-            .buttonStyle(SubtleButtonStyle())
+            .buttonStyle(PopoverActionButtonStyle(.quiet))
             .font(.system(size: 10.5, weight: .medium))
           Button("Fehler") { EarconPlayer.play(.error) }
-            .buttonStyle(SubtleButtonStyle())
+            .buttonStyle(PopoverActionButtonStyle(.quiet))
             .font(.system(size: 10.5, weight: .medium))
         }
       }

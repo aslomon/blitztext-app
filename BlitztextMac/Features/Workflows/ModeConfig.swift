@@ -62,6 +62,10 @@ struct RewriteConfig: Codable, Sendable {
   var context: String = ""
   var emojiDensity: EmojiTextSettings.EmojiDensity = .mittel
   var replyContextMode: ReplyContextMode = .off
+  /// When true, the current focused input field is read at recording start and injected into the
+  /// rewrite prompt as transient working context. Default OFF: potentially sensitive text is never
+  /// read or sent unless the user opts in for the mode.
+  var useAutomaticFieldContext: Bool = false
   /// Phase 4b: when true (and the global master is on), the confirmed Memory block is
   /// rendered into this mode's rewrite system prompt. Default OFF so plain Diktat stays untouched.
   var useMemoryContext: Bool = false
@@ -74,6 +78,7 @@ struct RewriteConfig: Codable, Sendable {
     context: String = "",
     emojiDensity: EmojiTextSettings.EmojiDensity = .mittel,
     replyContextMode: ReplyContextMode = .off,
+    useAutomaticFieldContext: Bool = false,
     useMemoryContext: Bool = false
   ) {
     self.systemPrompt = systemPrompt
@@ -83,12 +88,13 @@ struct RewriteConfig: Codable, Sendable {
     self.context = context
     self.emojiDensity = emojiDensity
     self.replyContextMode = replyContextMode
+    self.useAutomaticFieldContext = useAutomaticFieldContext
     self.useMemoryContext = useMemoryContext
   }
 
   enum CodingKeys: String, CodingKey {
     case systemPrompt, rewriteBackend, modelID, tone, context, emojiDensity, replyContextMode
-    case useMemoryContext
+    case useAutomaticFieldContext, useMemoryContext
   }
 
   init(from decoder: Decoder) throws {
@@ -109,6 +115,8 @@ struct RewriteConfig: Codable, Sendable {
       try c.decodeIfPresent(EmojiTextSettings.EmojiDensity.self, forKey: .emojiDensity) ?? .mittel
     replyContextMode =
       try c.decodeIfPresent(ReplyContextMode.self, forKey: .replyContextMode) ?? .off
+    useAutomaticFieldContext =
+      try c.decodeIfPresent(Bool.self, forKey: .useAutomaticFieldContext) ?? false
     useMemoryContext =
       try c.decodeIfPresent(Bool.self, forKey: .useMemoryContext) ?? false
   }
@@ -218,6 +226,7 @@ struct ModeConfig: Codable, Sendable, Identifiable {
       || rewrite.tone != defaults.tone
       || rewrite.context != defaults.context
       || rewrite.replyContextMode != defaults.replyContextMode
+      || rewrite.useAutomaticFieldContext != defaults.useAutomaticFieldContext
       || rewrite.useMemoryContext != defaults.useMemoryContext
   }
 }

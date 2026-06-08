@@ -5,9 +5,11 @@ import SwiftUI
 /// recommendation, the models already pulled into Ollama (with real on-disk sizes), and the
 /// downloadable catalog with live progress. Hosted in its own window by `LocalModelsWindowController`.
 struct LocalModelsView: View {
+  @Bindable var appState: AppState
   @Bindable var manager: LocalModelManager
   @Environment(\.colorScheme) private var colorScheme
   @State private var customTag = ""
+  @State private var pendingSelectionTag: String?
 
   var body: some View {
     ScrollView {
@@ -26,6 +28,9 @@ struct LocalModelsView: View {
     }
     .frame(minWidth: 540, minHeight: 580)
     .task { await manager.refresh() }
+    .onChange(of: manager.installed) { _, _ in
+      selectPendingModelIfInstalled()
+    }
   }
 
   // MARK: - Header
@@ -35,19 +40,29 @@ struct LocalModelsView: View {
       VStack(alignment: .leading, spacing: 2) {
         Text("Lokale Modelle")
           .font(.system(size: 16, weight: .semibold))
-        Text("Laufen komplett offline auf deinem Mac über Ollama.")
+        Text("Laden, entfernen und aktives Umschreibmodell wählen.")
           .font(.system(size: 11))
           .foregroundStyle(.secondary)
       }
       Spacer()
+      activeModelPill
       Button {
         Task { await manager.refresh() }
       } label: {
         Label("Aktualisieren", systemImage: "arrow.clockwise")
           .font(.system(size: 11, weight: .medium))
       }
-      .buttonStyle(.borderless)
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
       .disabled(manager.isRefreshing)
+    }
+  }
+
+  @ViewBuilder
+  private var activeModelPill: some View {
+    if let activeModel {
+      BlitzStatusPill(state: .ready, label: activeModel.name)
+    } else {
+      BlitzStatusPill(state: .warning, label: "Kein Modell")
     }
   }
 
@@ -99,19 +114,27 @@ struct LocalModelsView: View {
         Text("ca. \(SystemCapabilities.formatGB(model.downloadGB)) Download")
           .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
         if installed {
-          Label("Bereits installiert", systemImage: "checkmark.circle.fill")
-            .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.green)
+          if isActive(tag: model.tag) {
+            BlitzStatusPill(state: .ready, label: "Aktiv")
+          } else {
+            Button {
+              selectInstalledModel(for: model.tag)
+            } label: {
+              Label("Nutzen", systemImage: "checkmark.circle")
+            }
+            .buttonStyle(PopoverActionButtonStyle(.primary))
+          }
         } else if pulling {
           Label("Wird geladen …", systemImage: "arrow.down.circle")
             .font(.system(size: 10.5, weight: .medium)).foregroundStyle(.blue)
         } else {
           Button {
-            manager.pull(model.tag)
+            pullAndUse(model.tag)
           } label: {
-            Label("Jetzt laden", systemImage: "arrow.down.circle.fill")
+            Label("Laden & nutzen", systemImage: "arrow.down.circle.fill")
               .font(.system(size: 11.5, weight: .semibold))
           }
-          .buttonStyle(.borderless)
+          .buttonStyle(PopoverActionButtonStyle(.primary))
           .disabled(
             !manager.serverReachable || !manager.system.diskFits(downloadGB: model.downloadGB))
         }
@@ -155,6 +178,16 @@ struct LocalModelsView: View {
         }
       }
       Spacer()
+      if isActive(record: record) {
+        BlitzStatusPill(state: .ready, label: "Aktiv")
+      } else {
+        Button {
+          select(record)
+        } label: {
+          Label("Nutzen", systemImage: "checkmark.circle")
+        }
+        .buttonStyle(PopoverActionButtonStyle(.primary))
+      }
       Text(SystemCapabilities.formatGB(record.sizeGB))
         .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
       DeleteModelButton(
@@ -176,7 +209,13 @@ struct LocalModelsView: View {
     VStack(alignment: .leading, spacing: 8) {
       SectionLabel(text: "Verfügbare Modelle")
       ForEach(OllamaModelCatalog.models) { model in
-        LocalModelRowView(model: model, manager: manager)
+        LocalModelRowView(
+          model: model,
+          manager: manager,
+          isActive: isActive(tag: model.tag),
+          onUseInstalled: { selectInstalledModel(for: model.tag) },
+          onPullAndUse: { pullAndUse(model.tag) }
+        )
       }
     }
   }
@@ -191,8 +230,8 @@ struct LocalModelsView: View {
           .textFieldStyle(.roundedBorder)
           .font(.system(size: 11.5))
           .onSubmit(loadCustom)
-        Button("Laden", action: loadCustom)
-          .buttonStyle(.borderless)
+        Button("Laden & nutzen", action: loadCustom)
+          .buttonStyle(PopoverActionButtonStyle(.primary))
           .font(.system(size: 11.5, weight: .semibold))
           .disabled(
             customTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -206,8 +245,53 @@ struct LocalModelsView: View {
   private func loadCustom() {
     let tag = customTag.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !tag.isEmpty else { return }
-    manager.pull(tag)
+    pullAndUse(tag)
     customTag = ""
+  }
+
+  // MARK: - Active selection
+
+  private var activeModel: OllamaService.InstalledModel? {
+    let selected = appState.appSettings.selectedLocalLLMModelName.trimmingCharacters(
+      in: .whitespacesAndNewlines)
+    guard !selected.isEmpty else { return nil }
+    return manager.installed.first { OllamaService.isInstalled(selected, in: [$0.name]) }
+  }
+
+  private func isActive(record: OllamaService.InstalledModel) -> Bool {
+    activeModel?.id == record.id
+  }
+
+  private func isActive(tag: String) -> Bool {
+    guard let activeModel else { return false }
+    return OllamaService.isInstalled(tag, in: [activeModel.name])
+  }
+
+  private func select(_ record: OllamaService.InstalledModel) {
+    appState.appSettings.selectedLocalLLMModelName = record.name
+  }
+
+  private func selectInstalledModel(for tag: String) {
+    guard let record = manager.installed.first(where: { OllamaService.isInstalled(tag, in: [$0.name]) })
+    else { return }
+    select(record)
+  }
+
+  private func pullAndUse(_ tag: String) {
+    pendingSelectionTag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+    manager.pull(tag)
+    selectPendingModelIfInstalled()
+  }
+
+  private func selectPendingModelIfInstalled() {
+    guard let pendingSelectionTag else { return }
+    guard
+      let record = manager.installed.first(where: {
+        OllamaService.isInstalled(pendingSelectionTag, in: [$0.name])
+      })
+    else { return }
+    select(record)
+    self.pendingSelectionTag = nil
   }
 
   // MARK: - Banners
@@ -225,17 +309,17 @@ struct LocalModelsView: View {
       HStack(spacing: 8) {
         if manager.ollamaAppInstalled {
           Button("Ollama öffnen") { openOllamaApp() }
-            .buttonStyle(.borderless).font(.system(size: 11.5, weight: .semibold))
+            .buttonStyle(PopoverActionButtonStyle(.warning)).font(.system(size: 11.5, weight: .semibold))
         } else {
           Button("ollama.com öffnen") {
             if let url = URL(string: "https://ollama.com/download") {
               NSWorkspace.shared.open(url)
             }
           }
-          .buttonStyle(.borderless).font(.system(size: 11.5, weight: .semibold))
+          .buttonStyle(PopoverActionButtonStyle(.warning)).font(.system(size: 11.5, weight: .semibold))
         }
         Button("Erneut prüfen") { Task { await manager.refresh() } }
-          .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
+          .buttonStyle(PopoverActionButtonStyle(.secondary)).font(.system(size: 11))
       }
     }
     .padding(12)

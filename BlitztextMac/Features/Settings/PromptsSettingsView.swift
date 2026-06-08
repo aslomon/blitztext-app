@@ -9,10 +9,15 @@ struct PromptsSettingsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      Text("Modi formulieren deinen Text um — Schreibstil, Kontext und eigene Anweisung pro Modus.")
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+      HStack(spacing: 6) {
+        BlitzStatusPill(
+          state: appState.hasAnyRewriteEngine ? .ready : .warning,
+          label: appState.hasAnyRewriteEngine ? "Bereit" : "Modell fehlt"
+        )
+        Text("Modi")
+          .font(.system(size: 12.5, weight: .semibold))
+        Spacer()
+      }
 
       if !appState.hasAnyRewriteEngine {
         EmptyStateCard(
@@ -30,6 +35,10 @@ struct PromptsSettingsView: View {
       ModeCardView(appState: appState, type: .textImprover)
       ModeCardView(appState: appState, type: .dampfAblassen)
       ModeCardView(appState: appState, type: .emojiText)
+
+      InfoDisclosure("Was Modi tun") {
+        Text("Modi formulieren dein Diktat um: E-Mail, Prompt oder Social. Namen, Backend und eigene Anweisungen bearbeitest du pro Modus.")
+      }
     }
     .padding(16)
   }

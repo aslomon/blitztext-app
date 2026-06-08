@@ -35,6 +35,21 @@ struct SelectionContext {
   }
 }
 
+// MARK: - Automatic rewrite context
+
+/// Text from the focused input field, captured at recording start when the mode opts in.
+/// In-memory only — never persisted. The text is capped before construction.
+struct AutomaticRewriteContext: Sendable {
+  var text: String
+  var appBundleID: String?
+  var appName: String?
+  var windowTitle: String?
+
+  var isEmpty: Bool {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+}
+
 // MARK: - Provider seam
 
 /// Abstracts the rewrite transport so a mode can run on OpenAI or on-device.

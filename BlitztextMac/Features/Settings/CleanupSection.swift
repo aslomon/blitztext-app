@@ -27,7 +27,7 @@ struct CleanupSection: View {
         Button("Entfernung vorbereiten") {
           showCleanupOptions = true
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverActionButtonStyle(.danger))
       }
 
       if let cleanupStatusText {
@@ -64,13 +64,12 @@ struct CleanupSection: View {
         Button("Abbrechen") {
           showCleanupOptions = false
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverActionButtonStyle(.secondary))
 
         Button("Jetzt bereinigen") {
           runCleanup()
         }
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.red)
+        .buttonStyle(PopoverActionButtonStyle(.danger))
       }
     }
   }

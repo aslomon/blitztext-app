@@ -20,9 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
   private var localModelsWindowController: LocalModelsWindowController!
   private var archiveWindowController: ArchiveWindowController!
   private var onboardingWindowController: OnboardingWindowController!
-  let appState = AppState()
+  lazy var appState = AppState()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    guard !Self.isRunningUnitTests else { return }
+
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
     if let button = statusItem.button {
@@ -49,7 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
       appState?.activeWorkflow?.phase.isActive ?? false
     }
     recordingPillController = RecordingPillController(appState: appState)
-    localModelsWindowController = LocalModelsWindowController(manager: appState.localModelManager)
+    localModelsWindowController = LocalModelsWindowController(
+      appState: appState,
+      manager: appState.localModelManager
+    )
     archiveWindowController = ArchiveWindowController(appState: appState)
     onboardingWindowController = OnboardingWindowController(appState: appState) { [weak self] in
       self?.openSettingsInPopover()
@@ -225,5 +230,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         appState.page = .main
       }
     }
+  }
+
+  private static var isRunningUnitTests: Bool {
+    ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
   }
 }

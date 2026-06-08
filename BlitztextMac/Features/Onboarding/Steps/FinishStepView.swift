@@ -62,8 +62,7 @@ struct FinishStepView: View {
       discoverCard
 
       Button("Zu den Einstellungen") { onOpenSettings() }
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.blue)
+        .buttonStyle(PopoverActionButtonStyle(.secondary))
         .font(.system(size: 12, weight: .medium))
     }
   }

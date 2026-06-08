@@ -30,6 +30,7 @@ final class TextImprovementWorkflow: Workflow {
   private let backend: TranscriptionBackend
   private let localModelName: String
   private let selection: SelectionContext?
+  private let automaticContext: AutomaticRewriteContext?
   private let memoryContext: MemoryContext?
   private var processingTask: Task<Void, Never>?
 
@@ -44,6 +45,7 @@ final class TextImprovementWorkflow: Workflow {
     backend: TranscriptionBackend = .remote,
     localModelName: String = LocalTranscriptionService.recommendedFastModelName,
     selection: SelectionContext? = nil,
+    automaticContext: AutomaticRewriteContext? = nil,
     memoryContext: MemoryContext? = nil
   ) {
     self.rewrite = rewrite
@@ -56,6 +58,7 @@ final class TextImprovementWorkflow: Workflow {
     self.backend = backend
     self.localModelName = localModelName
     self.selection = selection
+    self.automaticContext = automaticContext
     self.memoryContext = memoryContext
   }
 
@@ -166,7 +169,11 @@ final class TextImprovementWorkflow: Workflow {
         phase = .running("Text wird verbessert ...")
 
         let systemPrompt = LLMService.rewriteSystemPrompt(
-          rewrite, customTerms: rewriteTerms, selection: selection, memory: memoryContext)
+          rewrite,
+          customTerms: rewriteTerms,
+          selection: selection,
+          automaticContext: automaticContext,
+          memory: memoryContext)
         let outcome = try await provider.rewrite(
           systemPrompt: systemPrompt,
           userText: cleanedRawText,

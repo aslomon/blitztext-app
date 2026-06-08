@@ -23,7 +23,7 @@ struct ModelsStepView: View {
         systemImage: "shippingbox",
         accent: .green,
         title: "Lokale Modelle",
-        subtitle: "Die Engines, die auf diesem Mac laufen. Im Online-Modus ist hier nichts Pflicht."
+        subtitle: needsWhisper ? "Lade ein lokales Whisper-Modell." : "Im Online-Modus ist hier nichts Pflicht."
       )
 
       whisperCard
@@ -42,8 +42,7 @@ struct ModelsStepView: View {
           Spacer()
           Button("Prüfen") { transcriptionRecheckToken += 1 }
             .font(.system(size: 10, weight: .medium))
-            .buttonStyle(SubtleButtonStyle())
-            .foregroundStyle(.blue)
+            .buttonStyle(PopoverActionButtonStyle(.quiet))
             .disabled(appState.isDownloadingLocalModel)
         }
 
@@ -58,12 +57,10 @@ struct ModelsStepView: View {
               .fixedSize(horizontal: false, vertical: true)
           }
         } else {
-          Text(
-            "Im Online-Modus läuft die Transkription über OpenAI Whisper. Ein lokales Modell brauchst du nur im sicheren lokalen Modus."
-          )
-          .font(.system(size: 10.5))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
+          BlitzStatusPill(state: .online, label: "Online Whisper")
+          InfoDisclosure("Lokale Modelle") {
+            Text("Ein lokales Modell brauchst du nur im sicheren lokalen Modus.")
+          }
         }
       }
     }
@@ -134,6 +131,7 @@ struct ModelsStepView: View {
         appState.installSelectedLocalModel()
       }
       .controlSize(.small)
+      .buttonStyle(PopoverActionButtonStyle(appState.selectedLocalModelIsInstalled ? .secondary : .primary))
       .disabled(appState.selectedLocalModelIsInstalled)
     }
   }
@@ -144,12 +142,9 @@ struct ModelsStepView: View {
     OnboardingCard {
       VStack(alignment: .leading, spacing: 8) {
         SectionLabel(text: "Optional – nur für lokales Umformen")
-        Text(
-          "Formuliert Texte lokal um (E-Mail, Prompt, Social) über Ollama. Nur nötig, wenn ein Modus offline umformen soll."
-        )
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+        InfoDisclosure("Wofür") {
+          Text("Formuliert Texte lokal um (E-Mail, Prompt, Social) über Ollama. Nur nötig, wenn ein Modus offline umformen soll.")
+        }
 
         LocalLLMModelPicker(appState: appState)
       }

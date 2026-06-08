@@ -46,8 +46,7 @@ struct ArchiveEntryRowActions: View {
   private func copyButton(title: String, text: String, feedback: String) -> some View {
     Button(title) { copy(text, feedback: feedback) }
       .font(.system(size: 10, weight: .medium))
-      .buttonStyle(SubtleButtonStyle())
-      .foregroundStyle(.blue)
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
       .disabled(text.isEmpty)
       .accessibilityLabel("\(title) in die Zwischenablage")
   }
@@ -100,8 +99,7 @@ struct ArchiveEntryRowActions: View {
           .fixedSize(horizontal: false, vertical: true)
         Button("Ergebnis kopieren") { copy(rerunResult, feedback: "Ergebnis") }
           .font(.system(size: 10, weight: .medium))
-          .buttonStyle(SubtleButtonStyle())
-          .foregroundStyle(.blue)
+          .buttonStyle(PopoverActionButtonStyle(.secondary))
           .accessibilityLabel("Neues Ergebnis in die Zwischenablage")
       }
       .padding(8)

@@ -9,6 +9,7 @@ enum SelectionContextService {
   private static let maxSelectedChars = 4000
   // DR-4: cursor-relatives Fenster statt ganzes Feld — kleineres Budget aus Datenschutzgründen.
   static let maxSurroundingChars = 600
+  static let maxAutomaticFieldContextChars = 2_000
 
   /// Captures the current selection synchronously. Call while the target app is still frontmost.
   static func capture() -> SelectionContext? {
@@ -30,6 +31,37 @@ enum SelectionContextService {
       selectedText: selectedText,
       surroundingText: selectedText.isEmpty ? surroundingText : "",
       appBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    )
+    return context.isEmpty ? nil : context
+  }
+
+  /// Captures the focused input field as transient working context without requiring a selection.
+  /// Secure fields are skipped by the caller-provided target snapshot. Best-effort: apps that do
+  /// not expose text through AX simply return nil.
+  static func captureAutomaticFieldContext(
+    appBundleID: String?,
+    appName: String?,
+    windowTitle: String?,
+    isSecureField: Bool
+  ) -> AutomaticRewriteContext? {
+    guard !isSecureField, AXIsProcessTrusted() else { return nil }
+
+    let systemWide = AXUIElementCreateSystemWide()
+    guard let focused = copyElement(systemWide, kAXFocusedUIElementAttribute) else { return nil }
+
+    let fullText = copyString(focused, kAXValueAttribute)
+    let selectedRange = copySelectedRange(focused)
+    let text = automaticFieldContextWindow(
+      fullText: fullText,
+      selectedRange: selectedRange,
+      maxChars: maxAutomaticFieldContextChars
+    )
+
+    let context = AutomaticRewriteContext(
+      text: text,
+      appBundleID: appBundleID,
+      appName: appName,
+      windowTitle: windowTitle
     )
     return context.isEmpty ? nil : context
   }
@@ -75,6 +107,14 @@ enum SelectionContextService {
     start = max(0, start)
     let window = String(decoding: units[start..<end], as: UTF16.self)
     return clamp(window, to: maxChars)
+  }
+
+  /// Larger cursor-relative window for automatic field context. Kept separate from
+  /// `surroundingWindow` so reply/edit selection stays on its tighter privacy budget.
+  static func automaticFieldContextWindow(
+    fullText: String, selectedRange: NSRange?, maxChars: Int = 2_000
+  ) -> String {
+    surroundingWindow(fullText: fullText, selectedRange: selectedRange, maxChars: maxChars)
   }
 
   // MARK: - AX helpers

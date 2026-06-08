@@ -38,6 +38,7 @@ enum LLMService {
     _ rewrite: RewriteConfig,
     customTerms: [String],
     selection: SelectionContext?,
+    automaticContext: AutomaticRewriteContext? = nil,
     memory: MemoryContext? = nil
   ) -> String {
     var prompt: String
@@ -59,6 +60,12 @@ enum LLMService {
     // Memory block is only ever passed when the global master AND the per-mode toggle are on;
     // gating lives at the call site (AppState) so plain Diktat is never affected.
     if let memory, let block = memoryContextBlock(memory) {
+      prompt += block
+    }
+
+    if rewrite.useAutomaticFieldContext,
+      let block = automaticContextBlock(automaticContext)
+    {
       prompt += block
     }
 
@@ -88,6 +95,36 @@ enum LLMService {
       "Diese Begriffe sind Schreibweisen-Hinweise: Wenn sie vorkommen, schreibe sie exakt so. Erzwinge sie nicht."
     )
     return lines.joined(separator: "\n")
+  }
+
+  static func automaticContextBlock(_ context: AutomaticRewriteContext?) -> String? {
+    guard let context, !context.isEmpty else { return nil }
+    let trimmed = context.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    var metadata: [String] = []
+    if let appName = context.appName?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !appName.isEmpty
+    {
+      metadata.append("App: \(appName)")
+    }
+    if let windowTitle = context.windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !windowTitle.isEmpty
+    {
+      metadata.append("Fenster: \(windowTitle)")
+    }
+
+    let metadataLine = metadata.isEmpty ? "" : "\n\(metadata.joined(separator: " · "))"
+    return """
+
+
+      --- Aktueller Arbeitskontext aus dem fokussierten Eingabefeld ---\(metadataLine)
+      \(trimmed)
+      --- Ende Arbeitskontext ---
+      Nutze den obigen Arbeitskontext nur, um die diktierte Nachricht passend fortzusetzen oder \
+      darauf zu antworten. Übernimm daraus keine neuen Fakten, Zusagen oder Namen, wenn ich sie in \
+      meiner Diktat-Nachricht nicht bestätige.
+      """
   }
 
   // MARK: - Emoji prompt

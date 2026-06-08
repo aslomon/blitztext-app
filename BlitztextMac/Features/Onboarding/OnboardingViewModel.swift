@@ -9,6 +9,7 @@ import SwiftUI
 final class OnboardingViewModel {
   enum OnboardingStep: Int, CaseIterable, Identifiable {
     case welcome
+    case installLocation
     case permissions
     case processing
     case models
@@ -19,6 +20,48 @@ final class OnboardingViewModel {
 
     /// 1-based position for the "Schritt n von 6" indicator.
     var displayIndex: Int { rawValue + 1 }
+
+    var title: String {
+      switch self {
+      case .welcome: return "Start"
+      case .installLocation: return "Speicherort"
+      case .permissions: return "Rechte"
+      case .processing: return "Verarbeitung"
+      case .models: return "Modelle"
+      case .modes: return "Modi"
+      case .finish: return "Fertig"
+      }
+    }
+
+    var systemImage: String {
+      switch self {
+      case .welcome: return "sparkles"
+      case .installLocation: return "arrow.down.app"
+      case .permissions: return "hand.raised.fill"
+      case .processing: return "cpu"
+      case .models: return "shippingbox"
+      case .modes: return "text.badge.checkmark"
+      case .finish: return "checkmark.circle.fill"
+      }
+    }
+
+    var accent: Color {
+      switch self {
+      case .welcome, .processing: return .blue
+      case .installLocation, .permissions: return .orange
+      case .models, .finish: return .green
+      case .modes: return .purple
+      }
+    }
+
+    var primaryActionLabel: String {
+      switch self {
+      case .processing: return "Auswahl prüfen"
+      case .models: return "Modelle prüfen"
+      case .finish: return "Fertig"
+      default: return "Weiter"
+      }
+    }
   }
 
   static let stepCount = OnboardingStep.allCases.count
@@ -29,8 +72,13 @@ final class OnboardingViewModel {
   /// returning user sees their own prompt, and a fresh user sees the `ModeDefaults` example.
   var emailPrompt: String
   var promptPrompt: String
+  private let isOpenAIKeyConfigured: () -> Bool
 
-  init(appState: AppState) {
+  init(
+    appState: AppState,
+    isOpenAIKeyConfigured: @escaping () -> Bool = { KeychainService.isConfigured }
+  ) {
+    self.isOpenAIKeyConfigured = isOpenAIKeyConfigured
     emailPrompt = Self.seededPrompt(for: .textImprover, appState: appState)
     promptPrompt = Self.seededPrompt(for: .dampfAblassen, appState: appState)
   }
@@ -63,10 +111,10 @@ final class OnboardingViewModel {
   /// button. Permissions are intentionally soft-warned (always advanceable).
   func canAdvance(_ appState: AppState) -> Bool {
     switch step {
-    case .welcome, .permissions, .modes, .finish:
+    case .welcome, .installLocation, .permissions, .modes, .finish:
       return true
     case .processing:
-      return appState.appSettings.secureLocalModeEnabled || KeychainService.isConfigured
+      return appState.appSettings.secureLocalModeEnabled || isOpenAIKeyConfigured()
     case .models:
       return appState.appSettings.secureLocalModeEnabled
         ? appState.selectedLocalModelIsInstalled

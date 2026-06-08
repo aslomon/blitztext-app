@@ -70,7 +70,7 @@ struct ArchiveEntryRow: View {
       }
       .contentShape(Rectangle())
     }
-    .buttonStyle(SubtleButtonStyle())
+    .buttonStyle(PopoverActionButtonStyle(.quiet))
     .accessibilityLabel("\(displayName), \(timeLabel)")
     .accessibilityHint(expanded ? "Eintrag einklappen" : "Eintrag ausklappen")
   }
@@ -92,10 +92,8 @@ struct ArchiveEntryRow: View {
         Spacer()
         Button(action: onDelete) {
           Image(systemName: "trash")
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(.red.opacity(0.85))
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverIconButtonStyle(.danger))
         .accessibilityLabel("Eintrag löschen")
       }
     }

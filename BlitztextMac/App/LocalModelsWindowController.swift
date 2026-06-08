@@ -6,10 +6,12 @@ import SwiftUI
 /// Created by `AppDelegate`; opened on the `.openLocalModelsWindow` notification.
 @MainActor
 final class LocalModelsWindowController {
+  private let appState: AppState
   private let manager: LocalModelManager
   private var window: NSWindow?
 
-  init(manager: LocalModelManager) {
+  init(appState: AppState, manager: LocalModelManager) {
+    self.appState = appState
     self.manager = manager
   }
 
@@ -28,7 +30,7 @@ final class LocalModelsWindowController {
   }
 
   private func makeWindow() -> NSWindow {
-    let hosting = NSHostingController(rootView: LocalModelsView(manager: manager))
+    let hosting = NSHostingController(rootView: LocalModelsView(appState: appState, manager: manager))
     let window = NSWindow(contentViewController: hosting)
     window.title = "Lokale Modelle"
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable]

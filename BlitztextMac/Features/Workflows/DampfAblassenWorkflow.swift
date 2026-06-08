@@ -29,6 +29,7 @@ final class DampfAblassenWorkflow: Workflow {
   private let language: String
   private let backend: TranscriptionBackend
   private let localModelName: String
+  private let automaticContext: AutomaticRewriteContext?
   private let memoryContext: MemoryContext?
   private var processingTask: Task<Void, Never>?
 
@@ -42,6 +43,7 @@ final class DampfAblassenWorkflow: Workflow {
     language: String = "de",
     backend: TranscriptionBackend = .remote,
     localModelName: String = LocalTranscriptionService.recommendedFastModelName,
+    automaticContext: AutomaticRewriteContext? = nil,
     memoryContext: MemoryContext? = nil
   ) {
     self.rewrite = rewrite
@@ -53,6 +55,7 @@ final class DampfAblassenWorkflow: Workflow {
     self.language = language
     self.backend = backend
     self.localModelName = localModelName
+    self.automaticContext = automaticContext
     self.memoryContext = memoryContext
   }
 
@@ -154,7 +157,11 @@ final class DampfAblassenWorkflow: Workflow {
         phase = .running("Wird umformuliert ...")
 
         let systemPrompt = LLMService.rewriteSystemPrompt(
-          rewrite, customTerms: rewriteTerms, selection: nil, memory: memoryContext)
+          rewrite,
+          customTerms: rewriteTerms,
+          selection: nil,
+          automaticContext: automaticContext,
+          memory: memoryContext)
         let outcome = try await provider.rewrite(
           systemPrompt: systemPrompt,
           userText: cleanedRawText,

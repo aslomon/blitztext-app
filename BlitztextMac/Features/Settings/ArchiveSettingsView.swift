@@ -72,8 +72,7 @@ struct ArchiveSettingsView: View {
         NotificationCenter.default.post(name: .openArchiveWindow, object: nil)
       }
       .font(.system(size: 10, weight: .medium))
-      .buttonStyle(SubtleButtonStyle())
-      .foregroundStyle(.blue)
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
       Spacer()
     }
     .padding(.top, 2)
@@ -120,8 +119,7 @@ struct ArchiveSettingsView: View {
       Spacer()
       Button("Archiv löschen") { showClearArchiveConfirm = true }
         .font(.system(size: 10, weight: .medium))
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.red)
+        .buttonStyle(PopoverActionButtonStyle(.danger))
         .accessibilityLabel("Archiv löschen")
         .confirmationDialog(
           "Archiv löschen?",

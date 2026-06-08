@@ -12,8 +12,7 @@ struct PermissionsStepView: View {
         systemImage: "hand.raised.fill",
         accent: .orange,
         title: "Berechtigungen",
-        subtitle:
-          "Mikrofon zum Aufnehmen, Bedienungshilfen zum direkten Einfügen. Du kannst das auch später erteilen."
+        subtitle: "Mikrofon nimmt auf. Bedienungshilfen fügen direkt ein."
       )
 
       microphoneCard
@@ -44,26 +43,27 @@ struct PermissionsStepView: View {
             .foregroundStyle(.primary)
         }
 
-        Text(micStatusDetail)
-          .font(.system(size: 10.5))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
+        if !micStatus.isGranted {
+          InfoDisclosure("Warum") {
+            Text(micStatusDetail)
+          }
+        }
 
         HStack(spacing: 8) {
           if micStatus == .notDetermined {
             Button("Mikrofon erlauben") { requestMicrophone() }
-              .buttonStyle(SubtleButtonStyle())
+              .buttonStyle(PopoverActionButtonStyle(.warning))
           } else if micStatus == .denied {
             Button("In Einstellungen öffnen") {
               MicrophonePermissionService.openSystemSettings()
             }
-            .buttonStyle(SubtleButtonStyle())
+            .buttonStyle(PopoverActionButtonStyle(.warning))
           }
 
           Button("Erneut prüfen") {
             micStatus = MicrophonePermissionService.currentStatus
           }
-          .buttonStyle(SubtleButtonStyle())
+          .buttonStyle(PopoverActionButtonStyle(.secondary))
         }
       }
     }

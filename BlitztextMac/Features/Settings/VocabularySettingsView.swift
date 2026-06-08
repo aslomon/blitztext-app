@@ -91,7 +91,7 @@ struct VocabularySettingsView: View {
           .foregroundStyle(.blue)
         }
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
     }
   }
 
@@ -142,11 +142,9 @@ struct VocabularySettingsView: View {
         Button {
           addTerm()
         } label: {
-          Image(systemName: "plus.circle.fill")
-            .font(.system(size: 16))
-            .foregroundStyle(.blue.opacity(0.7))
-        }
-        .buttonStyle(SubtleButtonStyle())
+        Image(systemName: "plus.circle.fill")
+      }
+        .buttonStyle(PopoverIconButtonStyle(.primary))
         .disabled(newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
       }
 
@@ -208,7 +206,7 @@ struct VocabularySettingsView: View {
 
       if appState.isMemoryContextEnabled {
         Button("Jetzt analysieren") { appState.recomputeMemory() }
-          .buttonStyle(SubtleButtonStyle())
+          .buttonStyle(PopoverActionButtonStyle(.primary))
           .disabled(appState.isRecomputingMemory || !appState.isArchiveEnabled)
 
         memoryEmptyStateLine

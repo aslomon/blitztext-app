@@ -25,10 +25,13 @@ struct OpenAIKeySection: View {
         SectionLabel(text: "OpenAI API Key")
         Spacer()
         if appState.hasValue(for: .openAIAPIKey) && !editing {
-          Button("Ändern") { editing = true }
+          Button {
+            editing = true
+          } label: {
+            Label("Ändern", systemImage: "pencil")
+          }
             .font(.system(size: 10, weight: .medium))
-            .buttonStyle(.plain)
-            .foregroundStyle(.blue)
+            .buttonStyle(PopoverActionButtonStyle(.quiet))
         }
       }
 
@@ -38,12 +41,9 @@ struct OpenAIKeySection: View {
         keyEntryRow
       }
 
-      Text(
-        "Dein Key bleibt lokal in dieser App. Audio und Text werden direkt an die OpenAI API gesendet."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
+      InfoDisclosure("Datenfluss") {
+        Text("Dein Key bleibt lokal in dieser App. Audio und Text werden direkt an die OpenAI API gesendet.")
+      }
 
       if let errorText {
         Text(errorText)
@@ -89,7 +89,7 @@ struct OpenAIKeySection: View {
       Button("Einfügen") {
         pasteAPIKeyFromClipboard()
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
     }
   }
 
@@ -113,7 +113,7 @@ struct OpenAIKeySection: View {
             .foregroundStyle(.blue)
         }
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(PopoverActionButtonStyle(saved ? .secondary : .primary))
       .animation(.easeInOut(duration: 0.2), value: saved)
     }
   }

@@ -20,6 +20,12 @@ set -euo pipefail
 # KEIN bezahlter Apple-Developer-Account noetig.
 
 IDENTITY_NAME="Blitztext Local Dev"
+LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+if [ ! -f "$LOGIN_KEYCHAIN" ]; then
+    # Aelterer Pfad ohne -db-Suffix als Fallback.
+    LOGIN_KEYCHAIN="$(security default-keychain 2>/dev/null | tr -d ' "' || echo "login.keychain")"
+fi
+SYSTEM_KEYCHAIN="/Library/Keychains/System.keychain"
 
 print_header() {
     echo ""
@@ -27,17 +33,129 @@ print_header() {
     echo ""
 }
 
-# Schon vorhanden? -> nichts tun (idempotent).
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY_NAME"; then
-    print_header
-    echo "Die Identitaet \"$IDENTITY_NAME\" ist bereits vorhanden."
+add_unique_keychain_path() {
+    local candidate="$1"
+
+    if [ ! -f "$candidate" ]; then
+        return
+    fi
+
+    if printf '%s\n' "$KEYCHAIN_SEARCH_LIST" | grep -Fxq "$candidate"; then
+        return
+    fi
+
+    KEYCHAIN_SEARCH_LIST="${KEYCHAIN_SEARCH_LIST}${candidate}
+"
+}
+
+ensure_keychain_search_list() {
+    local raw_entry
+    local normalized_entry
+    local part
+
+    KEYCHAIN_SEARCH_LIST=""
+    add_unique_keychain_path "$LOGIN_KEYCHAIN"
+
+    while IFS= read -r raw_entry; do
+        normalized_entry="$(printf '%s' "$raw_entry" | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//')"
+
+        if [ -f "$normalized_entry" ]; then
+            add_unique_keychain_path "$normalized_entry"
+            continue
+        fi
+
+        # Repair a malformed search list entry such as
+        # "login.keychain-db /Library/Keychains/System.keychain".
+        for part in $normalized_entry; do
+            add_unique_keychain_path "$part"
+        done
+    done < <(security list-keychains -d user 2>/dev/null || true)
+
+    add_unique_keychain_path "$SYSTEM_KEYCHAIN"
+
+    printf '%s' "$KEYCHAIN_SEARCH_LIST" | xargs security list-keychains -d user -s
+}
+
+identity_can_sign() {
+    local test_dir
+    test_dir="$(mktemp -d -t blitztext-codesign-test)"
+    local test_file="$test_dir/codesign-test"
+    printf 'blitztext' > "$test_file"
+
+    if codesign --force --sign "$IDENTITY_NAME" "$test_file" >/dev/null 2>&1; then
+        rm -rf "$test_dir"
+        return 0
+    fi
+
+    rm -rf "$test_dir"
+    return 1
+}
+
+trust_certificate_file() {
+    local certificate_file="$1"
+
+    # A self-signed certificate is visible to Keychain after import, but codesign
+    # will still reject it until it is trusted for the Code Signing policy.
+    security add-trusted-cert \
+        -r trustRoot \
+        -p codeSign \
+        -k "$LOGIN_KEYCHAIN" \
+        "$certificate_file"
+}
+
+finish_success() {
+    echo ""
+    echo "Erfolg! Die Identitaet \"$IDENTITY_NAME\" ist eingerichtet und einsatzbereit."
+    echo ""
+    echo "Naechste Schritte:"
+    echo "  1. Baue Blitztext neu mit:   ./build.sh"
+    echo "     (build.sh erkennt die Identitaet automatisch und signiert damit stabil)"
+    echo "  2. EINMALIG: oeffne Systemeinstellungen > Datenschutz & Sicherheit >"
+    echo "     Bedienungshilfen. Entferne dort einen evtl. vorhandenen alten"
+    echo "     \"Blitztext\"-Eintrag mit dem Minus (-) und fuege Blitztext neu hinzu"
+    echo "     bzw. aktiviere den Schalter erneut. Dasselbe ggf. fuer Mikrofon und"
+    echo "     Eingabeueberwachung."
+    echo "  3. Ab jetzt ueberleben diese Freigaben kuenftige Rebuilds."
+    echo ""
+    exit 0
+}
+
+print_header
+ensure_keychain_search_list
+
+if identity_can_sign; then
+    echo "Die Identitaet \"$IDENTITY_NAME\" ist bereits vorhanden und kann signieren."
     echo "Es ist nichts zu tun. Baue Blitztext einfach mit ./build.sh und die"
     echo "Bedienungshilfen-Freigabe ueberlebt kuenftige Rebuilds."
     echo ""
     exit 0
 fi
 
-print_header
+if security find-certificate -c "$IDENTITY_NAME" "$LOGIN_KEYCHAIN" >/dev/null 2>&1; then
+    echo "Die Identitaet \"$IDENTITY_NAME\" ist vorhanden, aber noch nicht fuer Code Signing vertrauenswuerdig."
+    echo "Setze jetzt den Trust fuer Code Signing. macOS kann dafuer dein Keychain-Passwort abfragen."
+    echo ""
+
+    REPAIR_DIR="$(mktemp -d -t blitztext-dev-cert-repair)"
+    trap 'rm -rf "$REPAIR_DIR"' EXIT
+    EXISTING_CERT_FILE="$REPAIR_DIR/existing-cert.pem"
+    security find-certificate -c "$IDENTITY_NAME" -p "$LOGIN_KEYCHAIN" > "$EXISTING_CERT_FILE"
+    trust_certificate_file "$EXISTING_CERT_FILE"
+
+    echo ""
+    echo "Verifiziere die reparierte Identitaet ..."
+    if identity_can_sign; then
+        finish_success
+    fi
+
+    echo ""
+    echo "Warnung: Die Trust-Reparatur ist fehlgeschlagen."
+    echo "Pruefe in der Schluesselbundverwaltung, ob \"$IDENTITY_NAME\" im Anmeldung-Keychain"
+    echo "liegt und fuer Code Signing auf \"Immer vertrauen\" gesetzt ist."
+    echo ""
+    exit 1
+fi
+
 echo "Erzeuge eine neue selbst-signierte Code-Signing-Identitaet \"$IDENTITY_NAME\"."
 echo "macOS fragt gleich einmalig nach deinem Keychain-Passwort — das ist normal."
 echo ""
@@ -102,12 +220,6 @@ openssl pkcs12 \
     >/dev/null 2>&1
 
 echo "3/3  In den Login-Keychain importieren (Passwort-Abfrage moeglich) ..."
-LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
-if [ ! -f "$LOGIN_KEYCHAIN" ]; then
-    # Aelterer Pfad ohne -db-Suffix als Fallback.
-    LOGIN_KEYCHAIN="$(security default-keychain 2>/dev/null | tr -d ' "' || echo "login.keychain")"
-fi
-
 # -T /usr/bin/codesign erlaubt codesign den Zugriff auf den privaten Schluessel,
 # ohne dass bei jedem Build erneut nachgefragt wird.
 security import "$P12_FILE" \
@@ -116,26 +228,16 @@ security import "$P12_FILE" \
     -T /usr/bin/codesign \
     -T /usr/bin/security
 
+echo ""
+echo "Setze Trust fuer Code Signing ..."
+trust_certificate_file "$CERT_FILE"
+
 # Verifikation per Wegwerf-Test-Signatur (zuverlaessiger als nur find-identity):
 # wir signieren eine kleine Testdatei und pruefen, ob es klappt.
 echo ""
 echo "Verifiziere die neue Identitaet ..."
-TEST_FILE="$WORK_DIR/codesign-test"
-printf 'blitztext' > "$TEST_FILE"
-if codesign --force --sign "$IDENTITY_NAME" "$TEST_FILE" >/dev/null 2>&1; then
-    echo ""
-    echo "Erfolg! Die Identitaet \"$IDENTITY_NAME\" ist eingerichtet und einsatzbereit."
-    echo ""
-    echo "Naechste Schritte:"
-    echo "  1. Baue Blitztext neu mit:   ./build.sh"
-    echo "     (build.sh erkennt die Identitaet automatisch und signiert damit stabil)"
-    echo "  2. EINMALIG: oeffne Systemeinstellungen > Datenschutz & Sicherheit >"
-    echo "     Bedienungshilfen. Entferne dort einen evtl. vorhandenen alten"
-    echo "     \"Blitztext\"-Eintrag mit dem Minus (-) und fuege Blitztext neu hinzu"
-    echo "     bzw. aktiviere den Schalter erneut. Dasselbe ggf. fuer Mikrofon und"
-    echo "     Eingabeueberwachung."
-    echo "  3. Ab jetzt ueberleben diese Freigaben kuenftige Rebuilds."
-    echo ""
+if identity_can_sign; then
+    finish_success
 else
     echo ""
     echo "Warnung: Die Test-Signatur ist fehlgeschlagen."

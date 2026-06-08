@@ -5,6 +5,9 @@ import SwiftUI
 struct LocalModelRowView: View {
   let model: OllamaModelCatalog.Model
   let manager: LocalModelManager
+  let isActive: Bool
+  let onUseInstalled: () -> Void
+  let onPullAndUse: () -> Void
 
   @Environment(\.colorScheme) private var colorScheme
 
@@ -104,9 +107,8 @@ struct LocalModelRowView: View {
         .foregroundStyle(.secondary)
         .lineLimit(1)
       Button("Abbrechen") { manager.cancelPull(model.tag) }
-        .buttonStyle(.plain)
+        .buttonStyle(PopoverActionButtonStyle(.secondary))
         .font(.system(size: 10, weight: .medium))
-        .foregroundStyle(.secondary)
         .help(
           "Abbrechen — der Teil-Download bleibt erhalten und wird beim erneuten Laden fortgesetzt.")
     }
@@ -114,9 +116,16 @@ struct LocalModelRowView: View {
 
   private var installedControl: some View {
     VStack(alignment: .trailing, spacing: 4) {
-      Label("Installiert", systemImage: "checkmark.circle.fill")
-        .font(.system(size: 10.5, weight: .semibold))
-        .foregroundStyle(.green)
+      if isActive {
+        BlitzStatusPill(state: .ready, label: "Aktiv")
+      } else {
+        Button {
+          onUseInstalled()
+        } label: {
+          Label("Nutzen", systemImage: "checkmark.circle")
+        }
+        .buttonStyle(PopoverActionButtonStyle(.primary))
+      }
       let record = manager.installedRecord(for: model.tag)
       if let record {
         Text(SystemCapabilities.formatGB(record.sizeGB) + " auf Disk")
@@ -135,12 +144,12 @@ struct LocalModelRowView: View {
   @ViewBuilder private var loadControl: some View {
     VStack(alignment: .trailing, spacing: 4) {
       Button {
-        manager.pull(model.tag)
+        onPullAndUse()
       } label: {
-        Label("Laden", systemImage: "arrow.down.circle")
+        Label("Laden & nutzen", systemImage: "arrow.down.circle")
           .font(.system(size: 11.5, weight: .semibold))
       }
-      .buttonStyle(.borderless)
+      .buttonStyle(PopoverActionButtonStyle(.primary))
       .disabled(!diskFits || !manager.serverReachable)
 
       if !diskFits {

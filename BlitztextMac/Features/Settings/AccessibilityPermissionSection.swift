@@ -15,17 +15,7 @@ struct AccessibilityPermissionSection: View {
     VStack(alignment: .leading, spacing: 8) {
       SectionLabel(text: "Bedienungshilfen")
 
-      // Explicit detection status line.
-      HStack(spacing: 6) {
-        Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(isGranted ? .green : .orange)
-          .frame(width: 16, height: 16)
-
-        Text(isGranted ? "Status: erkannt" : "Status: nicht erkannt")
-          .font(.system(size: 11.5, weight: .semibold))
-          .foregroundStyle(.primary)
-      }
+      BlitzStatusPill(state: isGranted ? .ready : .warning, label: isGranted ? "Erkannt" : "Fehlt")
 
       HStack(alignment: .top, spacing: 8) {
         VStack(alignment: .leading, spacing: 3) {
@@ -37,12 +27,11 @@ struct AccessibilityPermissionSection: View {
           .font(.system(size: 11.5, weight: .semibold))
           .foregroundStyle(.primary)
 
-          Text(
-            "Öffne Bedienungshilfen und aktiviere Blitztext. Falls Blitztext schon aktiv ist, einmal aus- und wieder einschalten."
-          )
-          .font(.system(size: 10.5))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
+          if !isGranted {
+            InfoDisclosure("Hilfe") {
+              Text("Öffne Bedienungshilfen und aktiviere Blitztext. Falls Blitztext schon aktiv ist, einmal aus- und wieder einschalten.")
+            }
+          }
         }
       }
 
@@ -54,12 +43,12 @@ struct AccessibilityPermissionSection: View {
         Button("Bedienungshilfen öffnen") {
           appState.requestAccessibilityPermission()
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverActionButtonStyle(isGranted ? .secondary : .warning))
 
         Button("Erneut prüfen") {
           appState.refreshAccessibilityPermission()
         }
-        .buttonStyle(SubtleButtonStyle())
+        .buttonStyle(PopoverActionButtonStyle(.secondary))
       }
     }
   }

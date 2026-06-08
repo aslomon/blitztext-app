@@ -224,13 +224,11 @@ private struct ImprovementSuggestionRow: View {
 
       Button("Übernehmen", action: onAccept)
         .font(.system(size: 10, weight: .medium))
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.blue)
+        .buttonStyle(PopoverActionButtonStyle(.primary))
         .accessibilityLabel("Vorschlag übernehmen: \(suggestion.from) zu \(suggestion.to)")
       Button("Verwerfen", action: onDismiss)
         .font(.system(size: 10, weight: .medium))
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.secondary)
+        .buttonStyle(PopoverActionButtonStyle(.secondary))
         .accessibilityLabel("Vorschlag verwerfen: \(suggestion.from) zu \(suggestion.to)")
     }
     .padding(8)

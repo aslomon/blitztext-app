@@ -9,6 +9,7 @@ struct ModeCardView: View {
 
   /// Progressive disclosure: tone / prompt / context / reply / memory / reset live behind this.
   @State private var showAdvanced = false
+  @State private var showEditor = false
 
   var config: ModeConfig { appState.modeConfig(for: type) }
   private var forcedOffline: Bool { appState.appSettings.secureLocalModeEnabled }
@@ -24,6 +25,10 @@ struct ModeCardView: View {
 
   /// Memory context is only injected for the text-rewrite modes, not the Emoji/Social mode.
   var supportsMemoryContext: Bool {
+    type == .textImprover || type == .dampfAblassen
+  }
+
+  var supportsAutomaticFieldContext: Bool {
     type == .textImprover || type == .dampfAblassen
   }
 
@@ -43,10 +48,20 @@ struct ModeCardView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    GroupBox {
+      if showEditor {
+        editorContent
+      } else {
+        summaryContent
+      }
+    } label: {
       header
+    }
+    .opacity(config.isEnabled ? 1 : 0.68)
+  }
 
-      // Basic controls — always visible.
+  private var editorContent: some View {
+    VStack(alignment: .leading, spacing: 10) {
       nameField
       backendPicker
 
@@ -61,16 +76,60 @@ struct ModeCardView: View {
       }
 
       advancedDisclosure
+      editorFooter
     }
-    .padding(12)
-    .background(
-      MenuBarTokens.cardFill(colorScheme: colorScheme), in: RoundedRectangle(cornerRadius: 10)
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-    )
-    .opacity(config.isEnabled ? 1 : 0.6)
+  }
+
+  private var summaryContent: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 6) {
+        BlitzStatusPill(state: config.isEnabled ? .ready : .muted, label: config.isEnabled ? "Aktiv" : "Aus")
+        BlitzStatusPill(state: backendPillState, label: effectiveBackend == .local ? "Lokal" : "Online")
+        if isAdvancedNonDefault {
+          BlitzStatusPill(state: .warning, label: "Angepasst")
+        }
+        Spacer(minLength: 0)
+      }
+
+      Text(summaryLine)
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .lineLimit(2)
+        .fixedSize(horizontal: false, vertical: true)
+
+      Button {
+        withAnimation(.easeInOut(duration: 0.16)) { showEditor = true }
+      } label: {
+        Label("Bearbeiten", systemImage: "pencil")
+      }
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
+    }
+  }
+
+  private var backendPillState: BlitzStatusPill.State {
+    effectiveBackend == .local ? .local : .online
+  }
+
+  private var summaryLine: String {
+    if type == .emojiText {
+      return "Emoji-Dichte: \(config.rewrite.emojiDensity.displayName)."
+    }
+    if effectiveBackend == .local {
+      return "Umformung läuft lokal über Ollama."
+    }
+    return "Umformung über \(config.rewrite.modelID)."
+  }
+
+  private var editorFooter: some View {
+    HStack {
+      Spacer()
+      Button {
+        withAnimation(.easeInOut(duration: 0.16)) { showEditor = false }
+      } label: {
+        Label("Fertig", systemImage: "checkmark")
+      }
+      .buttonStyle(PopoverActionButtonStyle(.primary))
+    }
   }
 
   // MARK: - Advanced (progressive disclosure)
@@ -106,7 +165,7 @@ struct ModeCardView: View {
       }
       .contentShape(Rectangle())
     }
-    .buttonStyle(SubtleButtonStyle())
+    .buttonStyle(PopoverActionButtonStyle(.quiet))
   }
 
   @ViewBuilder
@@ -129,6 +188,9 @@ struct ModeCardView: View {
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
       }
+      if supportsAutomaticFieldContext {
+        automaticFieldContextToggle
+      }
       if supportsMemoryContext {
         memoryToggle
       }
@@ -150,6 +212,14 @@ struct ModeCardView: View {
         .font(.system(size: 9.5, design: .monospaced))
         .foregroundStyle(.quaternary)
       Spacer()
+      Button {
+        withAnimation(.easeInOut(duration: 0.16)) { showEditor.toggle() }
+      } label: {
+        Image(systemName: showEditor ? "checkmark" : "pencil")
+      }
+      .buttonStyle(PopoverIconButtonStyle(showEditor ? .primary : .quiet))
+      .help(showEditor ? "Bearbeitung schließen" : "Modus bearbeiten")
+      .accessibilityLabel(showEditor ? "Bearbeitung schließen" : "Modus bearbeiten")
       Toggle("Aktiv", isOn: bind(\.isEnabled))
         .toggleStyle(.switch)
         .controlSize(.mini)
@@ -191,20 +261,14 @@ struct ModeCardView: View {
       .pickerStyle(.menu)
       .disabled(forcedOffline)
 
-      if forcedOffline {
-        Text("Sicherer lokaler Modus erzwingt lokale Verarbeitung.")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
-      } else if effectiveBackend == .local {
-        Text(
-          "Lokal auf diesem Mac über Ollama, ohne Cloud. Ollama muss laufen (Modell unten wählen)."
-        )
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-      } else {
-        Text("Text wird zur Formulierung an die OpenAI-API gesendet.")
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
+      InfoDisclosure("Datenfluss") {
+        if forcedOffline {
+          Text("Sicherer lokaler Modus erzwingt lokale Verarbeitung.")
+        } else if effectiveBackend == .local {
+          Text("Lokal auf diesem Mac über Ollama, ohne Cloud. Ollama muss laufen.")
+        } else {
+          Text("Text wird zur Formulierung an die OpenAI-API gesendet.")
+        }
       }
     }
   }
@@ -222,8 +286,7 @@ struct ModeCardView: View {
           appState.loadAvailableModels()
         }
         .font(.system(size: 10, weight: .medium))
-        .buttonStyle(SubtleButtonStyle())
-        .foregroundStyle(.blue)
+        .buttonStyle(PopoverActionButtonStyle(.quiet))
         .disabled(appState.isLoadingModels)
       }
       Picker("", selection: bind(\.rewrite.modelID)) {

@@ -5,6 +5,8 @@ import SwiftUI
 struct ModesStepView: View {
   @Bindable var appState: AppState
   @Bindable var viewModel: OnboardingViewModel
+  @State private var isEditingEmail = false
+  @State private var isEditingPrompt = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: OnboardingChrome.contentSpacing) {
@@ -12,14 +14,15 @@ struct ModesStepView: View {
         systemImage: "text.badge.checkmark",
         accent: .purple,
         title: "Modi anpassen",
-        subtitle: "Die Beispiel-Prompts sind schon gefüllt. Passe sie an oder übernimm sie einfach."
+        subtitle: "Die drei Modi sind vorbereitet. Details kannst du später jederzeit ändern."
       )
 
       promptCard(
         accent: .purple,
         title: "E-Mail",
         helpText: "Was Blitztext aus deinem Diktat machen soll.",
-        text: $viewModel.emailPrompt
+        text: $viewModel.emailPrompt,
+        isEditing: $isEditingEmail
       ) {
         viewModel.restoreExample(for: .textImprover)
       }
@@ -28,7 +31,8 @@ struct ModesStepView: View {
         accent: .orange,
         title: "Prompt",
         helpText: "Für KI-Coding-Agenten wie Claude Code oder Codex.",
-        text: $viewModel.promptPrompt
+        text: $viewModel.promptPrompt,
+        isEditing: $isEditingPrompt
       ) {
         viewModel.restoreExample(for: .dampfAblassen)
       }
@@ -42,6 +46,7 @@ struct ModesStepView: View {
     title: String,
     helpText: String,
     text: Binding<String>,
+    isEditing: Binding<Bool>,
     onRestore: @escaping () -> Void
   ) -> some View {
     OnboardingCard {
@@ -52,29 +57,41 @@ struct ModesStepView: View {
             .foregroundStyle(accent)
           SectionLabel(text: title)
           Spacer()
-          Button("Beispiel wiederherstellen") { onRestore() }
-            .font(.system(size: 10, weight: .medium))
-            .buttonStyle(SubtleButtonStyle())
-            .foregroundStyle(.blue)
+          BlitzStatusPill(state: .ready, label: "Preset")
         }
 
         Text(helpText)
           .font(.system(size: 10.5))
           .foregroundStyle(.secondary)
 
-        TextEditor(text: text)
-          .font(.system(size: 11))
-          .frame(height: 96)
-          .padding(6)
-          .background(
-            RoundedRectangle(cornerRadius: 6)
-              .fill(Color(nsColor: .controlBackgroundColor))
-          )
-          .overlay(
-            RoundedRectangle(cornerRadius: 6)
-              .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-          )
-          .scrollContentBackground(.hidden)
+        HStack(spacing: 8) {
+          Button {
+            withAnimation(.easeInOut(duration: 0.16)) { isEditing.wrappedValue.toggle() }
+          } label: {
+            Label(isEditing.wrappedValue ? "Fertig" : "Anpassen", systemImage: "pencil")
+          }
+          .buttonStyle(PopoverActionButtonStyle(isEditing.wrappedValue ? .primary : .secondary))
+
+          Button("Beispiel") { onRestore() }
+            .font(.system(size: 10, weight: .medium))
+            .buttonStyle(PopoverActionButtonStyle(.quiet))
+        }
+
+        if isEditing.wrappedValue {
+          TextEditor(text: text)
+            .font(.system(size: 11))
+            .frame(height: 96)
+            .padding(6)
+            .background(
+              RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+              RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            )
+            .scrollContentBackground(.hidden)
+        }
       }
     }
   }

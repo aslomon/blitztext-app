@@ -146,17 +146,26 @@ struct LocalModelRowView: View {
       Button {
         onPullAndUse()
       } label: {
-        Label("Laden & nutzen", systemImage: "arrow.down.circle")
+        Label(loadButtonTitle, systemImage: "arrow.down.circle")
           .font(.system(size: 11.5, weight: .semibold))
       }
       .buttonStyle(PopoverActionButtonStyle(.primary))
-      .disabled(!diskFits || !manager.serverReachable)
+      .disabled(!diskFits || manager.isPreparingOllama)
 
       if !diskFits {
         Text("Zu wenig Speicher")
           .font(.system(size: 9.5))
           .foregroundStyle(.red.opacity(0.85))
+      } else if !manager.serverReachable {
+        Text(manager.ollamaAppInstalled ? "Ollama startet mit" : "inkl. Ollama")
+          .font(.system(size: 9.5))
+          .foregroundStyle(.secondary)
       }
     }
+  }
+
+  private var loadButtonTitle: String {
+    if manager.serverReachable { return "Laden & nutzen" }
+    return manager.ollamaAppInstalled ? "Starten & laden" : "Installieren & laden"
   }
 }

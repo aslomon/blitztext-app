@@ -131,12 +131,12 @@ struct LocalModelsView: View {
           Button {
             pullAndUse(model.tag)
           } label: {
-            Label("Laden & nutzen", systemImage: "arrow.down.circle.fill")
+            Label(loadButtonTitle, systemImage: "arrow.down.circle.fill")
               .font(.system(size: 11.5, weight: .semibold))
           }
           .buttonStyle(PopoverActionButtonStyle(.primary))
           .disabled(
-            !manager.serverReachable || !manager.system.diskFits(downloadGB: model.downloadGB))
+            manager.isPreparingOllama || !manager.system.diskFits(downloadGB: model.downloadGB))
         }
       }
     }
@@ -230,12 +230,12 @@ struct LocalModelsView: View {
           .textFieldStyle(.roundedBorder)
           .font(.system(size: 11.5))
           .onSubmit(loadCustom)
-        Button("Laden & nutzen", action: loadCustom)
+        Button(loadButtonTitle, action: loadCustom)
           .buttonStyle(PopoverActionButtonStyle(.primary))
           .font(.system(size: 11.5, weight: .semibold))
           .disabled(
             customTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              || !manager.serverReachable)
+              || manager.isPreparingOllama)
       }
       Text("Beliebiger Ollama-Tag von ollama.com/library.")
         .font(.system(size: 10)).foregroundStyle(.secondary)
@@ -279,7 +279,7 @@ struct LocalModelsView: View {
 
   private func pullAndUse(_ tag: String) {
     pendingSelectionTag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
-    manager.pull(tag)
+    manager.prepareOllamaAndPull(tag)
     selectPendingModelIfInstalled()
   }
 
@@ -303,23 +303,34 @@ struct LocalModelsView: View {
       Text(
         manager.ollamaAppInstalled
           ? "Starte die Ollama-App, dann kannst du Modelle direkt hier laden."
-          : "Installiere Ollama von ollama.com, um lokale Modelle zu nutzen."
+          : "Blitztext kann Ollama laden, installieren und danach das Modell installieren."
       )
       .font(.system(size: 11)).foregroundStyle(.secondary)
+      if let installState = manager.ollamaInstallState {
+        HStack(spacing: 8) {
+          ProgressView().controlSize(.small)
+          Text(installState.statusText)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+        }
+      }
       HStack(spacing: 8) {
         if manager.ollamaAppInstalled {
-          Button("Ollama öffnen") { openOllamaApp() }
+          Button("Ollama starten") { manager.prepareOllama() }
             .buttonStyle(PopoverActionButtonStyle(.warning)).font(.system(size: 11.5, weight: .semibold))
+            .disabled(manager.isPreparingOllama)
         } else {
-          Button("ollama.com öffnen") {
-            if let url = URL(string: "https://ollama.com/download") {
-              NSWorkspace.shared.open(url)
-            }
+          Button("Ollama installieren") {
+            manager.prepareOllama()
           }
           .buttonStyle(PopoverActionButtonStyle(.warning)).font(.system(size: 11.5, weight: .semibold))
+          .disabled(manager.isPreparingOllama)
         }
+        Button("Download-Seite") { openOllamaDownloadPage() }
+          .buttonStyle(PopoverActionButtonStyle(.secondary)).font(.system(size: 11))
         Button("Erneut prüfen") { Task { await manager.refresh() } }
           .buttonStyle(PopoverActionButtonStyle(.secondary)).font(.system(size: 11))
+          .disabled(manager.isRefreshing || manager.isPreparingOllama)
       }
     }
     .padding(12)
@@ -344,8 +355,13 @@ struct LocalModelsView: View {
     .font(.system(size: 10.5)).foregroundStyle(.secondary)
   }
 
-  private func openOllamaApp() {
-    let url = URL(fileURLWithPath: "/Applications/Ollama.app")
-    NSWorkspace.shared.openApplication(at: url, configuration: .init())
+  private func openOllamaDownloadPage() {
+    guard let url = URL(string: "https://ollama.com/download") else { return }
+    NSWorkspace.shared.open(url)
+  }
+
+  private var loadButtonTitle: String {
+    if manager.serverReachable { return "Laden & nutzen" }
+    return manager.ollamaAppInstalled ? "Starten & nutzen" : "Installieren & nutzen"
   }
 }

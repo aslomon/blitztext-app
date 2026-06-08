@@ -22,10 +22,14 @@ final class LocalModelManager {
   private(set) var serverReachable = false
   /// Whether the Ollama app is installed (so we can offer to launch it when the server is down).
   private(set) var ollamaAppInstalled = false
+  /// Installed Ollama app URL, whether system-wide or in the user's Applications folder.
+  private(set) var ollamaAppURL: URL?
   /// Models actually pulled into Ollama, with real on-disk sizes (largest first).
   private(set) var installed: [OllamaService.InstalledModel] = []
   /// In-flight downloads keyed by tag.
   private(set) var pulls: [String: PullUIState] = [:]
+  /// In-flight Ollama app install/start state.
+  private(set) var ollamaInstallState: PullUIState?
   /// Last error to surface (download/delete failure), cleared on the next successful action.
   private(set) var lastError: String?
   /// True while the initial/refresh query is running.
@@ -36,6 +40,8 @@ final class LocalModelManager {
   /// Identity token per running pull. A cancel→restart for the same tag mints a new token so a
   /// late-unwinding old Task can't wipe the new pull's bookkeeping. Not observed.
   @ObservationIgnored private var pullTokens: [String: UUID] = [:]
+  /// In-flight Ollama app install/start task.
+  @ObservationIgnored private var ollamaInstallTask: Task<Void, Never>?
   /// Tags with an in-flight delete, to de-dupe double taps on "Entfernen". Not observed.
   @ObservationIgnored private var deletingTags: Set<String> = []
 
@@ -49,7 +55,8 @@ final class LocalModelManager {
     isRefreshing = true
     defer { isRefreshing = false }
     system = .current()
-    ollamaAppInstalled = FileManager.default.fileExists(atPath: "/Applications/Ollama.app")
+    ollamaAppURL = OllamaInstallerService.installedAppURL()
+    ollamaAppInstalled = ollamaAppURL != nil
     serverReachable = await OllamaService.statusCheck()
     installed = serverReachable ? await OllamaService.installedModelsDetailed() : []
   }
@@ -75,6 +82,11 @@ final class LocalModelManager {
   /// Whether a download is currently running for `tag`.
   func isPulling(_ tag: String) -> Bool {
     pulls[tag] != nil
+  }
+
+  /// Whether the Ollama app is currently being installed or started.
+  var isPreparingOllama: Bool {
+    ollamaInstallState != nil
   }
 
   // MARK: - Pull
@@ -106,6 +118,50 @@ final class LocalModelManager {
     pullTasks[trimmed] = task
   }
 
+  /// Ensure Ollama exists and answers locally, then download `tag`.
+  func prepareOllamaAndPull(_ tag: String) {
+    let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    if serverReachable {
+      pull(trimmed)
+      return
+    }
+    prepareOllama { [weak self] in
+      self?.pull(trimmed)
+    }
+  }
+
+  /// Install or start Ollama, then refresh the visible model state.
+  func prepareOllama(onReady: (@MainActor () -> Void)? = nil) {
+    guard ollamaInstallTask == nil else { return }
+    lastError = nil
+    ollamaInstallState = PullUIState(
+      fraction: nil,
+      statusText: ollamaAppInstalled ? "Ollama wird gestartet …" : "Ollama wird installiert …"
+    )
+
+    let task = Task { [weak self] in
+      do {
+        if await self?.ollamaAppURL != nil {
+          _ = try await OllamaInstallerService.startInstalledApp()
+        } else {
+          _ = try await OllamaInstallerService.installAndStart { progress in
+            Task { @MainActor [weak self] in
+              self?.ollamaInstallState = PullUIState(
+                fraction: nil,
+                statusText: progress.statusText
+              )
+            }
+          }
+        }
+        await self?.finishOllamaPreparation(error: nil, onReady: onReady)
+      } catch {
+        await self?.finishOllamaPreparation(error: error.localizedDescription, onReady: nil)
+      }
+    }
+    ollamaInstallTask = task
+  }
+
   /// Cancel an in-flight download.
   func cancelPull(_ tag: String) {
     pullTasks[tag]?.cancel()
@@ -132,6 +188,21 @@ final class LocalModelManager {
     pulls[tag] = nil
     if let error { lastError = error }
     await refresh()
+  }
+
+  private func finishOllamaPreparation(
+    error: String?,
+    onReady: (@MainActor () -> Void)?
+  ) async {
+    ollamaInstallTask = nil
+    ollamaInstallState = nil
+    if let error {
+      lastError = error
+    }
+    await refresh()
+    if error == nil {
+      onReady?()
+    }
   }
 
   /// Map a raw Ollama status line + byte counts to a friendly German status.

@@ -39,7 +39,7 @@ struct LocalLLMModelPicker: View {
   @ViewBuilder
   private var statusPill: some View {
     if !manager.serverReachable {
-      BlitzStatusPill(state: .warning, label: "Ollama aus")
+      BlitzStatusPill(state: .warning, label: manager.ollamaAppInstalled ? "Starten" : "Setup")
     } else if selectedInstalledRecord != nil {
       BlitzStatusPill(state: .ready, label: "Gewählt")
     } else if manager.installed.isEmpty {
@@ -51,7 +51,9 @@ struct LocalLLMModelPicker: View {
 
   private var statusLine: String {
     if !manager.serverReachable {
-      return "Ollama läuft nicht. Öffne die Modellseite, um Ollama zu starten oder zu installieren."
+      return manager.ollamaAppInstalled
+        ? "Ollama ist installiert, läuft aber noch nicht. Öffne die Modellseite zum Starten."
+        : "Ollama ist noch nicht installiert. Öffne die Modellseite für die geführte Installation."
     }
     if let selectedInstalledRecord {
       return "Aktiv: \(selectedInstalledRecord.name)"
@@ -75,7 +77,7 @@ struct LocalLLMModelPicker: View {
         NotificationCenter.default.post(name: .openLocalModelsWindow, object: nil)
       } label: {
         Label(
-          manager.installed.isEmpty ? "Modelle laden …" : "Modelle verwalten …",
+          manageButtonTitle,
           systemImage: "square.and.arrow.down.on.square"
         )
         .font(.system(size: 10.5, weight: .medium))
@@ -89,5 +91,10 @@ struct LocalLLMModelPicker: View {
       .buttonStyle(PopoverActionButtonStyle(.quiet))
       .disabled(manager.isRefreshing)
     }
+  }
+
+  private var manageButtonTitle: String {
+    if !manager.serverReachable { return "Modelle einrichten …" }
+    return manager.installed.isEmpty ? "Modelle laden …" : "Modelle verwalten …"
   }
 }

@@ -53,7 +53,7 @@ struct ArchiveEntryRowActions: View {
 
   private var rerunMenu: some View {
     Menu {
-      ForEach(WorkflowType.rewriteCapableModes) { mode in
+      ForEach(rewriteModes) { mode in
         Button(appState.displayName(for: mode)) { rerun(as: mode) }
       }
     } label: {
@@ -72,6 +72,10 @@ struct ArchiveEntryRowActions: View {
     .fixedSize()
     .disabled(isRerunning || entry.rawTranscript.isEmpty)
     .accessibilityLabel("Rohtranskript in einem Modus neu umschreiben")
+  }
+
+  private var rewriteModes: [ModeConfig] {
+    appState.orderedModeConfigs.filter { $0.slot.isRewriteCapable }
   }
 
   // MARK: - Re-run result / error
@@ -134,7 +138,7 @@ struct ArchiveEntryRowActions: View {
     }
   }
 
-  private func rerun(as mode: WorkflowType) {
+  private func rerun(as mode: ModeConfig) {
     guard !isRerunning else { return }
     isRerunning = true
     rerunResult = nil
@@ -142,7 +146,7 @@ struct ArchiveEntryRowActions: View {
     rerunFallbackNote = nil
     let name = appState.displayName(for: mode)
     Task {
-      let outcome = await appState.rerunRewrite(rawTranscript: entry.rawTranscript, as: mode)
+      let outcome = await appState.rerunRewrite(rawTranscript: entry.rawTranscript, as: mode.id)
       isRerunning = false
       switch outcome {
       case .success(let text):

@@ -8,7 +8,7 @@ When you use the online workflows, your Mac sends data directly to OpenAI:
 - transcribed or typed text for rewriting
 - custom terms and prompt context if you configured them
 
-When **Sicherer Lokaler Modus** is enabled and a WhisperKit/CoreML model is installed, transcription runs on your Mac and does not send audio to OpenAI. Rewriting workflows still require OpenAI and are paused while secure local mode is active.
+When **Sicherer Lokaler Modus** is enabled and compatible local models are installed, transcription runs through WhisperKit/CoreML and rewriting runs through Ollama on your Mac. In that mode the app avoids sending dictation audio or rewrite text to OpenAI.
 
 You are responsible for your OpenAI account, API usage, costs, and data handling.
 
@@ -19,6 +19,8 @@ The app stores:
 - your OpenAI API key in the user's macOS Keychain
 - workflow settings in local app support storage
 - optional WhisperKit/CoreML model folders in local app support storage
+- optional text archive, context logs, improvement logs, and semantic email-memory records when you enable those features
+- semantic email-memory embeddings generated locally through Ollama; the store keeps finished email text plus vectors for up to 30 days
 - temporary audio files while a transcription is being processed; the app attempts to delete each recording when the workflow ends or is cancelled
 
 Workflow output may also be placed on your clipboard so it can be pasted into another app. Auto-paste marks the clipboard entry as concealed for compatible clipboard managers, but the generated text intentionally remains on the clipboard as a fallback if automatic paste is blocked. Clipboard managers, macOS, or other apps may still observe clipboard contents while they are present.
@@ -29,7 +31,11 @@ Settings such as custom prompts, custom terms, and context are stored in local a
 
 ## Offline Scope
 
-Only transcription can run locally. Any workflow that rewrites, improves, or transforms text still uses OpenAI.
+Transcription can run locally through WhisperKit/CoreML. Rewriting can run locally through Ollama when a local rewrite model is selected or secure local mode forces local processing. Semantic email memory uses Ollama's local embedding endpoint.
+
+If a mode is configured for OpenAI processing, text and prompt context for that mode are sent to OpenAI. If semantic email memory is enabled for an OpenAI-backed email mode, retrieved background snippets are included in that prompt context.
+
+Archive, semantic email memory, context logging, and improvement detection are opt-in. Runs targeting secure/password fields are skipped for archive, context, improvement, and semantic-memory storage.
 
 ## Sensitive Content
 

@@ -7,7 +7,7 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 - Ruhig, dicht, funktional. Deutschsprachige UI-Texte (du-Form, knapp).
 - Menüleisten-Popover, feste Breite **410pt** (vorher 340) — mehr Luft für die 5 Settings-Tabs + dichten Inhalt.
 - Settings-Tabs (segmented): **Prompts · Modelle · Vokabular · Archiv · System**. Alles Wort-bezogene (Eigennamen, gelernte Memory-Begriffe, „aus Korrekturen lernen", Ersetzungen) lebt im **Vokabular**-Tab; **Archiv** = nur Verlauf/Statistik/Kontext.
-- Schwebende **Pille**: Kapsel-Glass (`PillGlassModifier`) für Aufnahme/Status; für die erweiterte **Copy-Karte** ein eigener `CardGlassModifier` (abgerundetes Rechteck, 14pt-Radius, tieferer Schatten) statt Kapsel — sonst „eckiger Inhalt im Pillen-Loch".
+- Schwebende **Pille**: Kapsel-Glass (`PillGlassModifier`) für Aufnahme/Status; für erweiterte **Copy- und Varianten-Karten** ein eigener `CardGlassModifier` (abgerundetes Rechteck, 14pt-Radius, tieferer Schatten) statt Kapsel — sonst „eckiger Inhalt im Pillen-Loch".
 
 ## Farben
 
@@ -47,9 +47,21 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 
 ## Neue Muster (dieser Ausbau)
 
-- **Modus-Karte** in den Einstellungen: Name-TextField + „Aktiv"-Toggle + Modell-Picker +
-  „Verarbeitung: Online/Lokal"-Picker + System-Prompt-`TextEditor` + „Auf Standard zurücksetzen".
-  Übernimmt Sektionslabel-Stil, 6pt-Felder, `SubtleButtonStyle`.
+- **Dynamische Modus-Karte** in den Einstellungen: Name-TextField + „Aktiv"-Toggle +
+  Hotkey-Recorder + Modell-Picker + „Verarbeitung: Online/Lokal"-Picker +
+  System-Prompt-`TextEditor` + Reset/Löschen/Reihenfolge. Eigene Modi dürfen gelöscht und
+  verschoben werden; feste Standard-Slots nur zurückgesetzt.
+- **Hotkey-Recorder**: Ein einzelnes Aufnahmefeld startet eine explizite Aufnahme. Alle erkannten
+  Tasten werden live als Keycaps angezeigt; gespeichert wird erst über `Übernehmen`, `Esc` bricht
+  ab. Während der Aufnahme sind Blitztext-Hotkeys global pausiert, damit vorhandene Belegungen
+  nicht auslösen. Unterstützt Modifier-only, einzelne Taste, Modifier + Taste und mehrere Tasten.
+  Konflikte erscheinen direkt unter dem betroffenen Modus und blockieren `Übernehmen`.
+  Tastenkürzel bleiben monospaced, aber nicht dominant.
+- **Semantische E-Mail Memory**: opt-in Controls nur in E-Mail-Modi. Toggle + 3er-Segmented
+  Picker (`Wenig/Mittel/Viel`) und knappe Privacy-Caption; keine langen Memory-Erklärungen in
+  der Moduskarte.
+- **Varianten-Karte in der Pille**: zwei gleich gewichtete Textkarten, je `Einfügen` und
+  `Kopieren`. Keine automatische Paste, solange die Karte sichtbar ist.
 - **Verfügbarkeits-Badges**: vorhandene Icons `checkmark.circle.fill` (grün) /
   `arrow.down.circle.fill` (blau) / `exclamationmark.triangle.fill` (orange) wiederverwenden.
 - **Offline-/Lokal-Hinweis**: orange Info-Banner-Muster wie `accessibilityHintBanner`.

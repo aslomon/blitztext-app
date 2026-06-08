@@ -29,6 +29,7 @@ final class AppSettingsCodableTests: XCTestCase {
       WorkflowType.transcription.rawValue: .default(for: .transcription),
       WorkflowType.textImprover.rawValue: emailMode,
     ]
+    settings.modeOrder = [WorkflowType.transcription.rawValue, WorkflowType.textImprover.rawValue]
 
     let data = try makeEncoder().encode(settings)
     let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
@@ -36,6 +37,8 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertTrue(decoded.archiveEnabled)
     XCTAssertTrue(decoded.memoryContextEnabled)
     XCTAssertTrue(decoded.hadAccessibilityGrant)
+    XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
+    XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
     XCTAssertEqual(decoded.modes.count, 2)
 
     let decodedEmail = try XCTUnwrap(decoded.modes[WorkflowType.textImprover.rawValue])
@@ -43,6 +46,71 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertEqual(decodedEmail.rewrite.rewriteBackend, .local)
     XCTAssertTrue(decodedEmail.rewrite.useMemoryContext)
     XCTAssertEqual(decodedEmail.slot, .textImprover)
+    XCTAssertEqual(decoded.modeOrder, [WorkflowType.transcription.rawValue, WorkflowType.textImprover.rawValue])
+  }
+
+  func testRoundTripPreservesDynamicDuplicateModeAndOrder() throws {
+    var settings = AppSettings()
+    var clientEmail = ModeConfig.default(for: .textImprover)
+    clientEmail.modeID = "email-client-a"
+    clientEmail.userName = "E-Mail Kunde A"
+    clientEmail.rewrite.context = "Use concise project-update style for Client A."
+
+    settings.modes = [
+      WorkflowType.textImprover.rawValue: .default(for: .textImprover),
+      clientEmail.id: clientEmail,
+    ]
+    settings.modeOrder = [WorkflowType.textImprover.rawValue, clientEmail.id]
+
+    let data = try makeEncoder().encode(settings)
+    let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+
+    XCTAssertEqual(decoded.modeOrder, [WorkflowType.textImprover.rawValue, "email-client-a"])
+    let decodedClientEmail = try XCTUnwrap(decoded.modes["email-client-a"])
+    XCTAssertEqual(decodedClientEmail.id, "email-client-a")
+    XCTAssertEqual(decodedClientEmail.slot, .textImprover)
+    XCTAssertEqual(decodedClientEmail.userName, "E-Mail Kunde A")
+    XCTAssertEqual(
+      decodedClientEmail.rewrite.context,
+      "Use concise project-update style for Client A."
+    )
+  }
+
+  func testOrderedModeConfigsUsesPersistedOrderThenDefaultsThenCustomRemainder() {
+    var email = ModeConfig.default(for: .textImprover)
+    var clientEmail = ModeConfig.default(for: .textImprover)
+    clientEmail.modeID = "email-client-a"
+    clientEmail.userName = "E-Mail Kunde A"
+    email.userName = "E-Mail"
+
+    let ordered = AppState.orderedModeConfigs(
+      modes: [
+        WorkflowType.textImprover.rawValue: email,
+        WorkflowType.transcription.rawValue: .default(for: .transcription),
+        clientEmail.id: clientEmail,
+      ],
+      modeOrder: [clientEmail.id, WorkflowType.textImprover.rawValue]
+    )
+
+    XCTAssertEqual(
+      ordered.map(\.id),
+      ["email-client-a", WorkflowType.textImprover.rawValue, WorkflowType.transcription.rawValue]
+    )
+  }
+
+  func testReorderedModeIDsMovesOnlyWithinBounds() {
+    let order = ["a", "b", "c"]
+
+    XCTAssertEqual(
+      AppState.reorderedModeIDs(order, moving: "b", offset: -1),
+      ["b", "a", "c"]
+    )
+    XCTAssertEqual(
+      AppState.reorderedModeIDs(order, moving: "b", offset: 1),
+      ["a", "c", "b"]
+    )
+    XCTAssertEqual(AppState.reorderedModeIDs(order, moving: "a", offset: -1), order)
+    XCTAssertEqual(AppState.reorderedModeIDs(order, moving: "missing", offset: 1), order)
   }
 
   /// `modes` must encode as a JSON OBJECT keyed by WorkflowType.rawValue, never an array.
@@ -84,8 +152,11 @@ final class AppSettingsCodableTests: XCTestCase {
     // New v2 keys absent -> safe defaults.
     XCTAssertFalse(decoded.archiveEnabled)
     XCTAssertFalse(decoded.memoryContextEnabled)
+    XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
+    XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
     XCTAssertFalse(decoded.hadAccessibilityGrant)
     XCTAssertTrue(decoded.modes.isEmpty)
+    XCTAssertTrue(decoded.modeOrder.isEmpty)
     XCTAssertFalse(decoded.didMigrateToModeConfigs)
     XCTAssertEqual(decoded.modesSchemaVersion, 1)
   }
@@ -97,6 +168,8 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertEqual(decoded.hotkeyMode, .hold)
     XCTAssertFalse(decoded.archiveEnabled)
     XCTAssertFalse(decoded.memoryContextEnabled)
+    XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
+    XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
     XCTAssertFalse(decoded.hadAccessibilityGrant)
     // Dictation dictionary absent -> empty replacements, spoken punctuation defaults OFF.
     // OFF avoids silently mapping real words like "Punkt"/"Komma" to symbols (data-corruption).

@@ -150,11 +150,44 @@ final class RecordingPillController {
     }
   }
 
+  func showVariants(_ variants: PendingRewriteVariants) {
+    guard variants.variants.count > 1 else { return }
+    if panel == nil { panel = makePanel() }
+    guard let panel else { return }
+    isFlashing = true
+    model.pendingVariants = variants
+    model.phase = .variantChoice
+    stopLevelTimer()
+    flashTask?.cancel()
+    flashTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      try? await Task.sleep(for: .milliseconds(30))
+      self.positionPanel(panel)
+      panel.orderFrontRegardless()
+    }
+  }
+
   private func dismissCopyOnly() {
     flashTask?.cancel()
     isFlashing = false
     model.copyOnlyText = nil
     panel?.orderOut(nil)
+  }
+
+  private func dismissVariantChoiceCard() {
+    flashTask?.cancel()
+    isFlashing = false
+    model.pendingVariants = nil
+    panel?.orderOut(nil)
+  }
+
+  private func dismissCurrentCard() {
+    if model.phase == .variantChoice {
+      dismissVariantChoiceCard()
+      appState?.dismissVariantChoice()
+    } else {
+      dismissCopyOnly()
+    }
   }
 
   /// Clears any lingering transient card (cancel flash / error / copy-only) and its pending hide
@@ -165,6 +198,7 @@ final class RecordingPillController {
     isFlashing = false
     model.errorMessage = nil
     model.copyOnlyText = nil
+    model.pendingVariants = nil
   }
 
   private func copyTextToPasteboard(_ text: String) {
@@ -205,7 +239,15 @@ final class RecordingPillController {
         onStop: { [weak self] in self?.appState?.activeWorkflow?.stop() },
         onCancel: { [weak self] in self?.cancelCurrent() },
         onCopy: { [weak self] text in self?.copyTextToPasteboard(text) },
-        onDismiss: { [weak self] in self?.dismissCopyOnly() }
+        onChooseVariant: { [weak self] variantID in
+          self?.dismissVariantChoiceCard()
+          self?.appState?.chooseVariant(variantID)
+        },
+        onCopyVariant: { [weak self] variantID in
+          self?.dismissVariantChoiceCard()
+          self?.appState?.copyVariant(variantID)
+        },
+        onDismiss: { [weak self] in self?.dismissCurrentCard() }
       )
     )
     hosting.translatesAutoresizingMaskIntoConstraints = false
@@ -333,6 +375,7 @@ enum PillPhase {
   /// Auto-paste could not land — the pill expands into a scrollable card showing the dictated text
   /// with a Copy action, so the result is never silently stuck on the clipboard.
   case copyOnly
+  case variantChoice
 }
 
 /// Observable bridge so the controller's timer-pushed `audioLevel`/`accentColor`/`phase` re-render.
@@ -345,6 +388,7 @@ final class RecordingPillModel: ObservableObject {
   @Published var errorMessage: String?
   /// Shown in the `.copyOnly` state — the dictated text the user can read/copy.
   @Published var copyOnlyText: String?
+  @Published var pendingVariants: PendingRewriteVariants?
 }
 
 private struct RecordingPillHostView: View {
@@ -352,6 +396,8 @@ private struct RecordingPillHostView: View {
   let onStop: () -> Void
   let onCancel: () -> Void
   let onCopy: (String) -> Void
+  let onChooseVariant: (RewriteVariant.ID) -> Void
+  let onCopyVariant: (RewriteVariant.ID) -> Void
   let onDismiss: () -> Void
 
   var body: some View {
@@ -361,9 +407,12 @@ private struct RecordingPillHostView: View {
       phase: model.phase,
       errorMessage: model.errorMessage,
       copyOnlyText: model.copyOnlyText,
+      pendingVariants: model.pendingVariants,
       onStop: onStop,
       onCancel: onCancel,
       onCopy: onCopy,
+      onChooseVariant: onChooseVariant,
+      onCopyVariant: onCopyVariant,
       onDismiss: onDismiss
     )
     // Margin around the capsule so its soft `.shadow` (radius 8) is never clipped by the panel

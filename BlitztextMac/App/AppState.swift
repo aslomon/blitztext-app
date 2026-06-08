@@ -4,6 +4,8 @@ import SwiftUI
 import os
 
 private let statusLogger = Logger(subsystem: "app.blitztext.mac", category: "WorkflowStatus")
+private let contextCaptureLogger = Logger(
+  subsystem: "app.blitztext.mac", category: "ContextCapture")
 
 enum PopoverPage: Equatable {
   case main
@@ -20,6 +22,7 @@ final class AppState {
 
   var activeWorkflow: (any Workflow)?
   var page: PopoverPage = .main
+  var settingsTabSelection = 0
   var isPopoverShown = false
   var menuBarStatus: MenuBarStatus = .idle {
     didSet {
@@ -48,13 +51,16 @@ final class AppState {
   /// focus race lost). Carries the dictated text so the floating pill can expand and show it in a
   /// scrollable card with a copy action — instead of the text silently sitting only on the clipboard.
   var onCopyOnlyFallback: ((String) -> Void)?
+  var onVariantChoice: ((PendingRewriteVariants) -> Void)?
   /// The dictated text of the current paste attempt, kept so `markCopyOnly` can surface it in the
   /// fallback pill even from the deep retry path (which doesn't carry the text).
   private var currentPasteText: String?
+  private var pendingVariantChoice: PendingRewriteVariants?
 
   /// Backs the "Lokale Modelle" management window (Ollama status, installed models, downloads).
   let localModelManager = LocalModelManager()
   private var activeLaunchSource: WorkflowLaunchSource = .manual
+  private var activeModeID: ModeConfig.ID?
   private var activePasteTarget: PasteTarget?
   private var lastPopoverPasteTarget: PasteTarget?
   /// Selection snapshot taken when the popover opens — BEFORE Blitztext activates and steals focus.
@@ -81,6 +87,7 @@ final class AppState {
     didSet {
       saveSettings()
       prewarmLocalTranscriptionIfNeeded()
+      reloadHotkeys()
     }
   }
   var transcriptionSettings: TranscriptionSettings {
@@ -99,6 +106,7 @@ final class AppState {
   // Phase 4: text-only archive + two-speed Memory (opt-in, default OFF).
   let archiveStore = ArchiveStore()
   let memoryStore = MemoryStore()
+  let emailSemanticMemoryStore = EmailSemanticMemoryStore()
   let memoryCoordinator: MemoryCoordinator
 
   // MEM-1: on-device "Office Memory" — where dictations land. Metadata only, logged with the
@@ -152,6 +160,7 @@ final class AppState {
     refreshAccessibilityPermission()
     autoSelectFastLocalModelIfNeeded()
     prewarmLocalTranscriptionIfNeeded()
+    reloadHotkeys()
     runMemoryLaunchMaintenanceIfNeeded()
     startAccessibilityMonitoring()
     observeAppActivation()
@@ -265,8 +274,12 @@ final class AppState {
   /// The structured Memory block for the rewrite prompt — non-nil only when the GLOBAL master
   /// and the per-mode toggle are both on. Gating lives here so plain Diktat stays untouched.
   func memoryContext(for type: WorkflowType) -> MemoryContext? {
+    memoryContext(for: modeConfig(for: type))
+  }
+
+  func memoryContext(for config: ModeConfig) -> MemoryContext? {
     guard appSettings.memoryContextEnabled else { return nil }
-    guard modeConfig(for: type).rewrite.useMemoryContext else { return nil }
+    guard config.rewrite.useMemoryContext else { return nil }
     let context = memoryStore.context
     return context.isEmpty ? nil : context
   }
@@ -361,6 +374,7 @@ final class AppState {
 
   func clearArchive() { archiveStore.clear() }
   func clearMemory() { memoryStore.clear() }
+  func clearEmailSemanticMemory() { emailSemanticMemoryStore.clear() }
 
   /// R2-FT-stats: engaging "time saved" aggregate over the EXISTING archive — read-only, no new
   /// capture, no privacy cost. Recomputed live from `archiveStore.entries` (cheap, single pass).
@@ -455,24 +469,231 @@ final class AppState {
 
   // MARK: - Mode configs
 
+  nonisolated static func orderedModeConfigs(
+    modes: [String: ModeConfig],
+    modeOrder: [String]
+  ) -> [ModeConfig] {
+    var seen = Set<String>()
+    var result: [ModeConfig] = []
+
+    func append(id: String) {
+      guard !seen.contains(id), let mode = modes[id] else { return }
+      seen.insert(id)
+      result.append(mode)
+    }
+
+    for id in modeOrder { append(id: id) }
+    for slot in WorkflowType.allCases { append(id: slot.rawValue) }
+    for id in modes.keys.sorted() { append(id: id) }
+
+    return result
+  }
+
+  nonisolated static func reorderedModeIDs(
+    _ modeOrder: [ModeConfig.ID],
+    moving id: ModeConfig.ID,
+    offset: Int
+  ) -> [ModeConfig.ID] {
+    guard let currentIndex = modeOrder.firstIndex(of: id) else { return modeOrder }
+    let targetIndex = currentIndex + offset
+    guard modeOrder.indices.contains(targetIndex) else { return modeOrder }
+    var result = modeOrder
+    let removed = result.remove(at: currentIndex)
+    result.insert(removed, at: targetIndex)
+    return result
+  }
+
+  var orderedModeConfigs: [ModeConfig] {
+    Self.orderedModeConfigs(modes: appSettings.modes, modeOrder: appSettings.modeOrder)
+  }
+
+  var mainMenuModeConfigs: [ModeConfig] {
+    orderedModeConfigs.filter { $0.slot != .localTranscription }
+  }
+
+  var semanticEmailMemoryStatusLabel: String {
+    guard appSettings.archiveEnabled else { return "Archiv aus" }
+    guard appSettings.semanticEmailMemoryEnabled else { return "Memory aus" }
+    return "\(emailSemanticMemoryStore.records.count) Einträge"
+  }
+
+  var effectiveHotkeyConfigs: [ModeConfig.ID: HotkeyConfig] {
+    HotkeyRegistry.effectiveConfigs(for: orderedModeConfigs, stored: appSettings.hotkeys)
+  }
+
+  var currentActiveModeID: ModeConfig.ID? {
+    activeModeID
+  }
+
+  func hotkeyLabel(for modeID: ModeConfig.ID) -> String {
+    effectiveHotkeyConfigs[modeID]?.label ?? "Nicht gesetzt"
+  }
+
+  func hotkeyConfig(for modeID: ModeConfig.ID) -> HotkeyConfig {
+    effectiveHotkeyConfigs[modeID] ?? HotkeyConfig(modeID: modeID, modifiers: [], isEnabled: false)
+  }
+
+  var hotkeyValidationIssues: [HotkeyValidationIssue] {
+    HotkeyRegistry.validationIssues(configs: effectiveHotkeyConfigs)
+  }
+
+  func hotkeyConflictLabel(for modeID: ModeConfig.ID) -> String? {
+    for issue in hotkeyValidationIssues {
+      switch issue {
+      case let .duplicate(label, modeIDs) where modeIDs.contains(modeID):
+        return "Konflikt: \(label) wird mehrfach verwendet."
+      default:
+        continue
+      }
+    }
+    return nil
+  }
+
+  func hotkeyConflictLabel(for candidate: HotkeyConfig, excluding modeID: ModeConfig.ID) -> String? {
+    HotkeyRegistry.conflictLabel(
+      for: candidate,
+      excluding: modeID,
+      configs: effectiveHotkeyConfigs
+    )
+  }
+
+  func updateHotkey(id: ModeConfig.ID, _ transform: (inout HotkeyConfig) -> Void) {
+    var config = hotkeyConfig(for: id)
+    transform(&config)
+    appSettings.hotkeys[id] = config
+  }
+
+  func setHotkeyRecordingActive(_ isActive: Bool) {
+    hotkeyService.isSuspended = isActive
+  }
+
+  private func reloadHotkeys() {
+    hotkeyService.reload(configs: effectiveHotkeyConfigs)
+  }
+
+  func modeConfig(for id: ModeConfig.ID) -> ModeConfig? {
+    appSettings.modes[id]
+  }
+
   func modeConfig(for type: WorkflowType) -> ModeConfig {
     appSettings.modes[type.rawValue] ?? .default(for: type)
+  }
+
+  func updateMode(id: ModeConfig.ID, _ transform: (inout ModeConfig) -> Void) {
+    guard var config = modeConfig(for: id) else { return }
+    transform(&config)
+    appSettings.modes[id] = config
+    if !appSettings.modeOrder.contains(id) {
+      appSettings.modeOrder.append(id)
+    }
   }
 
   func updateMode(_ type: WorkflowType, _ transform: (inout ModeConfig) -> Void) {
     var config = modeConfig(for: type)
     transform(&config)
     appSettings.modes[type.rawValue] = config
+    if !appSettings.modeOrder.contains(type.rawValue) {
+      appSettings.modeOrder.append(type.rawValue)
+    }
   }
 
   func resetMode(_ type: WorkflowType) {
     appSettings.modes[type.rawValue] = .default(for: type)
+    if !appSettings.modeOrder.contains(type.rawValue) {
+      appSettings.modeOrder.append(type.rawValue)
+    }
+  }
+
+  func resetMode(id: ModeConfig.ID) {
+    guard let existing = modeConfig(for: id) else { return }
+    var reset = ModeConfig.default(for: existing.slot)
+    reset.modeID = existing.id == existing.slot.rawValue ? nil : existing.id
+    appSettings.modes[id] = reset
+    if !appSettings.modeOrder.contains(id) {
+      appSettings.modeOrder.append(id)
+    }
+  }
+
+  func duplicateMode(id: ModeConfig.ID) {
+    guard let source = modeConfig(for: id) else { return }
+    let newID = "mode-\(UUID().uuidString)"
+    let duplicate = ModeConfig.duplicate(
+      source,
+      newID: newID,
+      userName: "\(displayName(for: source)) Kopie"
+    )
+    appSettings.modes[newID] = duplicate
+    insertModeID(newID, after: id)
+  }
+
+  func addMode(template: ModeTemplate) {
+    let newID = "mode-\(UUID().uuidString)"
+    let mode = template.makeMode(id: newID)
+    appSettings.modes[newID] = mode
+    insertModeID(newID, after: template.slot.rawValue)
+    openSettings(tab: 0)
+  }
+
+  func openSettings(tab: Int = 0) {
+    settingsTabSelection = min(max(tab, 0), 4)
+    page = .settings
+  }
+
+  func deleteMode(id: ModeConfig.ID) {
+    guard let existing = modeConfig(for: id), existing.id != existing.slot.rawValue else { return }
+    appSettings.modes.removeValue(forKey: id)
+    appSettings.hotkeys.removeValue(forKey: id)
+    appSettings.modeOrder.removeAll { $0 == id }
+    if activeModeID == id {
+      activeWorkflow?.reset()
+      activeWorkflow = nil
+      activeModeID = nil
+      menuBarStatus = .idle
+      page = .main
+    }
+  }
+
+  func moveMode(id: ModeConfig.ID, offset: Int) {
+    guard modeConfig(for: id) != nil, offset != 0 else { return }
+    ensureModeOrderContainsKnownModes()
+    appSettings.modeOrder = Self.reorderedModeIDs(appSettings.modeOrder, moving: id, offset: offset)
+  }
+
+  func canDeleteMode(id: ModeConfig.ID) -> Bool {
+    guard let existing = modeConfig(for: id) else { return false }
+    return existing.id != existing.slot.rawValue
+  }
+
+  func canMoveMode(id: ModeConfig.ID, offset: Int) -> Bool {
+    guard appSettings.modeOrder.contains(id) else { return false }
+    let reordered = Self.reorderedModeIDs(appSettings.modeOrder, moving: id, offset: offset)
+    return reordered != appSettings.modeOrder
+  }
+
+  private func insertModeID(_ newID: ModeConfig.ID, after existingID: ModeConfig.ID) {
+    appSettings.modeOrder.removeAll { $0 == newID }
+    if let index = appSettings.modeOrder.firstIndex(of: existingID) {
+      appSettings.modeOrder.insert(newID, at: appSettings.modeOrder.index(after: index))
+    } else {
+      appSettings.modeOrder.append(newID)
+    }
+  }
+
+  private func ensureModeOrderContainsKnownModes() {
+    let knownIDs = Set(appSettings.modes.keys)
+    appSettings.modeOrder.removeAll { !knownIDs.contains($0) }
+    for config in orderedModeConfigs where !appSettings.modeOrder.contains(config.id) {
+      appSettings.modeOrder.append(config.id)
+    }
   }
 
   /// Effective rewrite backend: the global offline switch forces on-device.
   func resolvedRewriteBackend(for type: WorkflowType) -> RewriteBackend {
-    appSettings.secureLocalModeEnabled
-      ? .local : modeConfig(for: type).rewrite.rewriteBackend
+    resolvedRewriteBackend(for: modeConfig(for: type))
+  }
+
+  func resolvedRewriteBackend(for config: ModeConfig) -> RewriteBackend {
+    appSettings.secureLocalModeEnabled ? .local : config.rewrite.rewriteBackend
   }
 
   /// Transcription backend for the rewrite modes — local in secure offline mode so audio never
@@ -482,18 +703,26 @@ final class AppState {
   }
 
   func rewriteProvider(for type: WorkflowType) -> any RewriteProvider {
-    switch resolvedRewriteBackend(for: type) {
+    rewriteProvider(for: modeConfig(for: type))
+  }
+
+  func rewriteProvider(for config: ModeConfig) -> any RewriteProvider {
+    switch resolvedRewriteBackend(for: config) {
     case .local:
       // Local rewriting runs through Ollama (a local HTTP server). If Ollama is down or the
       // model is missing, the provider throws a guiding error at runtime instead of failing here.
       return OllamaRewriteProvider(modelID: appSettings.selectedLocalLLMModelName)
     case .openai:
-      return OpenAIRewriteProvider(modelID: modeConfig(for: type).rewrite.modelID)
+      return OpenAIRewriteProvider(modelID: config.rewrite.modelID)
     }
   }
 
   func rewriteBackendReady(for type: WorkflowType) -> Bool {
-    switch resolvedRewriteBackend(for: type) {
+    rewriteBackendReady(for: modeConfig(for: type))
+  }
+
+  func rewriteBackendReady(for config: ModeConfig) -> Bool {
+    switch resolvedRewriteBackend(for: config) {
     case .local:
       // Ready only when a local model is actually selected. Otherwise the mode would accept a full
       // dictation and then discard it into a runtime error (data loss). Gating here routes the user
@@ -516,26 +745,35 @@ final class AppState {
     as mode: WorkflowType,
     archiveResult: Bool = true
   ) async -> Result<String, Error> {
+    await rerunRewrite(rawTranscript: rawTranscript, as: mode.rawValue, archiveResult: archiveResult)
+  }
+
+  func rerunRewrite(
+    rawTranscript: String,
+    as modeID: ModeConfig.ID,
+    archiveResult: Bool = true
+  ) async -> Result<String, Error> {
     // Fresh re-run: drop any stale model-fallback note before this run can set one (B6).
     lastRewriteFallbackNote = nil
     let trimmed = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return .failure(RerunError.emptyTranscript) }
-    guard mode.isRewriteCapable else { return .failure(RerunError.notRewriteCapable) }
+    guard let config = modeConfig(for: modeID), config.slot.isRewriteCapable else {
+      return .failure(RerunError.notRewriteCapable)
+    }
     // Same pre-flight gate as recording: route the user to settings instead of losing the run.
-    guard rewriteBackendReady(for: mode) else {
-      return .failure(RerunError.backendNotReady(resolvedRewriteBackend(for: mode)))
+    guard rewriteBackendReady(for: config) else {
+      return .failure(RerunError.backendNotReady(resolvedRewriteBackend(for: config)))
     }
 
-    let config = modeConfig(for: mode)
     let systemPrompt = RewriteReuse.systemPrompt(
       kind: config.kind,
       rewrite: config.rewrite,
       customTerms: effectiveRewriteTerms,
-      memory: memoryContext(for: mode)
+      memory: memoryContext(for: config)
     )
 
     do {
-      let outcome = try await rewriteProvider(for: mode).rewrite(
+      let outcome = try await rewriteProvider(for: config).rewrite(
         systemPrompt: systemPrompt,
         userText: trimmed,
         temperature: LLMService.defaultRewriteTemperature
@@ -549,7 +787,9 @@ final class AppState {
       if archiveResult, appSettings.archiveEnabled {
         archiveStore.append(
           ArchiveRunRecord(
-            mode: mode,
+            mode: config.slot,
+            modeID: config.id,
+            modeName: displayName(for: config),
             rawTranscript: trimmed,
             finalText: cleaned,
             backend: rewriteTranscriptionBackend,
@@ -630,6 +870,13 @@ final class AppState {
       return cfg
     }
 
+    if appSettings.modeOrder.isEmpty {
+      appSettings.modeOrder = WorkflowType.allCases.map(\.rawValue)
+    } else {
+      for slot in WorkflowType.allCases where !appSettings.modeOrder.contains(slot.rawValue) {
+        appSettings.modeOrder.append(slot.rawValue)
+      }
+    }
     appSettings.modes = modes
     appSettings.didMigrateToModeConfigs = true
     // Preserve the user's offline choice: a previously-enabled "secure local mode" now simply routes
@@ -673,8 +920,32 @@ final class AppState {
   // MARK: - Custom Display Names
 
   func displayName(for type: WorkflowType) -> String {
-    let name = modeConfig(for: type).userName.trimmingCharacters(in: .whitespaces)
-    return name.isEmpty ? ModeConfig.defaultUserName(for: type) : name
+    displayName(for: modeConfig(for: type))
+  }
+
+  func displayName(for config: ModeConfig) -> String {
+    let name = config.userName.trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? ModeConfig.defaultUserName(for: config.slot) : name
+  }
+
+  func workflowSubtitle(for config: ModeConfig) -> String {
+    let type = config.slot
+    if type == .emojiText {
+      return "Emoji-Dichte: \(config.rewrite.emojiDensity.displayName)."
+    }
+    if type == .textImprover || type == .dampfAblassen {
+      switch resolvedRewriteBackend(for: config) {
+      case .local:
+        let model = appSettings.selectedLocalLLMModelName.trimmingCharacters(
+          in: .whitespacesAndNewlines)
+        return model.isEmpty
+          ? "Lokal über Ollama — noch kein Modell gewählt"
+          : "Lokal über Ollama (\(model))"
+      case .openai:
+        return type.subtitle
+      }
+    }
+    return type.subtitle
   }
 
   func workflowSubtitle(for type: WorkflowType) -> String {
@@ -735,10 +1006,18 @@ final class AppState {
   /// captured when the popover opened (the app that was frontmost before Blitztext took focus) is
   /// preserved, then dismisses the popover so ONLY the floating pill indicates recording.
   func startWorkflowFromPopover(_ type: WorkflowType) {
-    startWorkflow(type, source: .manual)
+    startModeFromPopover(type.rawValue)
+  }
+
+  func startModeFromPopover(_ modeID: ModeConfig.ID) {
+    guard let config = modeConfig(for: modeID) else {
+      page = .settings
+      return
+    }
+    startMode(config.id, source: .manual)
     // Only dismiss when a workflow actually started — an unavailable mode routes to .settings and
     // must keep the popover open there.
-    guard let active = activeWorkflow, active.type == type else { return }
+    guard let active = activeWorkflow, activeModeID == config.id else { return }
     // An immediate error (e.g. empty selection for "Auswahl bearbeiten") must stay VISIBLE in the
     // popover so the user sees the guidance — only a genuinely running workflow hands off to the pill.
     if case .error = active.phase {
@@ -753,7 +1032,11 @@ final class AppState {
   }
 
   func startWorkflow(_ type: WorkflowType, source: WorkflowLaunchSource = .manual) {
-    guard isWorkflowAvailable(type) else {
+    startMode(type.rawValue, source: source)
+  }
+
+  func startMode(_ modeID: ModeConfig.ID, source: WorkflowLaunchSource = .manual) {
+    guard let config = modeConfig(for: modeID), isWorkflowAvailable(config) else {
       if source == .manual {
         page = .settings
       }
@@ -766,11 +1049,19 @@ final class AppState {
     // Fresh run: drop any stale model-fallback note before a new rewrite can set one (B6).
     lastRewriteFallbackNote = nil
     activeLaunchSource = source
+    activeModeID = config.id
     activePasteTarget = capturePasteTarget(for: source)
-    let selection = captureSelectionContext(for: type, source: source)
-    let automaticContext = captureAutomaticContext(for: type, source: source)
+    let selection = captureSelectionContext(for: config, source: source)
+    let automaticContext = captureAutomaticContext(for: config, source: source)
+    logRewriteContextCapture(
+      modeID: config.id,
+      source: source,
+      config: config,
+      selection: selection,
+      automaticContext: automaticContext
+    )
 
-    switch type {
+    switch config.slot {
     case .transcription:
       let workflow = TranscriptionWorkflow(
         customTerms: effectiveCustomTerms,
@@ -800,8 +1091,8 @@ final class AppState {
 
     case .textImprover:
       let workflow = TextImprovementWorkflow(
-        rewrite: modeConfig(for: .textImprover).rewrite,
-        provider: rewriteProvider(for: .textImprover),
+        rewrite: config.rewrite,
+        provider: rewriteProvider(for: config),
         customTerms: effectiveCustomTerms,
         rewriteTerms: effectiveRewriteTerms,
         dictionary: appSettings.dictationDictionary,
@@ -811,16 +1102,21 @@ final class AppState {
         localModelName: selectedLocalModelName,
         selection: selection,
         automaticContext: automaticContext,
-        memoryContext: memoryContext(for: .textImprover)
+        memoryContext: memoryContext(for: config),
+        emailMemoryLevel: config.rewrite.semanticEmailEnrichmentLevel,
+        emailMemoryLoader: emailMemoryLoader(for: config)
       )
       configureWorkflowHandlers(workflow)
+      workflow.onVariants = { [weak self] variants in
+        self?.handleWorkflowVariants(variants)
+      }
       activeWorkflow = workflow
       workflow.start()
 
     case .dampfAblassen:
       let workflow = DampfAblassenWorkflow(
-        rewrite: modeConfig(for: .dampfAblassen).rewrite,
-        provider: rewriteProvider(for: .dampfAblassen),
+        rewrite: config.rewrite,
+        provider: rewriteProvider(for: config),
         customTerms: effectiveCustomTerms,
         rewriteTerms: effectiveRewriteTerms,
         dictionary: appSettings.dictationDictionary,
@@ -829,16 +1125,19 @@ final class AppState {
         backend: rewriteTranscriptionBackend,
         localModelName: selectedLocalModelName,
         automaticContext: automaticContext,
-        memoryContext: memoryContext(for: .dampfAblassen)
+        memoryContext: memoryContext(for: config)
       )
       configureWorkflowHandlers(workflow)
+      workflow.onVariants = { [weak self] variants in
+        self?.handleWorkflowVariants(variants)
+      }
       activeWorkflow = workflow
       workflow.start()
 
     case .emojiText:
       let workflow = EmojiTextWorkflow(
-        rewrite: modeConfig(for: .emojiText).rewrite,
-        provider: rewriteProvider(for: .emojiText),
+        rewrite: config.rewrite,
+        provider: rewriteProvider(for: config),
         customTerms: effectiveCustomTerms,
         rewriteTerms: effectiveRewriteTerms,
         dictionary: appSettings.dictationDictionary,
@@ -848,6 +1147,9 @@ final class AppState {
         localModelName: selectedLocalModelName
       )
       configureWorkflowHandlers(workflow)
+      workflow.onVariants = { [weak self] variants in
+        self?.handleWorkflowVariants(variants)
+      }
       activeWorkflow = workflow
       workflow.start()
     }
@@ -856,8 +1158,12 @@ final class AppState {
   }
 
   func isWorkflowAvailable(_ type: WorkflowType) -> Bool {
-    guard modeConfig(for: type).isEnabled else { return false }
-    switch type {
+    isWorkflowAvailable(modeConfig(for: type))
+  }
+
+  func isWorkflowAvailable(_ config: ModeConfig) -> Bool {
+    guard config.isEnabled else { return false }
+    switch config.slot {
     case .localTranscription:
       return selectedLocalModelIsInstalled
     case .transcription:
@@ -869,7 +1175,7 @@ final class AppState {
         appSettings.secureLocalModeEnabled
         ? selectedLocalModelIsInstalled
         : KeychainService.isConfigured
-      return transcriptionReady && rewriteBackendReady(for: type)
+      return transcriptionReady && rewriteBackendReady(for: config)
     }
   }
 
@@ -877,23 +1183,23 @@ final class AppState {
   /// For `.manual` (popover) starts the live frontmost app is Blitztext itself, so we use the
   /// snapshot taken in `prepareForPopoverPresentation` before activation; hotkey/background starts
   /// can capture live because Blitztext (`.accessory`) never steals focus there.
-  private func captureSelectionContext(for type: WorkflowType, source: WorkflowLaunchSource)
+  private func captureSelectionContext(for config: ModeConfig, source: WorkflowLaunchSource)
     -> SelectionContext?
   {
     // Only the E-Mail mode exposes the reply-context control today.
-    guard type == .textImprover else { return nil }
-    guard modeConfig(for: type).rewrite.replyContextMode != .off else { return nil }
+    guard config.slot == .textImprover else { return nil }
+    guard config.rewrite.replyContextMode != .off else { return nil }
     return source == .manual ? pendingPopoverSelection : SelectionContextService.capture()
   }
 
   /// Captures the current field text as opt-in rewrite context without requiring a selection.
   /// Manual starts reuse the pre-popover snapshot; background hotkeys capture live because the
   /// target app remains frontmost.
-  private func captureAutomaticContext(for type: WorkflowType, source: WorkflowLaunchSource)
+  private func captureAutomaticContext(for config: ModeConfig, source: WorkflowLaunchSource)
     -> AutomaticRewriteContext?
   {
-    guard type == .textImprover || type == .dampfAblassen else { return nil }
-    guard modeConfig(for: type).rewrite.useAutomaticFieldContext else { return nil }
+    guard config.slot == .textImprover || config.slot == .dampfAblassen else { return nil }
+    guard config.rewrite.useAutomaticFieldContext else { return nil }
     if source == .manual { return pendingPopoverAutomaticContext }
     guard let target = activePasteTarget else { return nil }
     return SelectionContextService.captureAutomaticFieldContext(
@@ -904,6 +1210,23 @@ final class AppState {
     )
   }
 
+  private func logRewriteContextCapture(
+    modeID: ModeConfig.ID,
+    source: WorkflowLaunchSource,
+    config: ModeConfig,
+    selection: SelectionContext?,
+    automaticContext: AutomaticRewriteContext?
+  ) {
+    let diagnostic = RewriteContextCaptureDiagnostic(
+      modeID: modeID,
+      launchSource: source,
+      config: config,
+      selection: selection,
+      automaticContext: automaticContext
+    )
+    contextCaptureLogger.notice("\(diagnostic.logLine, privacy: .public)")
+  }
+
   func stopCurrentWorkflow() {
     activeWorkflow?.stop()
   }
@@ -911,6 +1234,7 @@ final class AppState {
   func resetCurrentWorkflow() {
     activeWorkflow?.reset()
     activeWorkflow = nil
+    activeModeID = nil
     activePasteTarget = nil
     activeLaunchSource = .manual
     menuBarStatusResetTask?.cancel()
@@ -1024,9 +1348,11 @@ final class AppState {
     refreshAccessibilityPermission()
     lastPopoverPasteTarget = captureCurrentFrontmostApp()
     // Snapshot the selection now, while the user's app is still frontmost (showPopover activates
-    // Blitztext right after this). Only when the E-Mail mode wants reply/edit context.
+    // Blitztext right after this). Only when any E-Mail mode wants reply/edit context.
     pendingPopoverSelection =
-      modeConfig(for: .textImprover).rewrite.replyContextMode != .off
+      orderedModeConfigs.contains {
+        $0.slot == .textImprover && $0.rewrite.replyContextMode != .off
+      }
       ? SelectionContextService.capture()
       : nil
     pendingPopoverAutomaticContext = capturePopoverAutomaticContext()
@@ -1258,10 +1584,118 @@ final class AppState {
       statusLogger.debug("Secure paste target → skipping archive/context/memory for this run.")
       return
     }
-    archiveStore.append(record)
-    logPasteContext(for: record)
+    let enrichedRecord = enrichedArchiveRecord(record)
+    archiveStore.append(enrichedRecord)
+    logPasteContext(for: enrichedRecord)
     if appSettings.memoryContextEnabled {
-      memoryCoordinator.ingest(rawTranscript: record.rawTranscript, date: record.date)
+      memoryCoordinator.ingest(rawTranscript: enrichedRecord.rawTranscript, date: enrichedRecord.date)
+    }
+    ingestEmailSemanticMemoryIfNeeded(enrichedRecord)
+  }
+
+  private func ingestEmailSemanticMemoryIfNeeded(_ record: ArchiveRunRecord) {
+    guard appSettings.semanticEmailMemoryEnabled else { return }
+    guard record.mode == .textImprover else { return }
+    let modeID = record.modeID ?? activeModeID ?? record.mode.rawValue
+    let target = activePasteTarget
+    let modelID = appSettings.selectedEmbeddingModelName
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !modelID.isEmpty else { return }
+
+    Task { [weak self] in
+      let provider = OllamaEmbeddingProvider(modelID: modelID)
+      guard let embedding = try? await provider.embed(record.finalText) else { return }
+      let memoryRecord = EmailSemanticMemoryRecord(
+        date: record.date,
+        modeID: modeID,
+        appBundleID: target?.bundleIdentifier,
+        appName: target?.appName,
+        windowTitle: target?.windowTitle,
+        rawTranscript: record.rawTranscript,
+        finalText: record.finalText,
+        embedding: embedding,
+        embeddingModel: modelID
+      )
+      await MainActor.run {
+        self?.emailSemanticMemoryStore.append(memoryRecord)
+      }
+    }
+  }
+
+  private func enrichedArchiveRecord(_ record: ArchiveRunRecord) -> ArchiveRunRecord {
+    let id = record.modeID ?? activeModeID ?? record.mode.rawValue
+    let name =
+      record.modeName
+      ?? modeConfig(for: id).map { displayName(for: $0) }
+      ?? displayName(for: record.mode)
+    return record.withModeMetadata(id: id, name: name)
+  }
+
+  private func handleWorkflowVariants(_ variants: PendingRewriteVariants) {
+    pendingVariantChoice = variants
+    onVariantChoice?(variants)
+  }
+
+  func chooseVariant(_ variantID: RewriteVariant.ID) {
+    guard
+      let pending = pendingVariantChoice,
+      let variant = pending.variants.first(where: { $0.id == variantID })
+    else {
+      return
+    }
+    pendingVariantChoice = nil
+    let record = ArchiveRunRecord(
+      mode: pending.mode,
+      rawTranscript: pending.rawTranscript,
+      finalText: variant.text,
+      backend: pending.backend,
+      durationSec: pending.durationSec,
+      date: pending.date
+    )
+    if appSettings.archiveEnabled {
+      handleWorkflowRun(record)
+    }
+    handleWorkflowOutput(variant.text)
+  }
+
+  func copyVariant(_ variantID: RewriteVariant.ID) {
+    guard
+      let pending = pendingVariantChoice,
+      let variant = pending.variants.first(where: { $0.id == variantID })
+    else {
+      return
+    }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(variant.text, forType: .string)
+    pendingVariantChoice = nil
+    scheduleWorkflowCleanup(after: 0.2)
+  }
+
+  func dismissVariantChoice() {
+    pendingVariantChoice = nil
+    resetCurrentWorkflow()
+  }
+
+  private func emailMemoryLoader(for config: ModeConfig) -> EmailMemoryMatchLoader? {
+    guard appSettings.semanticEmailMemoryEnabled else { return nil }
+    guard config.slot == .textImprover else { return nil }
+    guard config.rewrite.useSemanticEmailMemory else { return nil }
+    let modelID = appSettings.selectedEmbeddingModelName
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !modelID.isEmpty else { return nil }
+    let level = config.rewrite.semanticEmailEnrichmentLevel
+    let store = emailSemanticMemoryStore
+
+    return { queryText in
+      let provider = OllamaEmbeddingProvider(modelID: modelID)
+      guard let queryEmbedding = try? await provider.embed(queryText) else { return [] }
+      let records = await MainActor.run { store.records }
+      return EmailMemoryRetriever.retrieve(
+        queryEmbedding: queryEmbedding,
+        records: records,
+        limit: level.retrievalLimit,
+        minScore: level.minimumScore
+      )
     }
   }
 
@@ -1305,6 +1739,9 @@ final class AppState {
       statusLogger.debug(
         "phase=.running isRecording=\(workflow.isRecording) → status=\(String(describing: self.menuBarStatus), privacy: .public)"
       )
+
+    case .variantChoice:
+      menuBarStatus = .processing(workflow.type)
 
     case .done:
       menuBarStatus = .success(workflow.type)
@@ -1375,8 +1812,10 @@ final class AppState {
 
   private func capturePopoverAutomaticContext() -> AutomaticRewriteContext? {
     guard
-      modeConfig(for: .textImprover).rewrite.useAutomaticFieldContext
-        || modeConfig(for: .dampfAblassen).rewrite.useAutomaticFieldContext,
+      orderedModeConfigs.contains(where: {
+        ($0.slot == .textImprover || $0.slot == .dampfAblassen)
+          && $0.rewrite.useAutomaticFieldContext
+      }),
       let target = lastPopoverPasteTarget
     else { return nil }
 

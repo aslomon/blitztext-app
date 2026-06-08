@@ -31,6 +31,11 @@ enum AppSupportPaths {
     appSupportDirectoryURL.appendingPathComponent("memory.json")
   }
 
+  /// Opt-in semantic email memory. Stores text snippets + local embeddings for retrieval.
+  static var emailSemanticMemoryURL: URL {
+    archiveDirectoryURL.appendingPathComponent("semantic-email-memory.json")
+  }
+
   /// On-device "Office Memory" context log (MEM-1). Metadata only — no dictated text. 0600, opt-in.
   static var contextLogURL: URL {
     archiveDirectoryURL.appendingPathComponent("context-log.json")

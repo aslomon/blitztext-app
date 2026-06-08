@@ -5,6 +5,7 @@ struct WorkflowRowView: View {
   let enabled: Bool
   var customName: String? = nil
   var subtitle: String? = nil
+  var hotkeyLabel: String? = nil
   let action: () -> Void
 
   @State private var isHovered = false
@@ -16,7 +17,7 @@ struct WorkflowRowView: View {
         iconTile
         labelStack
         Spacer()
-        HotkeyBadge(label: type.hotkeyLabel, enabled: enabled)
+        HotkeyBadge(label: hotkeyLabel ?? type.hotkeyLabel, enabled: enabled)
           .opacity(enabled ? 1 : 0.4)
           .accessibilityHidden(true)
       }

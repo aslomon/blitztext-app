@@ -12,6 +12,7 @@ final class TextImprovementWorkflow: Workflow {
   var onOutput: WorkflowOutputHandler?
   var onPhaseChange: WorkflowPhaseChangeHandler?
   var onRun: WorkflowRunHandler?
+  var onVariants: WorkflowVariantChoiceHandler?
   /// Fired once per run with the model-fallback note (`nil` when the chosen model ran). See B6.
   var onRewriteFallback: WorkflowRewriteFallbackHandler?
 
@@ -32,6 +33,8 @@ final class TextImprovementWorkflow: Workflow {
   private let selection: SelectionContext?
   private let automaticContext: AutomaticRewriteContext?
   private let memoryContext: MemoryContext?
+  private let emailMemoryLevel: SemanticEmailEnrichmentLevel
+  private let emailMemoryLoader: EmailMemoryMatchLoader?
   private var processingTask: Task<Void, Never>?
 
   init(
@@ -46,7 +49,9 @@ final class TextImprovementWorkflow: Workflow {
     localModelName: String = LocalTranscriptionService.recommendedFastModelName,
     selection: SelectionContext? = nil,
     automaticContext: AutomaticRewriteContext? = nil,
-    memoryContext: MemoryContext? = nil
+    memoryContext: MemoryContext? = nil,
+    emailMemoryLevel: SemanticEmailEnrichmentLevel = .medium,
+    emailMemoryLoader: EmailMemoryMatchLoader? = nil
   ) {
     self.rewrite = rewrite
     self.provider = provider
@@ -60,6 +65,8 @@ final class TextImprovementWorkflow: Workflow {
     self.selection = selection
     self.automaticContext = automaticContext
     self.memoryContext = memoryContext
+    self.emailMemoryLevel = emailMemoryLevel
+    self.emailMemoryLoader = emailMemoryLoader
   }
 
   // MARK: - Recording State
@@ -168,22 +175,60 @@ final class TextImprovementWorkflow: Workflow {
 
         phase = .running("Text wird verbessert ...")
 
+        let emailMemoryMatches = await emailMemoryLoader?(cleanedRawText) ?? []
+        let emailMemoryContext =
+          emailMemoryMatches.isEmpty
+          ? nil
+          : EmailSemanticMemoryContext(matches: emailMemoryMatches, level: emailMemoryLevel)
+
         let systemPrompt = LLMService.rewriteSystemPrompt(
           rewrite,
           customTerms: rewriteTerms,
           selection: selection,
           automaticContext: automaticContext,
-          memory: memoryContext)
+          memory: memoryContext,
+          emailMemory: emailMemoryContext)
         let outcome = try await provider.rewrite(
           systemPrompt: systemPrompt,
           userText: cleanedRawText,
           temperature: LLMService.defaultRewriteTemperature
         )
+        let cleanedImproved = TranscriptionQualityService.cleanedTranscript(outcome.text)
+
+        if rewrite.showTwoVariants {
+          do {
+            let secondOutcome = try await provider.rewrite(
+              systemPrompt: RewriteVariantBuilder.secondVariantPrompt(systemPrompt),
+              userText: cleanedRawText,
+              temperature: LLMService.defaultRewriteTemperature
+            )
+            let cleanedSecond = TranscriptionQualityService.cleanedTranscript(secondOutcome.text)
+            let variants = RewriteVariantBuilder.uniqueVariants(
+              first: cleanedImproved, second: cleanedSecond)
+            guard variants.count > 1 else {
+              throw LLMError.noContent
+            }
+            onRewriteFallback?(
+              RewriteVariantBuilder.fallbackNote(primary: outcome, secondary: secondOutcome))
+            phase = .variantChoice(variants)
+            onVariants?(
+              PendingRewriteVariants(
+                mode: type,
+                rawTranscript: cleanedRawText,
+                variants: variants,
+                backend: backend,
+                durationSec: recordingDuration
+              )
+            )
+            return
+          } catch {
+            // One-variant fallback: keep the successful first rewrite and paste it normally.
+          }
+        }
+
         onRewriteFallback?(
           RewriteModelRegistry.fallbackNote(
             requested: outcome.requestedModelID, used: outcome.usedModelID))
-
-        let cleanedImproved = TranscriptionQualityService.cleanedTranscript(outcome.text)
         phase = .done(cleanedImproved)
         onRun?(
           ArchiveRunRecord(
@@ -200,4 +245,5 @@ final class TextImprovementWorkflow: Workflow {
       }
     }
   }
+
 }

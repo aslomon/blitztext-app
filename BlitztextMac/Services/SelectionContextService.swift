@@ -10,6 +10,9 @@ enum SelectionContextService {
   // DR-4: cursor-relatives Fenster statt ganzes Feld — kleineres Budget aus Datenschutzgründen.
   static let maxSurroundingChars = 600
   static let maxAutomaticFieldContextChars = 2_000
+  static let maxAutomaticWindowContextChars = 8_000
+  private static let maxWindowTraversalNodes = 500
+  private static let maxWindowTraversalDepth = 12
 
   /// Captures the current selection synchronously. Call while the target app is still frontmost.
   static func capture() -> SelectionContext? {
@@ -35,8 +38,9 @@ enum SelectionContextService {
     return context.isEmpty ? nil : context
   }
 
-  /// Captures the focused input field as transient working context without requiring a selection.
-  /// Secure fields are skipped by the caller-provided target snapshot. Best-effort: apps that do
+  /// Captures transient working context without requiring a selection. It first reads the focused
+  /// field, then scans readable text in the focused window. Secure fields are skipped by the
+  /// caller-provided target snapshot and again during window traversal. Best-effort: apps that do
   /// not expose text through AX simply return nil.
   static func captureAutomaticFieldContext(
     appBundleID: String?,
@@ -51,10 +55,14 @@ enum SelectionContextService {
 
     let fullText = copyString(focused, kAXValueAttribute)
     let selectedRange = copySelectedRange(focused)
-    let text = automaticFieldContextWindow(
-      fullText: fullText,
+    let windowText =
+      copyElement(systemWide, kAXFocusedWindowAttribute)
+      .map { automaticWindowText($0, maxChars: maxAutomaticWindowContextChars) } ?? ""
+    let text = automaticWindowContext(
+      focusedFieldText: fullText,
       selectedRange: selectedRange,
-      maxChars: maxAutomaticFieldContextChars
+      windowText: windowText,
+      maxChars: maxAutomaticWindowContextChars
     )
 
     let context = AutomaticRewriteContext(
@@ -117,6 +125,135 @@ enum SelectionContextService {
     surroundingWindow(fullText: fullText, selectedRange: selectedRange, maxChars: maxChars)
   }
 
+  /// Builds the transient rewrite context from the focused field and the broader focused window.
+  /// The focused field remains cursor-relative; the window scan contributes additional visible text
+  /// such as quoted email content. Exact contained duplicates are removed before the final cap.
+  static func automaticWindowContext(
+    focusedFieldText: String,
+    selectedRange: NSRange?,
+    windowText: String,
+    maxChars: Int = maxAutomaticWindowContextChars
+  ) -> String {
+    let focusedContext = automaticFieldContextWindow(
+      fullText: focusedFieldText,
+      selectedRange: selectedRange,
+      maxChars: maxAutomaticFieldContextChars
+    )
+    return mergeContextParts([focusedContext, windowText], maxChars: maxChars)
+  }
+
+  // MARK: - Focused window scan
+
+  private static func automaticWindowText(_ window: AXUIElement, maxChars: Int) -> String {
+    var result: [String] = []
+    var visited = Set<UInt>()
+    var queue: [(element: AXUIElement, depth: Int)] = [(window, 0)]
+    var index = 0
+
+    while index < queue.count,
+      index < maxWindowTraversalNodes,
+      joinedCount(result) < maxChars
+    {
+      let item = queue[index]
+      index += 1
+
+      let identity = UInt(CFHash(item.element))
+      guard !visited.contains(identity) else { continue }
+      visited.insert(identity)
+
+      guard !isSecureElement(item.element) else { continue }
+
+      if let text = readableText(from: item.element) {
+        appendDistinct(text, to: &result)
+      }
+
+      guard item.depth < maxWindowTraversalDepth else { continue }
+      for child in copyElements(item.element, kAXChildrenAttribute) {
+        queue.append((child, item.depth + 1))
+      }
+    }
+
+    return clamp(result.joined(separator: "\n"), to: maxChars)
+  }
+
+  private static func readableText(from element: AXUIElement) -> String? {
+    let role = copyString(element, kAXRoleAttribute).lowercased()
+    guard isReadableRole(role) else { return nil }
+
+    for attribute in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+      let text = copyString(element, attribute)
+      if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return text
+      }
+    }
+    return nil
+  }
+
+  private static func isReadableRole(_ role: String) -> Bool {
+    role.contains("statictext")
+      || role.contains("textfield")
+      || role.contains("textarea")
+      || role.contains("webarea")
+      || role.contains("heading")
+      || role.contains("link")
+  }
+
+  private static func isSecureElement(_ element: AXUIElement) -> Bool {
+    let role = copyString(element, kAXRoleAttribute)
+    let subrole = copyString(element, kAXSubroleAttribute)
+    return PasteContextAXReader.isSecureFieldRole(role: role, subrole: subrole)
+  }
+
+  // MARK: - Context merge
+
+  private static func mergeContextParts(_ parts: [String], maxChars: Int) -> String {
+    var result: [String] = []
+    for part in parts {
+      appendDistinct(part, to: &result)
+    }
+    return clamp(result.joined(separator: "\n\n"), to: maxChars)
+  }
+
+  private static func appendDistinct(_ text: String, to result: inout [String]) {
+    let cleaned = normalizedContextText(text)
+    guard !cleaned.isEmpty else { return }
+
+    if result.contains(where: { existing in
+      let normalizedExisting = normalizedForComparison(existing)
+      let normalizedCleaned = normalizedForComparison(cleaned)
+      return normalizedExisting == normalizedCleaned
+        || normalizedExisting.contains(normalizedCleaned)
+        || normalizedCleaned.contains(normalizedExisting)
+    }) {
+      return
+    }
+
+    result.removeAll { existing in
+      normalizedForComparison(cleaned).contains(normalizedForComparison(existing))
+    }
+    result.append(cleaned)
+  }
+
+  private static func normalizedContextText(_ text: String) -> String {
+    text
+      .components(separatedBy: .newlines)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .joined(separator: "\n")
+  }
+
+  private static func normalizedForComparison(_ text: String) -> String {
+    text
+      .components(separatedBy: .whitespacesAndNewlines)
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+      .lowercased()
+  }
+
+  private static func joinedCount(_ values: [String]) -> Int {
+    values.reduce(0) { $0 + $1.count }
+  }
+
   // MARK: - AX helpers
 
   /// Liest `kAXSelectedTextRangeAttribute` als `NSRange`. Gibt nil zurück, wenn das Attribut
@@ -143,6 +280,27 @@ enum SelectionContextService {
     guard result == .success, let value else { return nil }
     guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
     return (value as! AXUIElement)
+  }
+
+  private static func copyElements(_ element: AXUIElement, _ attribute: String) -> [AXUIElement] {
+    var value: CFTypeRef?
+    let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+    guard result == .success, let value, CFGetTypeID(value) == CFArrayGetTypeID() else {
+      return []
+    }
+
+    let array = unsafeDowncast(value, to: CFArray.self)
+    let count = CFArrayGetCount(array)
+    guard count > 0 else { return [] }
+
+    var elements: [AXUIElement] = []
+    elements.reserveCapacity(count)
+    for index in 0..<count {
+      guard let pointer = CFArrayGetValueAtIndex(array, index) else { continue }
+      let child = unsafeBitCast(pointer, to: AXUIElement.self)
+      elements.append(child)
+    }
+    return elements
   }
 
   private static func copyString(_ element: AXUIElement, _ attribute: String) -> String {

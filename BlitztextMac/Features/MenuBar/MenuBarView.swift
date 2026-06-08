@@ -79,7 +79,7 @@ private struct MainPageView: View {
         Spacer()
 
         Button {
-          appState.page = .settings
+          appState.openSettings()
         } label: {
           ZStack(alignment: .topTrailing) {
             Image(systemName: "gear")
@@ -356,7 +356,7 @@ private struct MainPageView: View {
       Spacer(minLength: 0)
 
       Button("Prüfen") {
-        appState.page = .settings
+        appState.openSettings(tab: 4)
       }
       .font(.system(size: 10.5, weight: .medium))
       .buttonStyle(PopoverActionButtonStyle(.warning))
@@ -376,15 +376,16 @@ private struct MainPageView: View {
 
   private var workflowList: some View {
     VStack(spacing: 0) {
-      ForEach(WorkflowType.mainMenuCases) { type in
-        let enabled = appState.isWorkflowAvailable(type)
+      ForEach(appState.mainMenuModeConfigs) { config in
+        let enabled = appState.isWorkflowAvailable(config)
         WorkflowRowView(
-          type: type,
+          type: config.slot,
           enabled: enabled,
-          customName: appState.displayName(for: type),
-          subtitle: appState.workflowSubtitle(for: type)
+          customName: appState.displayName(for: config),
+          subtitle: appState.workflowSubtitle(for: config),
+          hotkeyLabel: appState.hotkeyLabel(for: config.id)
         ) {
-          appState.startWorkflowFromPopover(type)
+          appState.startModeFromPopover(config.id)
         }
       }
     }
@@ -645,6 +646,9 @@ struct TranscriptionActiveView: View {
       case .done(let text):
         autoPasteView(text: text, copyOnly: copyOnly)
 
+      case .variantChoice:
+        variantChoicePopoverHint()
+
       case .error(let msg):
         errorView(message: msg) {
           workflow.reset()
@@ -676,6 +680,9 @@ struct TextImproverActiveView: View {
 
       case .done(let text):
         autoPasteView(text: text, copyOnly: copyOnly, fallbackNote: fallbackNote)
+
+      case .variantChoice:
+        variantChoicePopoverHint()
 
       case .error(let msg):
         errorView(message: msg) {
@@ -709,6 +716,9 @@ struct DampfAblassenActiveView: View {
       case .done(let text):
         autoPasteView(text: text, copyOnly: copyOnly, fallbackNote: fallbackNote)
 
+      case .variantChoice:
+        variantChoicePopoverHint()
+
       case .error(let msg):
         errorView(message: msg) {
           workflow.reset()
@@ -740,6 +750,9 @@ struct EmojiTextActiveView: View {
 
       case .done(let text):
         autoPasteView(text: text, copyOnly: copyOnly, fallbackNote: fallbackNote)
+
+      case .variantChoice:
+        variantChoicePopoverHint()
 
       case .error(let msg):
         errorView(message: msg) {
@@ -791,6 +804,21 @@ private func autoPasteView(text: String, copyOnly: Bool = false, fallbackNote: S
   -> some View
 {
   _AutoPasteView(text: text, copyOnly: copyOnly, fallbackNote: fallbackNote)
+}
+
+private func variantChoicePopoverHint() -> some View {
+  VStack(spacing: 12) {
+    Spacer().frame(height: 20)
+    Image(systemName: "square.split.2x1")
+      .font(.system(size: 24, weight: .semibold))
+      .foregroundStyle(.secondary)
+    Text("Version in der Pille wählen")
+      .font(.system(size: 13, weight: .semibold))
+    Text("Eingefügt wird erst nach deiner Auswahl.")
+      .font(.system(size: 11))
+      .foregroundStyle(.secondary)
+    Spacer().frame(height: 12)
+  }
 }
 
 private struct _AutoPasteView: View {

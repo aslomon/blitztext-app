@@ -4,6 +4,7 @@ import SwiftUI
 struct ModeCardView: View {
   @Bindable var appState: AppState
   let type: WorkflowType
+  let modeID: ModeConfig.ID
 
   @Environment(\.colorScheme) private var colorScheme
 
@@ -11,15 +12,27 @@ struct ModeCardView: View {
   @State private var showAdvanced = false
   @State private var showEditor = false
 
-  var config: ModeConfig { appState.modeConfig(for: type) }
+  init(appState: AppState, type: WorkflowType) {
+    self.appState = appState
+    self.type = type
+    self.modeID = type.rawValue
+  }
+
+  init(appState: AppState, config: ModeConfig) {
+    self.appState = appState
+    self.type = config.slot
+    self.modeID = config.id
+  }
+
+  var config: ModeConfig { appState.modeConfig(for: modeID) ?? appState.modeConfig(for: type) }
   private var forcedOffline: Bool { appState.appSettings.secureLocalModeEnabled }
-  var effectiveBackend: RewriteBackend { appState.resolvedRewriteBackend(for: type) }
+  var effectiveBackend: RewriteBackend { appState.resolvedRewriteBackend(for: config) }
 
   /// Mirrors `ModeConfig.isAdvancedNonDefault` for the live config — drives the "angepasst" dot.
   private var isAdvancedNonDefault: Bool { config.isAdvancedNonDefault }
 
   /// The slots that run a rewrite step — only these expose the Memory-context toggle.
-  private var isRewriteMode: Bool {
+  var isRewriteMode: Bool {
     type == .textImprover || type == .dampfAblassen || type == .emojiText
   }
 
@@ -32,10 +45,14 @@ struct ModeCardView: View {
     type == .textImprover || type == .dampfAblassen
   }
 
+  var supportsSemanticEmailMemory: Bool {
+    type == .textImprover
+  }
+
   func bind<V>(_ keyPath: WritableKeyPath<ModeConfig, V>) -> Binding<V> {
     Binding(
-      get: { appState.modeConfig(for: type)[keyPath: keyPath] },
-      set: { value in appState.updateMode(type) { $0[keyPath: keyPath] = value } }
+      get: { config[keyPath: keyPath] },
+      set: { value in appState.updateMode(id: modeID) { $0[keyPath: keyPath] = value } }
     )
   }
 
@@ -63,19 +80,24 @@ struct ModeCardView: View {
   private var editorContent: some View {
     VStack(alignment: .leading, spacing: 10) {
       nameField
-      backendPicker
+      HotkeyRecorderView(appState: appState, modeID: modeID)
 
-      if effectiveBackend == .openai {
-        modelPicker
-      } else if effectiveBackend == .local {
-        LocalLLMModelPicker(appState: appState)
+      if isRewriteMode {
+        backendPicker
+
+        if effectiveBackend == .openai {
+          modelPicker
+        } else if effectiveBackend == .local {
+          LocalLLMModelPicker(appState: appState)
+        }
+
+        if type == .emojiText {
+          emojiDensityPicker
+        }
+
+        advancedDisclosure
       }
 
-      if type == .emojiText {
-        emojiDensityPicker
-      }
-
-      advancedDisclosure
       editorFooter
     }
   }
@@ -84,7 +106,11 @@ struct ModeCardView: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 6) {
         BlitzStatusPill(state: config.isEnabled ? .ready : .muted, label: config.isEnabled ? "Aktiv" : "Aus")
-        BlitzStatusPill(state: backendPillState, label: effectiveBackend == .local ? "Lokal" : "Online")
+        if isRewriteMode {
+          BlitzStatusPill(state: backendPillState, label: effectiveBackend == .local ? "Lokal" : "Online")
+        } else {
+          BlitzStatusPill(state: .online, label: "Freitext")
+        }
         if isAdvancedNonDefault {
           BlitzStatusPill(state: .warning, label: "Angepasst")
         }
@@ -111,6 +137,9 @@ struct ModeCardView: View {
   }
 
   private var summaryLine: String {
+    if !isRewriteMode {
+      return appState.workflowSubtitle(for: config)
+    }
     if type == .emojiText {
       return "Emoji-Dichte: \(config.rewrite.emojiDensity.displayName)."
     }
@@ -122,13 +151,53 @@ struct ModeCardView: View {
 
   private var editorFooter: some View {
     HStack {
+      moveControls
       Spacer()
+      Button("Zurücksetzen") {
+        appState.resetMode(id: modeID)
+      }
+      .font(.system(size: 10, weight: .medium))
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
+
+      if appState.canDeleteMode(id: modeID) {
+        DestructiveClearButton(
+          "Löschen",
+          message: "Dieser eigene Modus wird dauerhaft aus Blitztext entfernt."
+        ) {
+          appState.deleteMode(id: modeID)
+        }
+      }
+
       Button {
         withAnimation(.easeInOut(duration: 0.16)) { showEditor = false }
       } label: {
         Label("Fertig", systemImage: "checkmark")
       }
       .buttonStyle(PopoverActionButtonStyle(.primary))
+    }
+  }
+
+  var moveControls: some View {
+    HStack(spacing: 6) {
+      Button {
+        appState.moveMode(id: modeID, offset: -1)
+      } label: {
+        Image(systemName: "arrow.up")
+      }
+      .buttonStyle(PopoverIconButtonStyle(.quiet))
+      .disabled(!appState.canMoveMode(id: modeID, offset: -1))
+      .help("Nach oben")
+      .accessibilityLabel("Modus nach oben verschieben")
+
+      Button {
+        appState.moveMode(id: modeID, offset: 1)
+      } label: {
+        Image(systemName: "arrow.down")
+      }
+      .buttonStyle(PopoverIconButtonStyle(.quiet))
+      .disabled(!appState.canMoveMode(id: modeID, offset: 1))
+      .help("Nach unten")
+      .accessibilityLabel("Modus nach unten verschieben")
     }
   }
 
@@ -170,8 +239,10 @@ struct ModeCardView: View {
 
   @ViewBuilder
   private var advancedContent: some View {
-    if type == .emojiText {
-      // Emoji/Social has no tone/prompt/context — only the reset action lives here.
+    if !isRewriteMode {
+      footer
+    } else if type == .emojiText {
+      variantChoiceToggle
       footer
     } else {
       if type == .textImprover {
@@ -194,6 +265,12 @@ struct ModeCardView: View {
       if supportsMemoryContext {
         memoryToggle
       }
+      if supportsSemanticEmailMemory {
+        semanticEmailMemoryControls
+      }
+      if isRewriteMode {
+        variantChoiceToggle
+      }
       footer
     }
   }
@@ -205,10 +282,10 @@ struct ModeCardView: View {
       Image(systemName: type.icon)
         .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(.secondary)
-      Text(appState.displayName(for: type).uppercased())
+      Text(appState.displayName(for: config).uppercased())
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(.secondary)
-      Text(type.hotkeyLabel)
+      Text(appState.hotkeyLabel(for: modeID))
         .font(.system(size: 9.5, design: .monospaced))
         .foregroundStyle(.quaternary)
       Spacer()

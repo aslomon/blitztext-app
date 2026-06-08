@@ -27,7 +27,7 @@ The app detects installed model folders that contain `AudioEncoder.mlmodelc`, `M
 
 Open Blitztext, go to **Settings > Anpassen**, choose a local model, and click **Installieren**. You can also switch on **Sicherer Lokaler Modus** from the main popover; if the selected model is missing, Blitztext starts the download and installs it into the local cache.
 
-After the model is installed, the Blitztext transcription workflow can run in local mode. The rewriting workflows still use OpenAI, so they are paused while secure local mode is active.
+After the model is installed, the Blitztext transcription workflow can run in local mode. Rewriting workflows can also run locally when an Ollama rewrite model is selected or secure local mode forces local processing.
 
 ## Optional Manual Install
 
@@ -68,5 +68,6 @@ If the folder is nested differently, the app will not detect the model.
 
 - First use can be slower because the model has to load and prewarm.
 - Local transcription avoids sending audio to OpenAI for the Blitztext workflow.
+- Local rewriting and semantic email-memory embeddings use Ollama on this Mac when configured.
 - The app currently supports local transcription only, not local rewriting.
 - Models are downloaded on demand so the repository and app package stay small and auditable.

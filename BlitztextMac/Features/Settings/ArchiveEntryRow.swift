@@ -16,7 +16,10 @@ struct ArchiveEntryRow: View {
   @Environment(\.colorScheme) private var colorScheme
   @State private var expanded = false
 
-  private var displayName: String { appState.displayName(for: entry.mode) }
+  private var displayName: String {
+    let storedName = entry.modeName?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return storedName?.isEmpty == false ? storedName ?? "" : appState.displayName(for: entry.mode)
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {

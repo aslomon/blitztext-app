@@ -100,6 +100,7 @@ struct ModelsSettingsView: View {
 
       localTranscriptionSection
       localLLMSection
+      localEmbeddingSection
     }
   }
 
@@ -222,6 +223,74 @@ struct ModelsSettingsView: View {
     ) {
       LocalLLMModelPicker(appState: appState)
     }
+  }
+
+  private var localEmbeddingSection: some View {
+    SettingsSection(
+      "Lokale Embeddings (E-Mail Memory)",
+      caption:
+        "Dieses Ollama-Modell erzeugt Vektoren für die semantische E-Mail-Memory. Speicherung bleibt separat opt-in."
+    ) {
+      HStack(spacing: 6) {
+        Image(systemName: embeddingModelReady ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(embeddingModelReady ? .green : .blue)
+        Text(embeddingStatusText)
+          .font(.system(size: 10.5))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 0)
+      }
+
+      HStack(spacing: 8) {
+        Text("Embedding-Modell")
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
+        TextField(
+          OllamaEmbeddingProvider.defaultModelID,
+          text: $appState.appSettings.selectedEmbeddingModelName
+        )
+        .textFieldStyle(.roundedBorder)
+        .font(.system(size: 11, design: .monospaced))
+      }
+
+      Toggle("Semantische E-Mail Memory aktivieren", isOn: $appState.appSettings.semanticEmailMemoryEnabled)
+        .toggleStyle(.switch)
+        .controlSize(.small)
+
+      Text(
+        "Erfordert Archiv und ein lokal geladenes Embedding-Modell. Speichert fertige E-Mail-Texte "
+          + "mit lokalen Vektoren für 30 Tage. Sichere Felder werden nie gespeichert."
+      )
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      Button("Semantische E-Mail Memory löschen") {
+        appState.clearEmailSemanticMemory()
+      }
+      .buttonStyle(PopoverActionButtonStyle(.danger))
+      .font(.system(size: 10.5, weight: .medium))
+    }
+  }
+
+  private var selectedEmbeddingModelName: String {
+    appState.appSettings.selectedEmbeddingModelName
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var embeddingModelReady: Bool {
+    appState.localModelManager.isInstalled(selectedEmbeddingModelName)
+  }
+
+  private var embeddingStatusText: String {
+    if selectedEmbeddingModelName.isEmpty {
+      return "Kein Embedding-Modell ausgewählt."
+    }
+    if embeddingModelReady {
+      return "„\(selectedEmbeddingModelName)“ ist lokal geladen."
+    }
+    return "„\(selectedEmbeddingModelName)“ ist noch nicht in Ollama geladen."
   }
 
 }

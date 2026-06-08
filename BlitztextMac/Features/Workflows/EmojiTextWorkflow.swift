@@ -12,6 +12,7 @@ final class EmojiTextWorkflow: Workflow {
   var onOutput: WorkflowOutputHandler?
   var onPhaseChange: WorkflowPhaseChangeHandler?
   var onRun: WorkflowRunHandler?
+  var onVariants: WorkflowVariantChoiceHandler?
   /// Fired once per run with the model-fallback note (`nil` when the chosen model ran). See B6.
   var onRewriteFallback: WorkflowRewriteFallbackHandler?
 
@@ -156,14 +157,48 @@ final class EmojiTextWorkflow: Workflow {
           userText: cleanedRawText,
           temperature: LLMService.defaultRewriteTemperature
         )
-        onRewriteFallback?(
-          RewriteModelRegistry.fallbackNote(
-            requested: outcome.requestedModelID, used: outcome.usedModelID))
         let cleanedResult = TranscriptionQualityService.cleanedTranscript(outcome.text)
         guard cleanedResult != "KEINE_AUFNAHME_ERKANNT" else {
           phase = .error(TranscriptionQualityService.noSpeechMessage)
           return
         }
+        if rewrite.showTwoVariants {
+          do {
+            let secondOutcome = try await provider.rewrite(
+              systemPrompt: RewriteVariantBuilder.secondVariantPrompt(systemPrompt),
+              userText: cleanedRawText,
+              temperature: LLMService.defaultRewriteTemperature
+            )
+            let cleanedSecond = TranscriptionQualityService.cleanedTranscript(secondOutcome.text)
+            guard cleanedSecond != "KEINE_AUFNAHME_ERKANNT" else {
+              throw LLMError.noContent
+            }
+            let variants = RewriteVariantBuilder.uniqueVariants(
+              first: cleanedResult, second: cleanedSecond)
+            guard variants.count > 1 else {
+              throw LLMError.noContent
+            }
+            onRewriteFallback?(
+              RewriteVariantBuilder.fallbackNote(primary: outcome, secondary: secondOutcome))
+            phase = .variantChoice(variants)
+            onVariants?(
+              PendingRewriteVariants(
+                mode: type,
+                rawTranscript: cleanedRawText,
+                variants: variants,
+                backend: backend,
+                durationSec: recordingDuration
+              )
+            )
+            return
+          } catch {
+            // One-variant fallback: keep the successful first rewrite and paste it normally.
+          }
+        }
+
+        onRewriteFallback?(
+          RewriteModelRegistry.fallbackNote(
+            requested: outcome.requestedModelID, used: outcome.usedModelID))
         phase = .done(cleanedResult)
         onRun?(
           ArchiveRunRecord(

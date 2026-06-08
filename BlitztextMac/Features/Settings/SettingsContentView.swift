@@ -4,12 +4,11 @@ import SwiftUI
 struct SettingsContentView: View {
   @Bindable var appState: AppState
   @Environment(\.colorScheme) private var colorScheme
-  @State private var selectedTab = 0
 
   var body: some View {
     VStack(spacing: 0) {
       // Four-tab segmented picker (short labels fit the 340pt popover).
-      Picker("", selection: $selectedTab) {
+      Picker("", selection: $appState.settingsTabSelection) {
         Text("Prompts").tag(0)
         Text("Modelle").tag(1)
         Text("Vokabular").tag(2)
@@ -29,7 +28,7 @@ struct SettingsContentView: View {
               .padding(.top, 12)
           }
 
-          switch selectedTab {
+          switch appState.settingsTabSelection {
           case 0:
             PromptsSettingsView(appState: appState, selectTab: selectTab)
           case 1:
@@ -46,14 +45,16 @@ struct SettingsContentView: View {
     }
     .onAppear {
       appState.refreshAccessibilityPermission()
-      selectedTab = defaultTabSelection
+      if !(0...4).contains(appState.settingsTabSelection) {
+        appState.settingsTabSelection = defaultTabSelection
+      }
     }
   }
 
   /// Programmatic tab switch handed to child tabs so their empty-state CTAs can jump the user to
   /// the tab that unblocks a feature (e.g. "Zu Modelle" from the Prompts tab).
   private func selectTab(_ index: Int) {
-    selectedTab = index
+    appState.settingsTabSelection = index
   }
 
   /// Always land on Prompts (tab 0), the primary tab — the other three are one tap away in the

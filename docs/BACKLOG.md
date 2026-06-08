@@ -30,6 +30,7 @@ A 10-theme adversarial visibility audit (one agent per theme, traced code→reac
 
 ## Iteration log
 
+- **Iter 31 — Dynamic modes, semantic email memory, variant selection (done):** autonomous sprint track completed. User-created modes now persist as ordered dynamic `ModeConfig` records with duplicate/delete/reorder/reset actions, per-mode editable hotkeys, and archive metadata preserving the concrete mode id/name. Semantic E-Mail memory is opt-in, local-vector backed via Ollama `/api/embed`, retained for 30 days, skipped for secure fields, and injected into E-Mail prompts only through explicit per-mode enrichment controls with anti-invention rules. Rewrite modes can optionally pause in the floating pill and show two generated versions before inserting/copying. +42 tests in this track, 274 tests total at completion.
 - **Iter 0 (baseline, this session):** audit fixes B1/B2/B3/B4/B5/B8; pill → native Liquid Glass + ESC-cancel + processing-state + red-flash; dark-mode popover (`MenuBarStyle`+`BlitztextSurface`); settings 4-tab restructure (Prompts·Modelle·Archiv·System); onboarding wizard (own window, 6 steps).
 - **Iter 30 — MEM-2b miner hardening (done) — 30/30 milestone:** R4-FT-suggest-direction-guard — `acceptImprovementSuggestion` now refuses a fighting INVERSE pair (dictionary already maps to→from, which would oscillate text) via a pure, tested `ImprovementMiner.conflictsWithExisting`; the unsafe suggestion is dismissed instead of dead-ending. R4-DR-miner-umlaut-boundary VERIFIED as a non-issue — added 4 umlaut/ß whole-word regression tests proving ICU `\b` sets German boundaries correctly (start/middle/end + no inside-word match); kept as a guard. **R4-DR-miner-singlesource deferred** (distinct-day gating would slow "correct-twice→learn" UX; ≥2 is acceptable). +7 tests. 232 tests.
 - **Iter 29 — R4-UX onboarding & earcon discoverability (done):** FinishStep gained an "Außerdem dabei" card surfacing the opt-in extras a first-run user wouldn't find (lokales Archiv & Statistik, self-learning Lern-Vorschläge, optional Akustisches Feedback) (R4-UX-onboard-recap); the System-settings earcon preview now offers Start/Fertig/Fehler buttons instead of only `.done`, so the user hears all three sounds they enabled (R4-UX-earcon-preview). UI-only, 225 tests.
@@ -82,14 +83,23 @@ A 10-theme adversarial visibility audit (one agent per theme, traced code→reac
 
 ## Todo (prioritized)
 
+### Active autonomous sprint track — Dynamic modes, semantic email memory, variant selection
+
+- [x] **SPRINT-MODES-1** [P1 XL] Dynamic user-created modes: replace the current fixed-slot UX with an ordered user-mode list while keeping the workflow runtime compatible with existing `WorkflowType` behavior. Covers and supersedes `FT-2`.
+- [x] **SPRINT-HOTKEYS-2** [P1 L] Rebindable global shortcuts per mode, with migration from the existing fn-based combos and conflict validation. Covers and supersedes the user-rebindable part of `DR-1`.
+- [x] **SPRINT-MEMORY-3** [P1 XL] Semantic E-Mail memory: local embedding provider, secure vector store, retrieval, and privacy-gated ingestion from text archive runs.
+- [x] **SPRINT-ENRICH-4** [P1 M] Per-mode E-Mail enrichment controls that govern retrieval volume and prompt behavior without importing unconfirmed facts.
+- [x] **SPRINT-VARIANTS-5** [P1 L] Optional two-version rewrite output with an expanded recording-pill selection card before paste. Extends `R3-FT-preview`.
+- [x] **SPRINT-HARDEN-6** [P1 L] Full verification, code review, review-finding fixes, documentation updates, and backlog cleanup.
+
 ### P1 — high value
 
 - [ ] **UX-2** Return advances onboarding / Esc dismisses — `.keyboardShortcut(.defaultAction/.cancelAction)` on wizard footer (mouse-only today) [S] — `refl-ux`
 - [ ] **UX-1** VoiceOver labels for pill + workflow rows (`.accessibilityElement`+label/value; today `.help`-only) [M] — `refl-ux`
 - [ ] **DR-2** Guard recordings — max duration cap + mic disconnect/route-change handling + 25 MB whisper-1 upload limit [M] — `refl-research`
-- [ ] **DR-1** Harden global hotkeys — robust flag matching (Globe/F-key settings, nav-key collisions) + user-rebindable combos [M] — `refl-research`/`refl-features`
+- [x] **DR-1** Harden global hotkeys — robust flag matching (Globe/F-key settings, nav-key collisions) + user-rebindable combos [M] — `refl-research`/`refl-features`
 - [ ] **FT-1** Diktier-Wörterbuch & Sprachbefehle — local literal replacements + spoken punctuation/newline, applied before paste (deterministic, on-device) [M] — `refl-features`
-- [ ] **FT-2** Custom Modi — user-created/renamable/reorderable modes (prompt+backend+tone+memory) instead of 5 fixed slots [M/L] — `refl-features`
+- [x] **FT-2** Custom Modi — user-created/renamable/reorderable modes (prompt+backend+tone+memory) instead of 5 fixed slots [M/L] — `refl-features`
 - [ ] **MEM-1 Context detection ("Office Memory")** — at paste capture app bundle id + window title (`kAXTitleAttribute`) + role; store per-context; view in Archiv. (subsumes audit B12 + DR-4) — `user`/`research`
 - [ ] **MEM-2 Improvement detection** — re-read focused field via AX after paste; diff inserted-vs-final; learn patterns (opt-in) [L] — `user`/`research`
 
@@ -163,7 +173,7 @@ A 10-theme adversarial visibility audit (one agent per theme, traced code→reac
 - [ ] **R3-FT-snip** [P2 M] Diktier-Snippets / Textbausteine — a spoken trigger phrase ("Signatur einfügen") expands to a stored multi-line block in `DictationPostProcessor` before paste (whole-phrase, deterministic, offline) — `refl-features`
 - [ ] **R3-FT-voice** [P2 M] App-eigene Sprachsteuerung ("Meta-Diktat") — a dedicated hotkey whose transcript is parsed locally as a command to Blitztext ("wechsle in E-Mail-Modus", "Archiv öffnen") instead of pasted — `refl-features`
 - [ ] **R3-FT-selftest** [P2 M] Lokales LLM-Modellmanagement & Self-Test — installed size + quick on-device latency/sample-rewrite self-test + surfaced auto-fallback note when local model missing/slow (extends RewriteOutcome) — `refl-features`
-- [ ] **R3-FT-preview** [P3 S] Inline-Vorschau & Bestätigen vor Einfügen (opt-in) — for E-Mail/Prompt modes, show result in pill/popover, paste on Return / discard on Esc instead of blind auto-paste — `refl-features`
+- [x] **R3-FT-preview** Inline-Vorschau & Bestätigen vor Einfügen (opt-in) — rewrite modes can show two pill variants and paste only after explicit selection — `refl-features`
 
 ### UX
 

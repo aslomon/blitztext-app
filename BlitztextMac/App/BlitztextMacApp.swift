@@ -66,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     appState.onCopyOnlyFallback = { [weak self] text in
       self?.recordingPillController.showCopyOnly(text)
     }
+    appState.onVariantChoice = { [weak self] variants in
+      self?.recordingPillController.showVariants(variants)
+    }
     appState.hotkeyService.start()
 
     // Listen for popover dismiss requests (from auto-paste)
@@ -137,22 +140,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
   /// Opens the popover already on the settings page — used by the wizard's "Zu den Einstellungen".
   private func openSettingsInPopover() {
     appState.prepareForPopoverPresentation()
-    appState.page = .settings
+    appState.openSettings()
     showPopover()
   }
 
   private func handleHotkeyEvent(_ event: HotkeyEvent) {
     switch event {
-    case .down(let type):
-      handleHotkeyDown(type)
-    case .up(let type):
-      handleHotkeyUp(type)
+    case .down(let modeID):
+      handleHotkeyDown(modeID)
+    case .up(let modeID):
+      handleHotkeyUp(modeID)
     case .cancel:
       handleHotkeyCancel()
     }
   }
 
-  private func handleHotkeyDown(_ type: WorkflowType) {
+  private func handleHotkeyDown(_ modeID: ModeConfig.ID) {
     guard appState.isConfigured else { return }
 
     let mode = appState.appSettings.hotkeyMode
@@ -160,30 +163,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     switch mode {
     case .hold:
       // Hold mode: start recording on key down
-      appState.startWorkflow(type, source: .hotkeyBackground)
+      appState.startMode(modeID, source: .hotkeyBackground)
 
     case .toggle:
       // Toggle mode: if already recording the same workflow, stop it. Otherwise record in the
       // BACKGROUND with the floating pill as the sole indicator — no popover, no waveform window.
       if let active = appState.activeWorkflow,
-        active.type == type,
+        appState.currentActiveModeID == modeID,
         active.phase.isActive
       {
         active.stop()
       } else {
-        appState.startWorkflow(type, source: .hotkeyBackground)
+        appState.startMode(modeID, source: .hotkeyBackground)
       }
     }
   }
 
-  private func handleHotkeyUp(_ type: WorkflowType) {
+  private func handleHotkeyUp(_ modeID: ModeConfig.ID) {
     let mode = appState.appSettings.hotkeyMode
 
     guard mode == .hold else { return }
 
     // Hold mode: stop recording on key release
     if let active = appState.activeWorkflow,
-      active.type == type
+      appState.currentActiveModeID == modeID
     {
       // Only stop if currently recording (running phase)
       if case .running = active.phase {

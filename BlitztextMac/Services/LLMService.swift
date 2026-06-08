@@ -39,7 +39,8 @@ enum LLMService {
     customTerms: [String],
     selection: SelectionContext?,
     automaticContext: AutomaticRewriteContext? = nil,
-    memory: MemoryContext? = nil
+    memory: MemoryContext? = nil,
+    emailMemory: EmailSemanticMemoryContext? = nil
   ) -> String {
     var prompt: String
 
@@ -63,6 +64,10 @@ enum LLMService {
       prompt += block
     }
 
+    if let emailMemory, let block = semanticEmailMemoryBlock(emailMemory) {
+      prompt += block
+    }
+
     if rewrite.useAutomaticFieldContext,
       let block = automaticContextBlock(automaticContext)
     {
@@ -74,6 +79,29 @@ enum LLMService {
     }
 
     return prompt
+  }
+
+  static func semanticEmailMemoryBlock(_ context: EmailSemanticMemoryContext) -> String? {
+    guard !context.isEmpty else { return nil }
+    let matches = Array(context.matches.prefix(context.level.retrievalLimit))
+    guard !matches.isEmpty else { return nil }
+
+    var lines = ["\n\n[Ähnliche frühere E-Mails – nur Hintergrund, nicht abschreiben]"]
+    for (index, match) in matches.enumerated() {
+      let record = match.record
+      lines.append("Beispiel \(index + 1) · Score \(String(format: "%.2f", match.score))")
+      if let appName = trimmed(record.appName) {
+        lines.append("App: \(appName)")
+      }
+      if let windowTitle = trimmed(record.windowTitle) {
+        lines.append("Kontext: \(windowTitle)")
+      }
+      lines.append(record.finalText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    lines.append(
+      "Nutze diese Beispiele nur, um Ton, wiederkehrende Hintergrunddetails und Schreibweise besser zu treffen. Übernimm keine Fakten, Zusagen, Termine oder Namen, wenn sie in meiner aktuellen Diktat-Nachricht nicht bestätigt werden."
+    )
+    return lines.joined(separator: "\n")
   }
 
   // MARK: - Memory context block (Phase 4b)
@@ -118,7 +146,7 @@ enum LLMService {
     return """
 
 
-      --- Aktueller Arbeitskontext aus dem fokussierten Eingabefeld ---\(metadataLine)
+      --- Aktueller Arbeitskontext aus dem fokussierten Fenster ---\(metadataLine)
       \(trimmed)
       --- Ende Arbeitskontext ---
       Nutze den obigen Arbeitskontext nur, um die diktierte Nachricht passend fortzusetzen oder \
@@ -170,6 +198,15 @@ enum LLMService {
       prompt += "\n- Verwende einen lockeren, natuerlichen Ton"
     }
     return prompt
+  }
+
+  private static func trimmed(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !trimmed.isEmpty
+    else {
+      return nil
+    }
+    return trimmed
   }
 
   private static func selectionContextBlock(

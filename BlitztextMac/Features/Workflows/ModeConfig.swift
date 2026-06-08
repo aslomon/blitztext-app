@@ -11,6 +11,49 @@ enum ModeKind: String, Codable, Sendable {
   case transcribeThenEmoji
 }
 
+enum ModeTemplate: String, CaseIterable, Identifiable, Sendable {
+  case freeText
+  case email
+  case prompt
+  case social
+
+  var id: String { rawValue }
+
+  var displayName: String {
+    switch self {
+    case .freeText: return "Freitext"
+    case .email: return "E-Mail"
+    case .prompt: return "Prompt"
+    case .social: return "Social Media"
+    }
+  }
+
+  var icon: String {
+    switch self {
+    case .freeText: return "mic.fill"
+    case .email: return "envelope.fill"
+    case .prompt: return "terminal.fill"
+    case .social: return "bubble.left.and.bubble.right.fill"
+    }
+  }
+
+  var slot: WorkflowType {
+    switch self {
+    case .freeText: return .transcription
+    case .email: return .textImprover
+    case .prompt: return .dampfAblassen
+    case .social: return .emojiText
+    }
+  }
+
+  func makeMode(id: ModeConfig.ID) -> ModeConfig {
+    var mode = ModeConfig.default(for: slot)
+    mode.modeID = id
+    mode.userName = displayName
+    return mode
+  }
+}
+
 /// Where the rewrite step runs.
 enum RewriteBackend: String, Codable, Sendable, CaseIterable, Identifiable {
   case openai
@@ -53,6 +96,38 @@ enum ReplyContextMode: String, Codable, Sendable, CaseIterable, Identifiable {
   }
 }
 
+enum SemanticEmailEnrichmentLevel: String, Codable, Sendable, CaseIterable, Identifiable {
+  case light
+  case medium
+  case strong
+
+  var id: String { rawValue }
+
+  var displayName: String {
+    switch self {
+    case .light: return "Wenig"
+    case .medium: return "Mittel"
+    case .strong: return "Viel"
+    }
+  }
+
+  var retrievalLimit: Int {
+    switch self {
+    case .light: return 1
+    case .medium: return 2
+    case .strong: return 4
+    }
+  }
+
+  var minimumScore: Double {
+    switch self {
+    case .light: return 0.78
+    case .medium: return 0.68
+    case .strong: return 0.58
+    }
+  }
+}
+
 /// Everything that controls the optional rewrite step of a mode.
 struct RewriteConfig: Codable, Sendable {
   var systemPrompt: String = ""
@@ -69,6 +144,9 @@ struct RewriteConfig: Codable, Sendable {
   /// Phase 4b: when true (and the global master is on), the confirmed Memory block is
   /// rendered into this mode's rewrite system prompt. Default OFF so plain Diktat stays untouched.
   var useMemoryContext: Bool = false
+  var useSemanticEmailMemory: Bool = false
+  var semanticEmailEnrichmentLevel: SemanticEmailEnrichmentLevel = .medium
+  var showTwoVariants: Bool = false
 
   init(
     systemPrompt: String = "",
@@ -79,7 +157,10 @@ struct RewriteConfig: Codable, Sendable {
     emojiDensity: EmojiTextSettings.EmojiDensity = .mittel,
     replyContextMode: ReplyContextMode = .off,
     useAutomaticFieldContext: Bool = false,
-    useMemoryContext: Bool = false
+    useMemoryContext: Bool = false,
+    useSemanticEmailMemory: Bool = false,
+    semanticEmailEnrichmentLevel: SemanticEmailEnrichmentLevel = .medium,
+    showTwoVariants: Bool = false
   ) {
     self.systemPrompt = systemPrompt
     self.rewriteBackend = rewriteBackend
@@ -90,11 +171,16 @@ struct RewriteConfig: Codable, Sendable {
     self.replyContextMode = replyContextMode
     self.useAutomaticFieldContext = useAutomaticFieldContext
     self.useMemoryContext = useMemoryContext
+    self.useSemanticEmailMemory = useSemanticEmailMemory
+    self.semanticEmailEnrichmentLevel = semanticEmailEnrichmentLevel
+    self.showTwoVariants = showTwoVariants
   }
 
   enum CodingKeys: String, CodingKey {
     case systemPrompt, rewriteBackend, modelID, tone, context, emojiDensity, replyContextMode
     case useAutomaticFieldContext, useMemoryContext
+    case useSemanticEmailMemory, semanticEmailEnrichmentLevel
+    case showTwoVariants
   }
 
   init(from decoder: Decoder) throws {
@@ -119,6 +205,15 @@ struct RewriteConfig: Codable, Sendable {
       try c.decodeIfPresent(Bool.self, forKey: .useAutomaticFieldContext) ?? false
     useMemoryContext =
       try c.decodeIfPresent(Bool.self, forKey: .useMemoryContext) ?? false
+    useSemanticEmailMemory =
+      try c.decodeIfPresent(Bool.self, forKey: .useSemanticEmailMemory) ?? false
+    semanticEmailEnrichmentLevel =
+      try c.decodeIfPresent(
+        SemanticEmailEnrichmentLevel.self,
+        forKey: .semanticEmailEnrichmentLevel
+      ) ?? .medium
+    showTwoVariants =
+      try c.decodeIfPresent(Bool.self, forKey: .showTwoVariants) ?? false
   }
 }
 
@@ -126,17 +221,27 @@ struct RewriteConfig: Codable, Sendable {
 
 /// A configurable, renamable mode layered over the fixed `WorkflowType` slot.
 struct ModeConfig: Codable, Sendable, Identifiable {
+  /// Stable user-mode identity. Legacy slot configs may omit this on disk; in that case `id`
+  /// falls back to the slot raw value so existing settings keep working byte-for-byte.
+  var modeID: String?
   var slot: WorkflowType
-  var id: String { slot.rawValue }
+  var id: String {
+    if let modeID {
+      let trimmed = modeID.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty { return trimmed }
+    }
+    return slot.rawValue
+  }
   var userName: String = ""
   var isEnabled: Bool = true
   var kind: ModeKind
   var rewrite: RewriteConfig = RewriteConfig()
 
   init(
-    slot: WorkflowType, userName: String = "", isEnabled: Bool = true, kind: ModeKind,
+    modeID: String? = nil, slot: WorkflowType, userName: String = "", isEnabled: Bool = true, kind: ModeKind,
     rewrite: RewriteConfig = RewriteConfig()
   ) {
+    self.modeID = modeID
     self.slot = slot
     self.userName = userName
     self.isEnabled = isEnabled
@@ -145,11 +250,12 @@ struct ModeConfig: Codable, Sendable, Identifiable {
   }
 
   enum CodingKeys: String, CodingKey {
-    case slot, userName, isEnabled, kind, rewrite
+    case modeID, slot, userName, isEnabled, kind, rewrite
   }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
+    modeID = try c.decodeIfPresent(String.self, forKey: .modeID)
     let decodedSlot = try c.decodeIfPresent(WorkflowType.self, forKey: .slot) ?? .transcription
     slot = decodedSlot
     userName = try c.decodeIfPresent(String.self, forKey: .userName) ?? ""
@@ -209,6 +315,18 @@ struct ModeConfig: Codable, Sendable, Identifiable {
     )
   }
 
+  static func duplicate(
+    _ source: ModeConfig,
+    newID: String,
+    userName: String
+  ) -> ModeConfig {
+    var duplicate = source
+    duplicate.modeID = newID
+    duplicate.userName = userName
+    duplicate.isEnabled = true
+    return duplicate
+  }
+
   // MARK: - Progressive disclosure
 
   /// True when any "advanced" rewrite setting deviates from this slot's curated default:
@@ -228,6 +346,9 @@ struct ModeConfig: Codable, Sendable, Identifiable {
       || rewrite.replyContextMode != defaults.replyContextMode
       || rewrite.useAutomaticFieldContext != defaults.useAutomaticFieldContext
       || rewrite.useMemoryContext != defaults.useMemoryContext
+      || rewrite.useSemanticEmailMemory != defaults.useSemanticEmailMemory
+      || rewrite.semanticEmailEnrichmentLevel != defaults.semanticEmailEnrichmentLevel
+      || rewrite.showTwoVariants != defaults.showTwoVariants
   }
 }
 

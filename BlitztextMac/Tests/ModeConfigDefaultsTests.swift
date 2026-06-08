@@ -20,9 +20,40 @@ final class ModeConfigDefaultsTests: XCTestCase {
   func testDefaultForSlotComposesNameKindAndRewrite() {
     let email = ModeConfig.default(for: .textImprover)
     XCTAssertEqual(email.slot, .textImprover)
+    XCTAssertEqual(email.id, WorkflowType.textImprover.rawValue)
     XCTAssertEqual(email.userName, "E-Mail")
     XCTAssertTrue(email.isEnabled)
     XCTAssertEqual(email.kind, .transcribeThenRewrite)
+  }
+
+  func testCustomModeCanKeepStableIDIndependentFromRuntimeSlot() {
+    var clientEmail = ModeConfig.default(for: .textImprover)
+    clientEmail.modeID = "email-client-a"
+    clientEmail.userName = "E-Mail Kunde A"
+
+    XCTAssertEqual(clientEmail.id, "email-client-a")
+    XCTAssertEqual(clientEmail.slot, .textImprover)
+    XCTAssertEqual(clientEmail.kind, .transcribeThenRewrite)
+    XCTAssertEqual(clientEmail.userName, "E-Mail Kunde A")
+  }
+
+  func testDuplicateModePreservesBehaviorButGetsNewIdentityAndName() {
+    var source = ModeConfig.default(for: .textImprover)
+    source.modeID = "email"
+    source.userName = "E-Mail"
+    source.rewrite.context = "Existing client context"
+
+    let duplicate = ModeConfig.duplicate(
+      source,
+      newID: "email-client-a",
+      userName: "E-Mail Kunde A"
+    )
+
+    XCTAssertEqual(duplicate.id, "email-client-a")
+    XCTAssertEqual(duplicate.slot, .textImprover)
+    XCTAssertEqual(duplicate.kind, source.kind)
+    XCTAssertEqual(duplicate.rewrite.context, "Existing client context")
+    XCTAssertEqual(duplicate.userName, "E-Mail Kunde A")
   }
 
   // MARK: - Default kinds
@@ -82,5 +113,29 @@ final class ModeConfigDefaultsTests: XCTestCase {
     XCTAssertNotEqual(ModeDefaults.legacyEmailSystemPrompt, ModeDefaults.emailSystemPrompt)
     XCTAssertNotEqual(
       ModeDefaults.legacyPromptCraftSystemPrompt, ModeDefaults.promptCraftSystemPrompt)
+  }
+
+  func testSemanticEmailMemorySettingsRoundTrip() throws {
+    var config = ModeConfig.default(for: .textImprover)
+    config.rewrite.useSemanticEmailMemory = true
+    config.rewrite.semanticEmailEnrichmentLevel = .strong
+
+    let data = try JSONEncoder().encode(config)
+    let decoded = try JSONDecoder().decode(ModeConfig.self, from: data)
+
+    XCTAssertTrue(decoded.rewrite.useSemanticEmailMemory)
+    XCTAssertEqual(decoded.rewrite.semanticEmailEnrichmentLevel, .strong)
+    XCTAssertTrue(decoded.isAdvancedNonDefault)
+  }
+
+  func testTwoVariantSettingRoundTrip() throws {
+    var config = ModeConfig.default(for: .textImprover)
+    config.rewrite.showTwoVariants = true
+
+    let data = try JSONEncoder().encode(config)
+    let decoded = try JSONDecoder().decode(ModeConfig.self, from: data)
+
+    XCTAssertTrue(decoded.rewrite.showTwoVariants)
+    XCTAssertTrue(decoded.isAdvancedNonDefault)
   }
 }

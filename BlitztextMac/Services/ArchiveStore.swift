@@ -12,6 +12,8 @@ struct ArchiveEntry: Codable, Identifiable, Sendable {
   let id: UUID
   let date: Date
   let mode: WorkflowType
+  let modeID: ModeConfig.ID?
+  let modeName: String?
   let rawTranscript: String
   let finalText: String
   let backend: TranscriptionBackend
@@ -21,6 +23,8 @@ struct ArchiveEntry: Codable, Identifiable, Sendable {
     id: UUID = UUID(),
     date: Date,
     mode: WorkflowType,
+    modeID: ModeConfig.ID? = nil,
+    modeName: String? = nil,
     rawTranscript: String,
     finalText: String,
     backend: TranscriptionBackend,
@@ -29,6 +33,8 @@ struct ArchiveEntry: Codable, Identifiable, Sendable {
     self.id = id
     self.date = date
     self.mode = mode
+    self.modeID = modeID
+    self.modeName = modeName
     self.rawTranscript = rawTranscript
     self.finalText = finalText
     self.backend = backend
@@ -39,6 +45,8 @@ struct ArchiveEntry: Codable, Identifiable, Sendable {
     self.init(
       date: record.date,
       mode: record.mode,
+      modeID: record.modeID,
+      modeName: record.modeName,
       rawTranscript: record.rawTranscript,
       finalText: record.finalText,
       backend: record.backend,

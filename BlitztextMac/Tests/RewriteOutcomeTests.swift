@@ -30,6 +30,21 @@ final class RewriteOutcomeTests: XCTestCase {
     XCTAssertFalse(neither.didFallBack)
   }
 
+  func testOutcomeDefaultsVariantsToPrimaryText() {
+    let outcome = RewriteOutcome(text: "Primary", usedModelID: "gpt-5.4", requestedModelID: "gpt-5.4")
+    XCTAssertEqual(outcome.variants, ["Primary"])
+  }
+
+  func testOutcomePreservesExplicitVariants() {
+    let outcome = RewriteOutcome(
+      text: "A",
+      variants: ["A", "B"],
+      usedModelID: "gpt-5.4",
+      requestedModelID: "gpt-5.4"
+    )
+    XCTAssertEqual(outcome.variants, ["A", "B"])
+  }
+
   // MARK: - RewriteModelRegistry.fallbackNote (the user-facing note)
 
   func testNoNoteOnTheHappyPath() {

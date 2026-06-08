@@ -93,7 +93,7 @@ extension ModeCardView {
   @ViewBuilder
   var automaticFieldContextToggle: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Toggle("Arbeitskontext automatisch lesen", isOn: bind(\.rewrite.useAutomaticFieldContext))
+      Toggle("Fensterkontext automatisch lesen", isOn: bind(\.rewrite.useAutomaticFieldContext))
         .toggleStyle(.switch)
         .controlSize(.small)
         .font(.system(size: 11))
@@ -108,13 +108,13 @@ extension ModeCardView {
   private var automaticFieldContextHint: some View {
     if effectiveBackend == .openai {
       Text(
-        "Liest beim Start das fokussierte Eingabefeld bis zum Cursor als Kontext. Bei Online-Verarbeitung wird dieser Kontext mit an die OpenAI-API gesendet."
+        "Liest beim Start Text aus dem aktuellen Fenster als Kontext. Bei Online-Verarbeitung wird dieser Kontext mit an die OpenAI-API gesendet."
       )
       .font(.system(size: 10))
       .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
     } else {
-      Text("Liest beim Start das fokussierte Eingabefeld bis zum Cursor als lokalen Kontext.")
+      Text("Liest beim Start Text aus dem aktuellen Fenster als lokalen Kontext.")
         .font(.system(size: 10))
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -158,16 +158,84 @@ extension ModeCardView {
     }
   }
 
+  // MARK: - Semantic E-Mail Memory
+
+  @ViewBuilder
+  var semanticEmailMemoryControls: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Toggle("Ähnliche E-Mails einbeziehen", isOn: bind(\.rewrite.useSemanticEmailMemory))
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .font(.system(size: 11))
+        .disabled(!semanticEmailMemoryReady)
+
+      if config.rewrite.useSemanticEmailMemory {
+        Picker("", selection: bind(\.rewrite.semanticEmailEnrichmentLevel)) {
+          ForEach(SemanticEmailEnrichmentLevel.allCases) { level in
+            Text(level.displayName).tag(level)
+          }
+        }
+        .pickerStyle(.segmented)
+        .controlSize(.small)
+      }
+
+      semanticEmailMemoryHint
+    }
+  }
+
+  @ViewBuilder
+  var variantChoiceToggle: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Toggle("Immer zwei Versionen zeigen", isOn: bind(\.rewrite.showTwoVariants))
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .font(.system(size: 11))
+
+      if config.rewrite.showTwoVariants {
+        Text("Nach dem Umschreiben öffnet die Pille zwei Versionen. Eingefügt wird erst nach deiner Auswahl.")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+  }
+
+  private var semanticEmailMemoryReady: Bool {
+    appState.appSettings.archiveEnabled && appState.appSettings.semanticEmailMemoryEnabled
+  }
+
+  @ViewBuilder
+  private var semanticEmailMemoryHint: some View {
+    if !appState.appSettings.archiveEnabled {
+      Text("Benötigt das Archiv, weil nur archivierte E-Mail-Rewrites gelernt werden.")
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    } else if !appState.appSettings.semanticEmailMemoryEnabled {
+      Text("Zuerst im Modelle-Tab „Semantische E-Mail Memory“ aktivieren.")
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    } else if effectiveBackend == .openai {
+      Text(
+        "Ähnliche frühere E-Mails werden als Hintergrund mitgesendet. Sichere Felder werden nie gespeichert."
+      )
+      .font(.system(size: 10))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+    } else {
+      Text("Ähnliche frühere E-Mails werden lokal als Hintergrund genutzt.")
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
   // MARK: - Footer
 
   var footer: some View {
-    HStack {
-      Spacer()
-      Button("Auf Standard zurücksetzen") {
-        appState.resetMode(type)
-      }
-      .font(.system(size: 10, weight: .medium))
-      .buttonStyle(PopoverActionButtonStyle(.secondary))
+    VStack(alignment: .leading, spacing: 8) {
+      Divider().opacity(0.35)
     }
   }
 }

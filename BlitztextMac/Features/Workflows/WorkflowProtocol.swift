@@ -71,6 +71,7 @@ enum WorkflowType: String, CaseIterable, Identifiable, Codable {
 enum WorkflowPhase: Equatable {
   case idle
   case running(String)
+  case variantChoice([RewriteVariant])
   case done(String)
   case error(String)
 
@@ -79,6 +80,46 @@ enum WorkflowPhase: Equatable {
     case .idle: return false
     default: return true
     }
+  }
+}
+
+struct RewriteVariant: Codable, Identifiable, Sendable, Equatable {
+  let id: UUID
+  let title: String
+  let text: String
+
+  init(id: UUID = UUID(), title: String, text: String) {
+    self.id = id
+    self.title = title
+    self.text = text
+  }
+}
+
+struct PendingRewriteVariants: Identifiable, Sendable, Equatable {
+  let id: UUID
+  let mode: WorkflowType
+  let rawTranscript: String
+  let variants: [RewriteVariant]
+  let backend: TranscriptionBackend
+  let durationSec: Double
+  let date: Date
+
+  init(
+    id: UUID = UUID(),
+    mode: WorkflowType,
+    rawTranscript: String,
+    variants: [RewriteVariant],
+    backend: TranscriptionBackend,
+    durationSec: Double,
+    date: Date = Date()
+  ) {
+    self.id = id
+    self.mode = mode
+    self.rawTranscript = rawTranscript
+    self.variants = variants
+    self.backend = backend
+    self.durationSec = durationSec
+    self.date = date
   }
 }
 
@@ -109,6 +150,8 @@ typealias WorkflowRewriteFallbackHandler = @MainActor (String?) -> Void
 /// For plain transcription `rawTranscript == finalText`.
 struct ArchiveRunRecord: Sendable {
   let mode: WorkflowType
+  let modeID: ModeConfig.ID?
+  let modeName: String?
   let rawTranscript: String
   let finalText: String
   let backend: TranscriptionBackend
@@ -117,6 +160,8 @@ struct ArchiveRunRecord: Sendable {
 
   init(
     mode: WorkflowType,
+    modeID: ModeConfig.ID? = nil,
+    modeName: String? = nil,
     rawTranscript: String,
     finalText: String,
     backend: TranscriptionBackend,
@@ -124,16 +169,32 @@ struct ArchiveRunRecord: Sendable {
     date: Date = Date()
   ) {
     self.mode = mode
+    self.modeID = modeID
+    self.modeName = modeName
     self.rawTranscript = rawTranscript
     self.finalText = finalText
     self.backend = backend
     self.durationSec = durationSec
     self.date = date
   }
+
+  func withModeMetadata(id: ModeConfig.ID?, name: String?) -> ArchiveRunRecord {
+    ArchiveRunRecord(
+      mode: mode,
+      modeID: id,
+      modeName: name,
+      rawTranscript: rawTranscript,
+      finalText: finalText,
+      backend: backend,
+      durationSec: durationSec,
+      date: date
+    )
+  }
 }
 
 /// Invoked once per completed run, right before `onOutput`. Default-nil so disabled == zero I/O.
 typealias WorkflowRunHandler = @MainActor (ArchiveRunRecord) -> Void
+typealias WorkflowVariantChoiceHandler = @MainActor (PendingRewriteVariants) -> Void
 
 // MARK: - Workflow Protocol
 
@@ -163,6 +224,7 @@ protocol Workflow: AnyObject, Observable {
 
 struct AppSettings: Codable, Sendable {
   var hotkeyMode: HotkeyMode = .hold
+  var hotkeys: [String: HotkeyConfig] = [:]
   var hasSeenOnboarding: Bool = false
   /// Set true only when the user clicks "Fertig" in the first-run onboarding wizard. Distinct from
   /// `hasSeenOnboarding`: gates the launch auto-open so closing the window early (without "Fertig")
@@ -177,7 +239,11 @@ struct AppSettings: Codable, Sendable {
   var selectedLocalLLMModelName: String = OllamaService.defaultModelName
   /// Per-slot configurable mode settings, keyed by `WorkflowType.rawValue`.
   /// Stored as a String-keyed dictionary so JSONEncoder writes a keyed object (not an array).
+  /// Newer settings may also contain user-created mode IDs; legacy slot keys remain valid.
   var modes: [String: ModeConfig] = [:]
+  /// Stable display order for `modes`. Missing/empty on legacy installs means "use the curated
+  /// default slot order"; dynamic modes append their IDs here.
+  var modeOrder: [String] = []
   var didMigrateToModeConfigs: Bool = false
   var modesSchemaVersion: Int = 1
   /// Phase 4a: persist text-only transcription history. Opt-in, default OFF.
@@ -189,6 +255,10 @@ struct AppSettings: Codable, Sendable {
   /// the user's manual corrections (before → after). PRIVACY-SENSITIVE → opt-in, default OFF,
   /// on-device only. A superset of the archive opt-in: only effective while `archiveEnabled`.
   var improvementDetectionEnabled: Bool = false
+  /// Semantic E-Mail Memory: stores completed email rewrites with local embeddings for later
+  /// retrieval. PRIVACY-SENSITIVE -> opt-in, default OFF, only effective while `archiveEnabled`.
+  var semanticEmailMemoryEnabled: Bool = false
+  var selectedEmbeddingModelName: String = OllamaEmbeddingProvider.defaultModelID
   /// Phase 1 (signing): set true once Accessibility trust was ever observed. Drives the
   /// stale-grant hint: if previously granted but now `AXIsProcessTrusted()` is false (e.g.
   /// after a rebuild changed the CDHash), macOS may still show Blitztext enabled while not
@@ -211,6 +281,7 @@ struct AppSettings: Codable, Sendable {
 
   init(
     hotkeyMode: HotkeyMode = .hold,
+    hotkeys: [String: HotkeyConfig] = [:],
     hasSeenOnboarding: Bool = false,
     hasCompletedOnboarding: Bool = false,
     secureLocalModeEnabled: Bool = false,
@@ -221,6 +292,8 @@ struct AppSettings: Codable, Sendable {
     archiveEnabled: Bool = false,
     memoryContextEnabled: Bool = false,
     improvementDetectionEnabled: Bool = false,
+    semanticEmailMemoryEnabled: Bool = false,
+    selectedEmbeddingModelName: String = OllamaEmbeddingProvider.defaultModelID,
     hadAccessibilityGrant: Bool = false,
     dictationDictionary: DictationDictionary = DictationDictionary(),
     fuzzyCorrectionEnabled: Bool = true,
@@ -228,6 +301,7 @@ struct AppSettings: Codable, Sendable {
     dismissedImprovementSuggestionKeys: [String] = []
   ) {
     self.hotkeyMode = hotkeyMode
+    self.hotkeys = hotkeys
     self.hasSeenOnboarding = hasSeenOnboarding
     self.hasCompletedOnboarding = hasCompletedOnboarding
     self.secureLocalModeEnabled = secureLocalModeEnabled
@@ -237,6 +311,8 @@ struct AppSettings: Codable, Sendable {
     self.archiveEnabled = archiveEnabled
     self.memoryContextEnabled = memoryContextEnabled
     self.improvementDetectionEnabled = improvementDetectionEnabled
+    self.semanticEmailMemoryEnabled = semanticEmailMemoryEnabled
+    self.selectedEmbeddingModelName = selectedEmbeddingModelName
     self.hadAccessibilityGrant = hadAccessibilityGrant
     self.dictationDictionary = dictationDictionary
     self.fuzzyCorrectionEnabled = fuzzyCorrectionEnabled
@@ -246,6 +322,7 @@ struct AppSettings: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case hotkeyMode
+    case hotkeys
     case hasSeenOnboarding
     case hasCompletedOnboarding
     case secureLocalModeEnabled
@@ -253,11 +330,14 @@ struct AppSettings: Codable, Sendable {
     case hasAutoSelectedFastLocalModel
     case selectedLocalLLMModelName
     case modes
+    case modeOrder
     case didMigrateToModeConfigs
     case modesSchemaVersion
     case archiveEnabled
     case memoryContextEnabled
     case improvementDetectionEnabled
+    case semanticEmailMemoryEnabled
+    case selectedEmbeddingModelName
     case hadAccessibilityGrant
     case dictationDictionary
     case fuzzyCorrectionEnabled
@@ -268,6 +348,7 @@ struct AppSettings: Codable, Sendable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     hotkeyMode = try container.decodeIfPresent(HotkeyMode.self, forKey: .hotkeyMode) ?? .hold
+    hotkeys = try container.decodeIfPresent([String: HotkeyConfig].self, forKey: .hotkeys) ?? [:]
     hasSeenOnboarding =
       try container.decodeIfPresent(Bool.self, forKey: .hasSeenOnboarding) ?? false
     hasCompletedOnboarding =
@@ -290,6 +371,7 @@ struct AppSettings: Codable, Sendable {
         forKey: .selectedLocalLLMModelName
       ) ?? OllamaService.defaultModelName
     modes = try container.decodeIfPresent([String: ModeConfig].self, forKey: .modes) ?? [:]
+    modeOrder = try container.decodeIfPresent([String].self, forKey: .modeOrder) ?? []
     didMigrateToModeConfigs =
       try container.decodeIfPresent(Bool.self, forKey: .didMigrateToModeConfigs) ?? false
     modesSchemaVersion =
@@ -300,6 +382,11 @@ struct AppSettings: Codable, Sendable {
       try container.decodeIfPresent(Bool.self, forKey: .memoryContextEnabled) ?? false
     improvementDetectionEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .improvementDetectionEnabled) ?? false
+    semanticEmailMemoryEnabled =
+      try container.decodeIfPresent(Bool.self, forKey: .semanticEmailMemoryEnabled) ?? false
+    selectedEmbeddingModelName =
+      try container.decodeIfPresent(String.self, forKey: .selectedEmbeddingModelName)
+      ?? OllamaEmbeddingProvider.defaultModelID
     hadAccessibilityGrant =
       try container.decodeIfPresent(Bool.self, forKey: .hadAccessibilityGrant) ?? false
     dictationDictionary =

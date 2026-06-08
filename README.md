@@ -12,11 +12,15 @@ The fork keeps the original spirit of a hackable native AI workflow, but pushes 
 - **Live dictation pill**: visible recording, processing, fallback, and error states with clearer keyboard hints and copy/paste affordances.
 - **Local LLM support**: use Ollama-backed local rewrite models instead of relying only on the OpenAI API.
 - **Local model manager**: browse, download, delete, and inspect local models with hardware-aware recommendations.
+- **Configurable rewrite modes**: duplicate, rename, reorder, delete, and tune modes for different people, clients, or writing contexts.
+- **Rebindable global hotkeys**: configure mode-specific shortcuts and see conflicts before they bite.
 - **Smarter rewrite modes**: dedicated modes for improving text, writing emails, optimizing prompts, and turning rough speech into calmer messages.
+- **Semantic email memory**: opt-in local vector memory can retrieve similar earlier email drafts and use them as background context.
+- **Two-version preview**: rewrite modes can pause in the floating pill and let you choose which variant to insert.
 - **Better default system prompts**: each mode has a more precise prompt structure and clearer behavior expectations.
 - **Dictated instructions**: workflows can distinguish spoken instructions from text that should be inserted verbatim.
 - **Vocabulary and memory system**: frequently used names, domain terms, and custom wording can be learned and injected into future prompts.
-- **Prototype context awareness**: the app can include focused-window, selected-text, file, and content-type hints in prompts.
+- **Prototype context awareness**: the app can include focused-window, selected-text, semantic email-memory, file, and content-type hints in prompts.
 - **More private by default**: local transcription, local rewrite options, fail-closed offline behavior, and opt-in archive/memory features.
 - **More robust workflow**: improved paste reliability, Accessibility fallback behavior, code signing, onboarding, and test coverage.
 
@@ -27,6 +31,7 @@ The fork keeps the original spirit of a hackable native AI workflow, but pushes 
 - **Write email**: transform spoken notes into a structured email draft.
 - **Optimize prompts**: convert rough intent into a clearer prompt for AI tools.
 - **Calm down**: turn frustrated speech into a calmer, usable message.
+- **Create custom modes**: keep separate prompts, hotkeys, model choices, memory settings, and enrichment levels for different writing situations.
 - **Use local AI**: run supported transcription and rewrite workflows locally when compatible models are installed.
 
 ## Important Preview Notes
@@ -70,6 +75,7 @@ The intent is not to ship a one-click finished app. The intent is to make a more
 - For local-only transcription: a WhisperKit CoreML model in:
   `~/Library/Application Support/Blitztext/models/whisperkit/`
 - For local rewriting: [Ollama](https://ollama.com/) with at least one compatible local LLM installed.
+- For semantic email memory: Ollama running locally with an embedding model such as `nomic-embed-text`.
 
 The build also pulls one Swift Package dependency automatically:
 
@@ -123,6 +129,7 @@ Online transcription: Your Mac -> OpenAI Audio Transcriptions API
 Online rewriting:     Your Mac -> OpenAI Chat Completions API
 Local transcription:  Your Mac -> WhisperKit/CoreML on device
 Local rewriting:      Your Mac -> Ollama model on device
+Email embeddings:     Your Mac -> Ollama embedding model on device
 ```
 
 The app stores your OpenAI API key in the user's macOS Keychain.

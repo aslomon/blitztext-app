@@ -8,10 +8,23 @@ import os
 /// chosen model was rejected — that gap is what the UI surfaces so a silent quality drop is visible.
 struct RewriteOutcome: Equatable, Sendable {
   let text: String
+  let variants: [String]
   /// The model that actually produced `text`. `nil` only when the provider can't name one.
   let usedModelID: String?
   /// The model the caller asked for. `nil` only when the provider can't name one.
   let requestedModelID: String?
+
+  init(
+    text: String,
+    variants: [String]? = nil,
+    usedModelID: String?,
+    requestedModelID: String?
+  ) {
+    self.text = text
+    self.variants = variants ?? [text]
+    self.usedModelID = usedModelID
+    self.requestedModelID = requestedModelID
+  }
 
   /// True when the effective model differs from the requested one (a fallback happened).
   var didFallBack: Bool {

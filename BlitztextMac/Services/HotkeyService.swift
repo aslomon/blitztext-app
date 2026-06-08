@@ -24,8 +24,8 @@ enum HotkeyMode: String, Codable, Sendable, CaseIterable, Identifiable {
 }
 
 enum HotkeyEvent {
-  case down(WorkflowType)  // Keys pressed
-  case up(WorkflowType)  // Keys released (for hold mode)
+  case down(ModeConfig.ID)  // Keys pressed
+  case up(ModeConfig.ID)  // Keys released (for hold mode)
   case cancel  // Escape pressed
 }
 
@@ -36,13 +36,27 @@ final class HotkeyService {
   private var localMonitor: Any?
   private var escTap: CFMachPort?
   private var escTapSource: CFRunLoopSource?
-  private var escFallbackMonitor: Any?
-  private var activeCombo: WorkflowType?  // Which combo is currently held
+  private var keyFallbackMonitor: Any?
+  private var keyUpFallbackMonitor: Any?
+  private var activeCombo: ModeConfig.ID?  // Which combo is currently held
+  private var pressedKeyCodes = Set<UInt16>()
+  private var hotkeyConfigs: [ModeConfig.ID: HotkeyConfig] = [:]
 
+  var isSuspended = false {
+    didSet {
+      guard isSuspended else { return }
+      activeCombo = nil
+      pressedKeyCodes.removeAll()
+    }
+  }
   var onHotkeyEvent: ((HotkeyEvent) -> Void)?
   /// Set by the app: true while a run is active (so Escape should abort + be consumed). When false,
   /// Escape passes through untouched so it keeps working everywhere else.
   var isAbortable: (() -> Bool)?
+
+  func reload(configs: [ModeConfig.ID: HotkeyConfig]) {
+    hotkeyConfigs = configs
+  }
 
   func start() {
     globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) {
@@ -57,19 +71,21 @@ final class HotkeyService {
       }
       return event
     }
-    startEscTap()
+    startKeyTap()
   }
 
   /// Escape-to-abort via a `CGEventTap`. Unlike `NSEvent.addGlobalMonitorForEvents(.keyDown)` (which
   /// needs the separate "Input Monitoring" right), a session event tap keys off the SAME Accessibility
   /// trust that paste already uses — so it works as soon as Accessibility is granted, no extra grant.
   /// It also CONSUMES Escape while a run is abortable, so the frontmost app doesn't act on it too.
-  private func startEscTap() {
-    let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+  private func startKeyTap() {
+    let mask =
+      CGEventMask(1 << CGEventType.keyDown.rawValue)
+      | CGEventMask(1 << CGEventType.keyUp.rawValue)
     let callback: CGEventTapCallBack = { _, type, event, refcon in
       guard let refcon else { return Unmanaged.passUnretained(event) }
       let service = Unmanaged<HotkeyService>.fromOpaque(refcon).takeUnretainedValue()
-      return service.handleEscTap(type: type, event: event)
+      return service.handleKeyTap(type: type, event: event)
     }
 
     guard
@@ -84,9 +100,20 @@ final class HotkeyService {
     else {
       // No Accessibility trust yet → fall back to a LOCAL keyDown monitor (covers only the case where
       // a Blitztext window is key). Once Accessibility is granted + the app relaunched, the tap is used.
-      escFallbackMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+      keyFallbackMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
         [weak self] event in
-        if event.keyCode == 53 { Task { @MainActor in self?.handleEscape() } }
+        Task { @MainActor in
+          if self?.isSuspended == true {
+            return
+          } else if event.keyCode == 53, self?.isAbortable?() ?? false {
+            self?.handleEscape()
+          } else { _ = self?.handleKeyDown(event) }
+        }
+        return event
+      }
+      keyUpFallbackMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyUp) {
+        [weak self] event in
+        Task { @MainActor in _ = self?.handleKeyUp(event.keyCode) }
         return event
       }
       return
@@ -101,84 +128,73 @@ final class HotkeyService {
 
   /// Tap callback body. Runs on the MAIN run loop (the source is added there), so MainActor state is
   /// reachable via `assumeIsolated`. Returns nil to CONSUME the event, or the event to pass it on.
-  nonisolated private func handleEscTap(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+  nonisolated private func handleKeyTap(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
       MainActor.assumeIsolated {
         if let tap = self.escTap { CGEvent.tapEnable(tap: tap, enable: true) }
       }
       return Unmanaged.passUnretained(event)
     }
-    guard type == .keyDown, event.getIntegerValueField(.keyboardEventKeycode) == 53 else {
+    guard type == .keyDown || type == .keyUp else {
       return Unmanaged.passUnretained(event)
     }
+    let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
     return MainActor.assumeIsolated {
-      guard self.isAbortable?() ?? false else {
-        return Unmanaged.passUnretained(event)  // nothing to abort → let Escape work normally
+      if self.isSuspended {
+        return Unmanaged.passUnretained(event)
       }
-      self.handleEscape()
-      return nil  // consume — the frontmost app does not also receive this Escape
+      if type == .keyDown {
+        if keyCode == 53, self.isAbortable?() ?? false {
+          self.handleEscape()
+          return nil
+        }
+        return self.handleKeyDown(keyCode: keyCode, modifiers: event.flags.hotkeyModifiers)
+          ? nil
+          : Unmanaged.passUnretained(event)
+      }
+      return self.handleKeyUp(keyCode) ? nil : Unmanaged.passUnretained(event)
     }
   }
 
   func stop() {
     if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }
-    if let escFallbackMonitor { NSEvent.removeMonitor(escFallbackMonitor) }
+    if let keyFallbackMonitor { NSEvent.removeMonitor(keyFallbackMonitor) }
+    if let keyUpFallbackMonitor { NSEvent.removeMonitor(keyUpFallbackMonitor) }
     if let escTap, let escTapSource {
       CGEvent.tapEnable(tap: escTap, enable: false)
       CFRunLoopRemoveSource(CFRunLoopGetMain(), escTapSource, .commonModes)
     }
     globalMonitor = nil
     localMonitor = nil
-    escFallbackMonitor = nil
+    keyFallbackMonitor = nil
+    keyUpFallbackMonitor = nil
     escTap = nil
     escTapSource = nil
   }
 
   private func handleFlags(_ event: NSEvent) {
-    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    guard !isSuspended else { return }
+    let modifiers = event.modifierFlags.hotkeyModifiers
+    if let combo = activeCombo, !activeComboMatchesCurrentModifiers(combo, modifiers: modifiers) {
+      activeCombo = nil
+      onHotkeyEvent?(.up(combo))
+    }
 
-    // fn + Shift + Control -> local transcription
-    if flags == [.function, .shift, .control] {
-      if activeCombo == nil {
-        activeCombo = .localTranscription
-        onHotkeyEvent?(.down(.localTranscription))
-      }
+    if !pressedKeyCodes.isEmpty {
+      startMatchingComboIfNeeded(modifiers: modifiers)
       return
     }
 
-    // fn + Shift -> transcription
-    if flags == [.function, .shift] {
+    if let modeID = HotkeyRegistry.matchingModeID(
+      modifiers: modifiers,
+      keyCode: nil,
+      keyCodes: [],
+      configs: hotkeyConfigs
+    ) {
       if activeCombo == nil {
-        activeCombo = .transcription
-        onHotkeyEvent?(.down(.transcription))
-      }
-      return
-    }
-
-    // fn + Control -> Textverbesserer
-    if flags == [.function, .control] {
-      if activeCombo == nil {
-        activeCombo = .textImprover
-        onHotkeyEvent?(.down(.textImprover))
-      }
-      return
-    }
-
-    // fn + Option -> Rage Mode
-    if flags == [.function, .option] {
-      if activeCombo == nil {
-        activeCombo = .dampfAblassen
-        onHotkeyEvent?(.down(.dampfAblassen))
-      }
-      return
-    }
-
-    // fn + Command -> Emoji Mode
-    if flags == [.function, .command] {
-      if activeCombo == nil {
-        activeCombo = .emojiText
-        onHotkeyEvent?(.down(.emojiText))
+        activeCombo = modeID
+        onHotkeyEvent?(.down(modeID))
       }
       return
     }
@@ -190,8 +206,73 @@ final class HotkeyService {
     }
   }
 
-  private func handleEscape() {
+  @discardableResult
+  private func handleKeyDown(_ event: NSEvent) -> Bool {
+    handleKeyDown(keyCode: event.keyCode, modifiers: event.modifierFlags.hotkeyModifiers)
+  }
+
+  @discardableResult
+  private func handleKeyDown(keyCode: UInt16, modifiers: [HotkeyModifier]) -> Bool {
+    guard !isSuspended else { return false }
+    pressedKeyCodes.insert(keyCode)
+
+    if startMatchingComboIfNeeded(modifiers: modifiers) {
+      return true
+    }
+
+    return HotkeyRegistry.hasPotentialMatch(
+      modifiers: modifiers,
+      keyCodes: Array(pressedKeyCodes),
+      configs: hotkeyConfigs
+    )
+  }
+
+  @discardableResult
+  private func handleKeyUp(_ keyCode: UInt16) -> Bool {
+    guard !isSuspended else { return false }
+    pressedKeyCodes.remove(keyCode)
+    guard
+      let combo = activeCombo,
+      hotkeyConfigs[combo]?.normalizedKeys.contains(where: { $0.keyCode == keyCode }) ?? false
+    else {
+      return false
+    }
     activeCombo = nil
+    onHotkeyEvent?(.up(combo))
+    return true
+  }
+
+  private func handleEscape() {
+    guard !isSuspended else { return }
+    activeCombo = nil
+    pressedKeyCodes.removeAll()
     onHotkeyEvent?(.cancel)
+  }
+
+  @discardableResult
+  private func startMatchingComboIfNeeded(modifiers: [HotkeyModifier]) -> Bool {
+    guard
+      let modeID = HotkeyRegistry.matchingModeID(
+        modifiers: modifiers,
+        keyCodes: Array(pressedKeyCodes),
+        configs: hotkeyConfigs
+      )
+    else {
+      return false
+    }
+
+    if activeCombo == nil {
+      activeCombo = modeID
+      onHotkeyEvent?(.down(modeID))
+    }
+    return true
+  }
+
+  private func activeComboMatchesCurrentModifiers(
+    _ modeID: ModeConfig.ID,
+    modifiers: [HotkeyModifier]
+  ) -> Bool {
+    guard let config = hotkeyConfigs[modeID] else { return false }
+    return Set(config.normalizedModifiers) == Set(modifiers)
   }
 }

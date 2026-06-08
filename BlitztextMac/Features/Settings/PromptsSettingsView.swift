@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Tab "Prompts": the three configurable rewrite modes (Textverbesserung, Dampf ablassen,
-/// Emoji/Social). Each card owns its name, backend, model, prompt and reset.
+/// Tab "Prompts": every visible mode. Each card owns its name, hotkey, behavior and reset.
 struct PromptsSettingsView: View {
   @Bindable var appState: AppState
   /// Jump to another settings tab (e.g. "Zu Modelle" when no rewrite engine is connected yet).
@@ -17,6 +16,7 @@ struct PromptsSettingsView: View {
         Text("Modi")
           .font(.system(size: 12.5, weight: .semibold))
         Spacer()
+        addModeMenu
       }
 
       if !appState.hasAnyRewriteEngine {
@@ -32,14 +32,33 @@ struct PromptsSettingsView: View {
         )
       }
 
-      ModeCardView(appState: appState, type: .textImprover)
-      ModeCardView(appState: appState, type: .dampfAblassen)
-      ModeCardView(appState: appState, type: .emojiText)
+      ForEach(visibleModes) { config in
+        ModeCardView(appState: appState, config: config)
+      }
 
       InfoDisclosure("Was Modi tun") {
-        Text("Modi formulieren dein Diktat um: E-Mail, Prompt oder Social. Namen, Backend und eigene Anweisungen bearbeitest du pro Modus.")
+        Text("Freitext fügt nur das Diktat ein. E-Mail, Prompt und Social formulieren dein Diktat mit eigenen Anweisungen um.")
       }
     }
     .padding(16)
+  }
+
+  private var visibleModes: [ModeConfig] {
+    appState.orderedModeConfigs.filter { $0.slot != .localTranscription }
+  }
+
+  private var addModeMenu: some View {
+    Menu {
+      ForEach(ModeTemplate.allCases) { template in
+        Button {
+          appState.addMode(template: template)
+        } label: {
+          Label(template.displayName, systemImage: template.icon)
+        }
+      }
+    } label: {
+      Label("Modus hinzufügen", systemImage: "plus")
+    }
+    .menuStyle(.borderlessButton)
   }
 }

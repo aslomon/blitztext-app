@@ -21,12 +21,15 @@ struct RecordingPillView: View {
   var errorMessage: String?
   /// The dictated text, shown in the `.copyOnly` fallback card.
   var copyOnlyText: String?
+  var pendingVariants: PendingRewriteVariants?
   /// Invoked when the user confirms (stop/checkmark).
   var onStop: () -> Void
   /// Invoked when the user cancels (X).
   var onCancel: () -> Void
   /// Invoked from the `.copyOnly` card's Copy button with the dictated text.
   var onCopy: (String) -> Void = { _ in }
+  var onChooseVariant: (RewriteVariant.ID) -> Void = { _ in }
+  var onCopyVariant: (RewriteVariant.ID) -> Void = { _ in }
   /// Invoked from the `.copyOnly` card's dismiss (✕).
   var onDismiss: () -> Void = {}
 
@@ -40,6 +43,8 @@ struct RecordingPillView: View {
         failedContent
       } else if phase == .copyOnly {
         copyOnlyContent
+      } else if phase == .variantChoice {
+        variantChoiceContent
       } else {
         pillContent
       }
@@ -161,6 +166,7 @@ struct RecordingPillView: View {
     switch phase {
     case .failed: return "Fehler: \(errorMessage ?? "")"
     case .copyOnly: return "Konnte nicht einfügen. Text kopiert: \(copyOnlyText ?? "")"
+    case .variantChoice: return "Zwei Versionen bereit. Wähle eine Version zum Einfügen."
     case .processing: return "Wird transkribiert"
     default: return "Aufnahme läuft"
     }
@@ -285,7 +291,7 @@ private struct PillGlassModifier: ViewModifier {
 /// Applies a rounded-rect glass surface for expanded cards (copyOnly, etc.).
 /// macOS 26+: native Liquid Glass in a rounded rect (radius 14).
 /// macOS 14–25: regularMaterial + stroke border + shaped shadow.
-private struct CardGlassModifier: ViewModifier {
+struct CardGlassModifier: ViewModifier {
   private let radius: CGFloat = 14
 
   func body(content: Content) -> some View {
@@ -312,7 +318,7 @@ private struct CardGlassModifier: ViewModifier {
 
 /// Small circular dismiss (✕) used in the copyOnly card header.
 /// Shows a subtle tinted background on hover so the hit target is visible without being heavy.
-private struct CopyOnlyDismissButton: View {
+struct CopyOnlyDismissButton: View {
   let action: () -> Void
   @State private var isHovering = false
 

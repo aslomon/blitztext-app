@@ -67,8 +67,8 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 
 ## App- und Menüleisten-Icons
 
-- App-Icon: dunkles macOS-Squircle mit ruhigem Glass-Verlauf, bestehendem Blitztext-Balkenmark
-  und kleinem Wave/Local-AI-Akzent. Keine lauten Illustrationen, keine Marketing-Grafik, keine
-  großen dekorativen Bögen.
+- App-Icon: dunkles macOS-Squircle mit ruhigem Glass-Verlauf und dem bestehenden
+  linksbündigen Blitztext-Balkenmark. Keine diagonal versetzten Balken, keine lauten
+  Illustrationen, keine Marketing-Grafik, keine großen dekorativen Bögen.
 - Menüleisten-Icon: Idle bleibt das einfache Template-Icon. Während Aufnahme/Verarbeitung keine
   mode-spezifischen Badge-Symbole; nur das normale Zeichen plus kleiner pulsierender Statuspunkt.

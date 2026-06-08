@@ -3,7 +3,6 @@ import SwiftUI
 
 struct SettingsContentView: View {
   @Bindable var appState: AppState
-  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     VStack(spacing: 0) {
@@ -16,20 +15,20 @@ struct SettingsContentView: View {
         Text("System").tag(4)
       }
       .pickerStyle(.segmented)
-      .font(.system(size: 11))
+      .controlSize(.small)
       .padding(.horizontal, 16)
       .padding(.vertical, 10)
 
       ScrollView {
         VStack(spacing: 0) {
-          if !appState.isConfigured {
-            setupNudgeBanner
-              .padding(.horizontal, 16)
-              .padding(.top, 12)
-          }
-
           switch appState.settingsTabSelection {
           case 0:
+            // Setup nudge is only shown on the Prompts tab (DESIGN.md: setupNudgeBanner tab 0 only)
+            if !appState.isConfigured {
+              setupNudgeBanner
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+            }
             PromptsSettingsView(appState: appState, selectTab: selectTab)
           case 1:
             ModelsSettingsView(appState: appState, selectTab: selectTab)
@@ -91,14 +90,7 @@ struct SettingsContentView: View {
       .buttonStyle(PopoverActionButtonStyle(.primary))
     }
     .padding(10)
-    .background(
-      RoundedRectangle(cornerRadius: 10)
-        .fill(MenuBarTokens.tintFill(.blue, colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(MenuBarTokens.tintStroke(.blue, colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    .liquidGlassInfoBanner(accent: .blue, cornerRadius: 10)
   }
 }
 

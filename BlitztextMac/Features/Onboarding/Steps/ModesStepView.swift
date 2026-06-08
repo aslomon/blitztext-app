@@ -19,6 +19,7 @@ struct ModesStepView: View {
 
       promptCard(
         accent: .purple,
+        modeSymbol: WorkflowType.textImprover.systemImageForOnboarding,
         title: "E-Mail",
         helpText: "Was Blitztext aus deinem Diktat machen soll.",
         text: $viewModel.emailPrompt,
@@ -29,6 +30,7 @@ struct ModesStepView: View {
 
       promptCard(
         accent: .orange,
+        modeSymbol: WorkflowType.dampfAblassen.systemImageForOnboarding,
         title: "Prompt",
         helpText: "Für KI-Coding-Agenten wie Claude Code oder Codex.",
         text: $viewModel.promptPrompt,
@@ -43,6 +45,7 @@ struct ModesStepView: View {
 
   private func promptCard(
     accent: Color,
+    modeSymbol: String,
     title: String,
     helpText: String,
     text: Binding<String>,
@@ -52,9 +55,12 @@ struct ModesStepView: View {
     OnboardingCard {
       VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 6) {
-          Image(systemName: "circle.fill")
-            .font(.system(size: 7))
+          // Canonical SF Symbol for the mode, colour-tinted (change 13)
+          Image(systemName: modeSymbol)
+            .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(accent)
+            // Purely decorative — duplicated by the SectionLabel text
+            .accessibilityHidden(true)
           SectionLabel(text: title)
           Spacer()
           BlitzStatusPill(state: .ready, label: "Preset")
@@ -100,9 +106,11 @@ struct ModesStepView: View {
     OnboardingCard {
       VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 6) {
-          Image(systemName: "circle.fill")
-            .font(.system(size: 7))
+          // Canonical SF Symbol for emoji/social mode, colour-tinted (change 13)
+          Image(systemName: WorkflowType.emojiText.systemImageForOnboarding)
+            .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(.cyan)
+            .accessibilityHidden(true)
           SectionLabel(text: "Social")
         }
 
@@ -127,6 +135,22 @@ struct ModesStepView: View {
         .pickerStyle(.segmented)
         .controlSize(.small)
       }
+    }
+  }
+}
+
+// MARK: - WorkflowType + onboarding symbol
+
+extension WorkflowType {
+  /// The canonical SF Symbol shown in the Modes step for each workflow type.
+  /// Maps each mode to a meaningful symbol per DESIGN.md accent / mode identity.
+  fileprivate var systemImageForOnboarding: String {
+    switch self {
+    case .transcription: return "mic.fill"
+    case .localTranscription: return "lock.shield.fill"
+    case .textImprover: return "envelope.fill"
+    case .dampfAblassen: return "terminal.fill"
+    case .emojiText: return "face.smiling.fill"
     }
   }
 }

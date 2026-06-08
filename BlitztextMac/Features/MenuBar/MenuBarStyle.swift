@@ -64,33 +64,31 @@ enum MenuBarTokens {
       ? Color(nsColor: .windowBackgroundColor).opacity(0.85)
       : Color(nsColor: .controlBackgroundColor).opacity(0.95)
   }
-}
 
-// MARK: - Blitztext Surface modifier
+  // MARK: Keycap tokens (for HotkeyBadge)
+  //
+  // Centralises the 8 inline color literals that were previously scattered across
+  // HotkeyBadge's four private computed vars. LiquidGlass.liquidGlassKeycap() uses
+  // these on the macOS 14–25 fallback path.
 
-/// Opaque backstop for the popover content area.
-/// macOS 26+: `.glassEffect` on a rectangle (mirrors PillGlassModifier's approach).
-/// macOS 14–25: `.regularMaterial` + a `windowBackgroundColor` underlay so the
-/// translucent material has a solid colour to blend against — eliminates the
-/// "washed-out in dark mode over a bright window" symptom.
-struct BlitztextSurface: ViewModifier {
-  func body(content: Content) -> some View {
-    if #available(macOS 26.0, *) {
-      content
-        .glassEffect(.regular, in: .rect)
-    } else {
-      // Material in FRONT, opaque window color BEHIND it to blend against (each successive
-      // `.background` sits further back). Reversed order would hide the material entirely.
-      content
-        .background(.regularMaterial)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
+  /// Keycap background fill — replaces `keyBackgroundColor` in HotkeyBadge.
+  static func keycapFill(colorScheme: ColorScheme) -> Color {
+    colorScheme == .dark
+      ? Color.white.opacity(0.12)
+      : Color.black.opacity(0.09)
   }
-}
 
-extension View {
-  /// Applies the popover's opaque surface backstop.
-  func blitztextSurface() -> some View {
-    modifier(BlitztextSurface())
+  /// Keycap border stroke — replaces `keyStrokeColor` in HotkeyBadge.
+  static func keycapStroke(colorScheme: ColorScheme) -> Color {
+    colorScheme == .dark
+      ? Color.white.opacity(0.20)
+      : Color.black.opacity(0.16)
+  }
+
+  /// Keycap label foreground — replaces `keyTextColor` in HotkeyBadge.
+  static func keycapText(colorScheme: ColorScheme) -> Color {
+    colorScheme == .dark
+      ? Color.white.opacity(0.84)
+      : Color.black.opacity(0.72)
   }
 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Tab "Modelle": the engines that power Blitztext — "Online" (the OpenAI API key) and "Lokal" (the
+/// Tab "Modelle": the engines that power Blitztext \u{2014} "Online" (the OpenAI API key) and "Lokal" (the
 /// local Whisper transcription engine, the local Ollama rewrite model and the secure-local master
 /// switch). Memory, vocabulary and learned terms live in the Vokabular tab.
 struct ModelsSettingsView: View {
@@ -8,7 +8,7 @@ struct ModelsSettingsView: View {
   /// Reserved for cross-tab navigation from empty-state CTAs (kept for parity with Prompts tab).
   let selectTab: (Int) -> Void
 
-  /// Bumped by the "Prüfen" button to force a fresh disk read of the installed WhisperKit models.
+  /// Bumped by the "Prüfen" icon button to force a fresh disk read of the installed WhisperKit models.
   /// The disk scan is synchronous, so re-reading inside a recomputed `body` reflects reality.
   @State private var transcriptionRecheckToken = 0
 
@@ -25,26 +25,22 @@ struct ModelsSettingsView: View {
   /// Honest one-liner about the selected Whisper model: confirms it is on disk and how many models
   /// total are installed, or states the exact download size still pending for the selection.
   private var transcriptionStateText: String {
+    let name = appState.selectedLocalModelDisplayName
     if appState.selectedLocalModelIsInstalled {
       let count = installedLocalModels.count
       return count == 1
-        ? "„\(appState.selectedLocalModelDisplayName)“ ist geladen (1 Whisper-Modell auf diesem Mac)."
-        : "„\(appState.selectedLocalModelDisplayName)“ ist geladen (\(count) Whisper-Modelle auf diesem Mac)."
+        ? "\u{201E}\(name)\u{201C} ist geladen (1 Whisper-Modell auf diesem Mac)."
+        : "\u{201E}\(name)\u{201C} ist geladen (\(count) Whisper-Modelle auf diesem Mac)."
     }
     if let size = LocalTranscriptionModel.sizeLabel(for: appState.selectedLocalModelName) {
-      return
-        "„\(appState.selectedLocalModelDisplayName)“ ist nicht geladen — \(size). Wird beim Installieren lokal gespeichert."
+      return "\u{201E}\(name)\u{201C} ist nicht geladen \u{2014} \(size). Wird beim Installieren lokal gespeichert."
     }
-    return
-      "„\(appState.selectedLocalModelDisplayName)“ ist nicht geladen. Wird beim Installieren lokal gespeichert."
+    return "\u{201E}\(name)\u{201C} ist nicht geladen. Wird beim Installieren lokal gespeichert."
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      HStack(spacing: 6) {
-        BlitzStatusPill(state: appState.hasOpenAIKey ? .online : .warning, label: appState.hasOpenAIKey ? "Online bereit" : "OpenAI fehlt")
-        BlitzStatusPill(state: appState.hasAnyTranscriptionEngine ? .local : .download, label: appState.hasAnyTranscriptionEngine ? "Whisper lokal" : "Whisper laden")
-      }
+      // spec #1: no top-level dual-status HStack \u{2014} pills live in section headers
       onlineBand
       Divider().opacity(0.5)
       localBand
@@ -53,42 +49,70 @@ struct ModelsSettingsView: View {
   }
 
   // MARK: - Online band (OpenAI)
+  // spec #1: trailing BlitzStatusPill in section header
+  // spec #2: explanatory paragraph removed; moved inside OpenAIKeySection's InfoDisclosure
 
   private var onlineBand: some View {
-    SettingsSection("Online") {
+    ModelsSectionWithPill(
+      "Online",
+      pill: BlitzStatusPill(
+        state: appState.hasOpenAIKey ? .online : .warning,
+        label: appState.hasOpenAIKey ? "Online bereit" : "OpenAI fehlt"
+      )
+    ) {
       if !appState.hasOpenAIKey {
         SettingsStatusBadge(.warning, label: "OpenAI nicht eingerichtet")
-        Text(
-          "Ohne Key bleiben die Online-Modelle deaktiviert. Trage deinen OpenAI-Key ein, um sie "
-            + "für Transkription und Umschreiben zu nutzen."
-        )
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
       }
       OpenAIKeySection(appState: appState)
     }
   }
 
   // MARK: - Local band (Whisper + Ollama + secure-local switch)
+  // spec #1: trailing BlitzStatusPill in section header
+  // spec #4: Whisper first, Ollama second, secure-local toggle at the bottom
 
   private var localBand: some View {
-    SettingsSection("Lokal") {
-      Toggle("Sicherer Lokaler Modus", isOn: $appState.appSettings.secureLocalModeEnabled)
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .onChange(of: appState.appSettings.secureLocalModeEnabled) { _, newValue in
-          if newValue && !appState.selectedLocalModelIsInstalled {
-            appState.installSelectedLocalModel()
-          }
-        }
-
+    ModelsSectionWithPill(
+      "Lokal",
+      pill: BlitzStatusPill(
+        state: appState.hasAnyTranscriptionEngine ? .local : .download,
+        label: appState.hasAnyTranscriptionEngine ? "Whisper lokal" : "Whisper laden"
+      )
+    ) {
       localTranscriptionSection
       localLLMSection
+      secureLocalToggle
     }
   }
 
-  // MARK: - Lokale Transkription (Whisper) — speech -> text engine
+  // MARK: - Secure-local toggle
+  // spec #4: at the bottom, one-line caption, trailing status pill
+
+  private var secureLocalToggle: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Toggle("Sicherer Lokaler Modus", isOn: $appState.appSettings.secureLocalModeEnabled)
+          .toggleStyle(.switch)
+          .controlSize(.small)
+          .onChange(of: appState.appSettings.secureLocalModeEnabled) { _, newValue in
+            if newValue && !appState.selectedLocalModelIsInstalled {
+              appState.installSelectedLocalModel()
+            }
+          }
+        Spacer()
+        BlitzStatusPill(
+          state: appState.appSettings.secureLocalModeEnabled ? .local : .muted,
+          label: appState.appSettings.secureLocalModeEnabled ? "Aktiv" : "Aus"
+        )
+      }
+      Text("Deaktiviert alle Online-Dienste. Nur Whisper + lokales Ollama-Modell.")
+        .font(.system(size: 10, weight: .regular))
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  // MARK: - Lokale Transkription (Whisper)
+  // spec #3: single caption line always visible; full paragraph only in EmptyStateCard
 
   private var localTranscriptionSection: some View {
     SettingsSection(
@@ -96,20 +120,21 @@ struct ModelsSettingsView: View {
       action: appState.isDownloadingLocalModel
         ? nil : (label: "Prüfen", perform: { transcriptionRecheckToken += 1 })
     ) {
-      Text(
-        "Die Transkriptions-Engine (Sprache → Text) läuft über WhisperKit lokal auf diesem Mac. "
-          + "Das Modell wird beim ersten Einsatz automatisch geladen und auf dem Gerät gespeichert."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
+      // Short caption always visible (spec #3)
+      Text("Lokale Sprach-zu-Text-Engine (WhisperKit). Daten bleiben auf dem Gerät.")
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
 
+      // Full paragraph only when no model is installed (spec #3)
       if !appState.hasAnyTranscriptionEngine {
         EmptyStateCard(
           icon: "waveform",
           title: "Kein Whisper-Modell geladen",
           caption:
-            "Lade ein Whisper-Modell, damit Blitztext Sprache lokal in Text umwandeln kann.",
+            "Die Transkriptions-Engine läuft über WhisperKit lokal auf diesem Mac. "
+            + "Das Modell wird auf dem Gerät gespeichert. "
+            + "Lade ein Modell, damit Blitztext Sprache lokal in Text umwandeln kann.",
           accent: .blue,
           buttonLabel: "Modell laden",
           action: { appState.installSelectedLocalModel() }
@@ -196,12 +221,48 @@ struct ModelsSettingsView: View {
     }
   }
 
-  // MARK: - Lokales Sprachmodell (Ollama) — rewrite/LLM, NOT transcription
+  // MARK: - Lokales Sprachmodell (Ollama)
 
   private var localLLMSection: some View {
     SettingsSection("Lokales Sprachmodell (Ollama)") {
       LocalLLMModelPicker(appState: appState)
     }
   }
+}
 
+// MARK: - ModelsSectionWithPill
+//
+// A GroupBox variant with a trailing BlitzStatusPill in the label row.
+// Lives here (not in frozen SettingsPrimitives.swift) and is file-private to this module.
+// Uses the same visual rhythm as SettingsSection from SettingsPrimitives.
+
+private struct ModelsSectionWithPill<Pill: View, Content: View>: View {
+  let label: String
+  let pill: Pill
+  @ViewBuilder let content: Content
+
+  init(
+    _ label: String,
+    pill: Pill,
+    @ViewBuilder content: () -> Content
+  ) {
+    self.label = label
+    self.pill = pill
+    self.content = content()
+  }
+
+  var body: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        content
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } label: {
+      HStack(spacing: 8) {
+        SectionLabel(text: label)
+        Spacer()
+        pill
+      }
+    }
+  }
 }

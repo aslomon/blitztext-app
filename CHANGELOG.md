@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Liquid Glass Design System (macOS 26+)**: Centralized Glass-effect component library with native `.glassEffect` support and intelligent fallbacks
+  - **LiquidGlass.swift**: Core module providing unified glass modifiers and container views (`.liquidGlassCard()`, `.liquidGlassCapsule()`, `.liquidGlassTintedCard()`, `.liquidGlassKeycap()`, `.glassRowBackground()`, `GlassEffectContainerView`)
+  - **GlassActionButtonStyle & GlassProminentButtonStyle**: Consistent button styles across glass surfaces
+  - **Fallback strategy**: Native glass effects on macOS 26+; transparent `.regularMaterial` + `MenuBarTokens` fills on macOS 14–25 (no degradation, smooth appearance on all supported versions)
+- **DESIGN.md**: Comprehensive Liquid Glass design documentation with visual guidelines, component catalog, and implementation patterns
+
+### Changed
+
+- **Popover Engine Panel**: Redesigned with collapsed `BlitzStatusPill` footer (status → action → details); workflow rows now use morphing glass-hover effects; status unified as pill throughout
+- **Prompts & Modes UI**:
+  - `ModeCardView` upgraded with glass-card background and visual mode accent stripe
+  - Hotkey recorder buttons now fixed-position with improved visibility
+  - Single unified edit entry point per mode
+- **Models Settings**:
+  - Removed redundant top status (status now unified in section header pills)
+  - Explanatory text moved behind interactive `InfoDisclosure` components
+  - Delete action redesigned as `.danger` icon with accessibility labels
+- **Vocabulary Settings**: Reordered to show memory-learned terms first; "Jetzt analysieren" as primary action; improvement nudge as tinted banner
+- **Archive & System Settings**:
+  - Privacy disclosure text moved behind `InfoDisclosure`
+  - Action bar now shows disabled states instead of hiding actions
+  - Permission button hierarchy corrected per platform conventions
+  - Permission blockers now listed first
+- **Onboarding Wizard**:
+  - Glass-backdrop introduction step
+  - Progress indicator changed from 8-capsule strip to segmented counter with step label
+  - Fixed Escape key conflict with step navigation
+  - Directional push transitions between steps
+- **Recording Pill & Pills**:
+  - Glass modifiers centralized (no more scattered conditionals)
+  - Morphing pill ↔ card transitions with proper state management
+  - Removed glass-effect stacking complexity
+  - `.glassProminent` button style for insert actions
+  - Error state now uses red glass surface for visual feedback
+- **build.sh**: Added `ENABLE_DEBUG_DYLIB=NO` to prevent Xcode 26 signature mismatch on debug builds (affects `--debug` flag only; Release/Signing unaffected)
+
+### Fixed
+
+- **MenuBarStyle Glass Modifiers**: Eliminated duplicate `BlitztextSurface`, `PillGlassModifier`, and `CardGlassModifier` definitions by consolidating into unified LiquidGlass.swift module
+
+### Added (Previous Phases)
+
 - **Silence Trimming & Long Dictations**: New opt-in feature to cut long speech pauses from recordings before transcription
   - `SilenceTrimmer`: On-device pause detection and removal (audio never leaves the device)
   - `AppSettings.silenceTrimmingEnabled`: New toggle; default OFF (conservative, avoids clipping quiet word edges)

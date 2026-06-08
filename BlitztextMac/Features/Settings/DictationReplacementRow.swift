@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// A single from→to replacement row in the Diktier-Wörterbuch. Shows the pair, a "Ganzes Wort"
-/// toggle that exposes the behavior-changing `wholeWord` flag (whole-word vs substring matching),
-/// and a remove button. Card fill/stroke route through `MenuBarTokens` so the row reads correctly
-/// in both light and dark mode (DESIGN.md / colorScheme tokens).
+/// A single from→to replacement row in the Diktier-Wörterbuch. Shows the pair, a small
+/// `textformat.abc` icon that indicates the `wholeWord` flag (tapping it toggles), and a
+/// remove button. The inline Toggle checkbox is replaced by the icon indicator — less visual
+/// weight per row while keeping the affordance accessible. Card fill/stroke route through
+/// `MenuBarTokens` so the row reads correctly in both light and dark mode.
 struct DictationReplacementRow: View {
   let replacement: DictationReplacement
   let colorScheme: ColorScheme
@@ -21,7 +22,7 @@ struct DictationReplacementRow: View {
         .font(.system(size: 10.5))
         .foregroundStyle(.secondary)
       Spacer(minLength: 4)
-      wholeWordToggle
+      wholeWordIndicator
       removeButton
     }
     .padding(.horizontal, 8)
@@ -36,15 +37,26 @@ struct DictationReplacementRow: View {
     )
   }
 
-  private var wholeWordToggle: some View {
-    Toggle(
-      "Ganzes Wort",
-      isOn: Binding(get: { replacement.wholeWord }, set: { onToggleWholeWord($0) })
+  /// `textformat.abc` icon at 9pt. `.tertiary` foreground when `wholeWord` is false (substring
+  /// matching), `.primary` when true (whole-word matching). Tapping toggles the flag without
+  /// the bulk of a checkbox Toggle per row.
+  private var wholeWordIndicator: some View {
+    Button {
+      onToggleWholeWord(!replacement.wholeWord)
+    } label: {
+      Image(systemName: "textformat.abc")
+        .font(.system(size: 9, weight: .semibold))
+        .foregroundStyle(replacement.wholeWord ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+    }
+    .buttonStyle(.plain)
+    .contentShape(Circle().scale(1.6))
+    .help(
+      replacement.wholeWord
+        ? "Nur ganzes Wort ersetzen (aktiv) — tippen zum Deaktivieren"
+        : "Auch als Teilwort ersetzen — tippen für Ganzes-Wort-Modus"
     )
-    .toggleStyle(.checkbox)
-    .controlSize(.small)
-    .font(.system(size: 10))
     .accessibilityLabel("Nur ganzes Wort ersetzen")
+    .accessibilityValue(replacement.wholeWord ? "aktiv" : "inaktiv")
   }
 
   private var removeButton: some View {
@@ -53,7 +65,8 @@ struct DictationReplacementRow: View {
         .font(.system(size: 7, weight: .bold))
         .foregroundStyle(.tertiary)
     }
-    .buttonStyle(SubtleButtonStyle())
+    .buttonStyle(.plain)
+    .contentShape(Circle().scale(1.6))
     .accessibilityLabel("Ersetzung entfernen")
   }
 }

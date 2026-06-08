@@ -25,13 +25,23 @@ struct OpenAIKeySection: View {
         SectionLabel(text: "OpenAI API Key")
         Spacer()
         if appState.hasValue(for: .openAIAPIKey) && !editing {
+          // spec #5: 'Ändern' in header slot
           Button {
             editing = true
           } label: {
             Label("Ändern", systemImage: "pencil")
           }
-            .font(.system(size: 10, weight: .medium))
-            .buttonStyle(PopoverActionButtonStyle(.quiet))
+          .buttonStyle(PopoverActionButtonStyle(.quiet))
+        } else if editing && appState.hasValue(for: .openAIAPIKey) {
+          // spec #5: 'Abbrechen' replaces 'Ändern' when editing=true and a key already exists
+          Button {
+            apiKey = ""
+            editing = false
+            errorText = nil
+          } label: {
+            Label("Abbrechen", systemImage: "xmark")
+          }
+          .buttonStyle(PopoverActionButtonStyle(.quiet))
         }
       }
 
@@ -39,10 +49,22 @@ struct OpenAIKeySection: View {
         maskedKey
       } else {
         keyEntryRow
+        // spec #5: 'Speichern' anchored directly below the key entry row, before InfoDisclosure
+        saveButton
       }
 
-      InfoDisclosure("Datenfluss") {
-        Text("Dein Key bleibt lokal in dieser App. Audio und Text werden direkt an die OpenAI API gesendet.")
+      // spec #2: full explanation moved into InfoDisclosure
+      InfoDisclosure("Warum?") {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(
+            "Ohne Key bleiben die Online-Modelle deaktiviert. "
+              + "Trage deinen OpenAI-Key ein, um sie für Transkription und Umschreiben zu nutzen."
+          )
+          Text(
+            "Dein Key bleibt lokal in dieser App. "
+              + "Audio und Text werden direkt an die OpenAI API gesendet."
+          )
+        }
       }
 
       if let errorText {
@@ -51,8 +73,6 @@ struct OpenAIKeySection: View {
           .foregroundStyle(.red)
           .fixedSize(horizontal: false, vertical: true)
       }
-
-      saveButton
     }
     .onAppear {
       if !appState.hasValue(for: .openAIAPIKey) {
@@ -93,6 +113,8 @@ struct OpenAIKeySection: View {
     }
   }
 
+  // spec #5: PopoverActionButtonStyle(.primary) provides correct white foreground —
+  // manual .foregroundStyle overrides removed.
   private var saveButton: some View {
     HStack {
       Spacer()
@@ -100,17 +122,11 @@ struct OpenAIKeySection: View {
         save()
       } label: {
         if saved {
-          HStack(spacing: 4) {
-            Image(systemName: "checkmark")
-              .font(.system(size: 10, weight: .bold))
-            Text("Gespeichert")
-          }
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(.green)
+          Label("Gespeichert", systemImage: "checkmark")
+            .font(.system(size: 12, weight: .medium))
         } else {
           Text("Speichern")
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.blue)
         }
       }
       .buttonStyle(PopoverActionButtonStyle(saved ? .secondary : .primary))

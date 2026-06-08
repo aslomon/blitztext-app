@@ -8,6 +8,8 @@ import SwiftUI
 struct AccessibilityPermissionSection: View {
   @Bindable var appState: AppState
 
+  @Environment(\.colorScheme) private var colorScheme
+
   private var isGranted: Bool { appState.accessibilityPermissionGranted }
   private var isStale: Bool { appState.accessibilityLikelyStale }
 
@@ -29,7 +31,9 @@ struct AccessibilityPermissionSection: View {
 
           if !isGranted {
             InfoDisclosure("Hilfe") {
-              Text("Öffne Bedienungshilfen und aktiviere Blitztext. Falls Blitztext schon aktiv ist, einmal aus- und wieder einschalten.")
+              Text(
+                "Öffne Bedienungshilfen und aktiviere Blitztext. Falls Blitztext schon aktiv ist, einmal aus- und wieder einschalten."
+              )
             }
           }
         }
@@ -39,22 +43,46 @@ struct AccessibilityPermissionSection: View {
         staleGrantHint
       }
 
-      HStack(spacing: 8) {
-        Button("Bedienungshilfen öffnen") {
-          appState.requestAccessibilityPermission()
-        }
-        .buttonStyle(PopoverActionButtonStyle(isGranted ? .secondary : .warning))
+      // Button hierarchy:
+      // • isGranted == true:  'Bedienungshilfen öffnen' → .quiet (demoted, already done)
+      //                       'Erneut prüfen' → .secondary
+      // • isGranted == false: 'Bedienungshilfen öffnen' → .warning (sole primary CTA)
+      //                       'Erneut prüfen' as icon button (.quiet), not a full label button
+      if isGranted {
+        HStack(spacing: 8) {
+          Button("Bedienungshilfen öffnen") {
+            appState.requestAccessibilityPermission()
+          }
+          .buttonStyle(PopoverActionButtonStyle(.quiet))
 
-        Button("Erneut prüfen") {
-          appState.refreshAccessibilityPermission()
+          Button("Erneut prüfen") {
+            appState.refreshAccessibilityPermission()
+          }
+          .buttonStyle(PopoverActionButtonStyle(.secondary))
         }
-        .buttonStyle(PopoverActionButtonStyle(.secondary))
+      } else {
+        HStack(spacing: 8) {
+          Button("Bedienungshilfen öffnen") {
+            appState.requestAccessibilityPermission()
+          }
+          .buttonStyle(PopoverActionButtonStyle(.warning))
+
+          Button {
+            appState.refreshAccessibilityPermission()
+          } label: {
+            Image(systemName: "arrow.clockwise")
+          }
+          .buttonStyle(PopoverIconButtonStyle(.quiet))
+          .accessibilityLabel("Erneut prüfen")
+          .help("Erneut prüfen")
+        }
       }
     }
   }
 
   /// Targeted copy for the stale-grant case: after an update macOS may still show Blitztext as
   /// enabled but no longer recognize it. The fix is to remove the entry with the minus and re-add.
+  /// Uses .liquidGlassInfoBanner(accent: .orange) for consistent banner styling.
   private var staleGrantHint: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .top, spacing: 8) {
@@ -92,14 +120,7 @@ struct AccessibilityPermissionSection: View {
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 8)
-        .fill(Color.orange.opacity(0.08))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(Color.orange.opacity(0.12), lineWidth: 0.5)
-    )
+    .liquidGlassInfoBanner(accent: .orange)
   }
 
   private func staleStep(number: String, text: String) -> some View {

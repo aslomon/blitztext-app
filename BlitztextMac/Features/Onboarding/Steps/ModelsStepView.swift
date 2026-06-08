@@ -23,11 +23,20 @@ struct ModelsStepView: View {
         systemImage: "shippingbox",
         accent: .green,
         title: "Lokale Modelle",
-        subtitle: needsWhisper ? "Lade ein lokales Whisper-Modell." : "Im Online-Modus ist hier nichts Pflicht."
+        subtitle: needsWhisper
+          ? "Lade ein lokales Whisper-Modell." : "Im Online-Modus ist hier nichts Pflicht."
       )
 
       whisperCard
-      ollamaCard
+
+      // Ollama card gated behind InfoDisclosure in online mode (change 10)
+      if needsWhisper {
+        ollamaCard
+      } else {
+        InfoDisclosure("Ollama – lokales Umformen") {
+          ollamaCard
+        }
+      }
     }
   }
 
@@ -44,6 +53,11 @@ struct ModelsStepView: View {
             .font(.system(size: 10, weight: .medium))
             .buttonStyle(PopoverActionButtonStyle(.quiet))
             .disabled(appState.isDownloadingLocalModel)
+        }
+
+        // Download-in-progress status pill above controls (change 10)
+        if appState.isDownloadingLocalModel {
+          BlitzStatusPill(state: .download, label: "Download läuft — bitte warten")
         }
 
         if needsWhisper {
@@ -87,12 +101,14 @@ struct ModelsStepView: View {
   private var stateText: String {
     if appState.selectedLocalModelIsInstalled {
       let count = installedLocalModels.count
-      return "„\(appState.selectedLocalModelDisplayName)“ ist geladen (\(count) Whisper-Modell(e))."
+      return
+        "\u{201E}\(appState.selectedLocalModelDisplayName)\u{201C} ist geladen (\(count) Whisper-Modell(e))."
     }
     if let size = LocalTranscriptionModel.sizeLabel(for: appState.selectedLocalModelName) {
-      return "„\(appState.selectedLocalModelDisplayName)“ ist noch nicht geladen — \(size)."
+      return
+        "\u{201E}\(appState.selectedLocalModelDisplayName)\u{201C} ist noch nicht geladen \u{2014} \(size)."
     }
-    return "„\(appState.selectedLocalModelDisplayName)“ ist noch nicht geladen."
+    return "\u{201E}\(appState.selectedLocalModelDisplayName)\u{201C} ist noch nicht geladen."
   }
 
   private var modelPicker: some View {
@@ -131,8 +147,10 @@ struct ModelsStepView: View {
         appState.installSelectedLocalModel()
       }
       .controlSize(.small)
-      .buttonStyle(PopoverActionButtonStyle(appState.selectedLocalModelIsInstalled ? .secondary : .primary))
-      .disabled(appState.selectedLocalModelIsInstalled)
+      .buttonStyle(
+        PopoverActionButtonStyle(appState.selectedLocalModelIsInstalled ? .secondary : .primary)
+      )
+      .disabled(appState.selectedLocalModelIsInstalled || appState.isDownloadingLocalModel)
     }
   }
 
@@ -143,7 +161,9 @@ struct ModelsStepView: View {
       VStack(alignment: .leading, spacing: 8) {
         SectionLabel(text: "Optional – nur für lokales Umformen")
         InfoDisclosure("Wofür") {
-          Text("Formuliert Texte lokal um (E-Mail, Prompt, Social) über Ollama. Nur nötig, wenn ein Modus offline umformen soll.")
+          Text(
+            "Formuliert Texte lokal um (E-Mail, Prompt, Social) über Ollama. Nur nötig, wenn ein Modus offline umformen soll."
+          )
         }
 
         LocalLLMModelPicker(appState: appState)

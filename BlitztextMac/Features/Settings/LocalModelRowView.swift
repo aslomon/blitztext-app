@@ -39,14 +39,8 @@ struct LocalModelRowView: View {
         .frame(width: 116, alignment: .trailing)
     }
     .padding(10)
-    .background(
-      RoundedRectangle(cornerRadius: 8)
-        .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    // spec #12: .liquidGlassCard(cornerRadius: 8) replaces manual RoundedRectangle.fill + overlay
+    .liquidGlassCard(cornerRadius: 8)
   }
 
   // MARK: - Meta (size · RAM · fit)

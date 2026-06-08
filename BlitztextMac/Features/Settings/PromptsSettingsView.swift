@@ -8,13 +8,12 @@ struct PromptsSettingsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      HStack(spacing: 6) {
+      HStack(spacing: 8) {
+        SectionLabel(text: "Modi")
         BlitzStatusPill(
           state: appState.hasAnyRewriteEngine ? .ready : .warning,
           label: appState.hasAnyRewriteEngine ? "Bereit" : "Modell fehlt"
         )
-        Text("Modi")
-          .font(.system(size: 12.5, weight: .semibold))
         Spacer()
         addModeMenu
       }
@@ -37,7 +36,9 @@ struct PromptsSettingsView: View {
       }
 
       InfoDisclosure("Was Modi tun") {
-        Text("Freitext fügt nur das Diktat ein. E-Mail, Prompt und Social formulieren dein Diktat mit eigenen Anweisungen um.")
+        Text(
+          "Freitext fügt nur das Diktat ein. E-Mail, Prompt und Social formulieren dein Diktat mit eigenen Anweisungen um."
+        )
       }
     }
     .padding(16)
@@ -57,8 +58,10 @@ struct PromptsSettingsView: View {
         }
       }
     } label: {
-      Label("Modus hinzufügen", systemImage: "plus")
+      Image(systemName: "plus")
     }
-    .menuStyle(.borderlessButton)
+    .buttonStyle(PopoverIconButtonStyle(.secondary))
+    .help("Modus hinzufügen")
+    .accessibilityLabel("Modus hinzufügen")
   }
 }

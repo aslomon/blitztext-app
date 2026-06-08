@@ -42,6 +42,7 @@ struct DictationStatsSection: View {
 
   /// 2×2 grid rather than a single 4-wide `HStack`: at the archive window's narrow min width the
   /// four icon+caption+value tiles would clip. The grid wraps to two rows and stays scannable.
+  /// Uses .liquidGlassCard(cornerRadius: 10) in place of manual fill + overlay.
   private var statTiles: some View {
     Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
       GridRow {
@@ -60,14 +61,7 @@ struct DictationStatsSection: View {
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 10)
-        .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    .liquidGlassCard(cornerRadius: 10)
   }
 
   /// Icon + value + caption tile, mirroring `LocalModelsView.systemStat`.
@@ -87,23 +81,47 @@ struct DictationStatsSection: View {
 
   // MARK: - Per-mode breakdown
 
-  /// "E-Mail 12 · Prompt 5 · Diktat 30" — uses each mode's user-facing display name.
+  /// Compact FlowLayout of mode chips. Each chip's tint derives from its mode's accent color
+  /// (DESIGN.md: blue/green/purple/orange/cyan per mode), replacing the flat dot-separated Text.
   private var modeBreakdown: some View {
-    VStack(alignment: .leading, spacing: 4) {
+    VStack(alignment: .leading, spacing: 6) {
       Text("Nach Modus")
         .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(.secondary)
-      Text(breakdownText)
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+      FlowLayout(spacing: 6) {
+        ForEach(stats.perMode, id: \.mode) { entry in
+          ModeChip(
+            label: "\(appState.displayName(for: entry.mode)) \(entry.runs)",
+            accent: entry.mode.accentColorValue
+          )
+        }
+      }
     }
   }
+}
 
-  private var breakdownText: String {
-    stats.perMode
-      .map { "\(appState.displayName(for: $0.mode)) \($0.runs)" }
-      .joined(separator: " · ")
+// MARK: - Mode chip
+
+/// Small capsule chip with a mode-accent tint. Used in modeBreakdown.
+private struct ModeChip: View {
+  let label: String
+  let accent: Color
+
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    Text(label)
+      .font(.system(size: 10, weight: .medium))
+      .foregroundStyle(.primary)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 3)
+      .background(
+        Capsule().fill(MenuBarTokens.tintFill(accent, colorScheme: colorScheme))
+      )
+      .overlay(
+        Capsule().strokeBorder(
+          MenuBarTokens.tintStroke(accent, colorScheme: colorScheme), lineWidth: 0.5)
+      )
   }
 }
 

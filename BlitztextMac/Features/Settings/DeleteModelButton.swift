@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A red "Entfernen" button that confirms before deleting an installed Ollama model (which frees
+/// An icon-only "trash" button that confirms before deleting an installed Ollama model (which frees
 /// several GB on disk). Shared by the inline catalog rows and the installed-models list so the
 /// destructive flow + copy stays consistent in both places.
 struct DeleteModelButton: View {
@@ -15,24 +15,30 @@ struct DeleteModelButton: View {
   @State private var confirming = false
 
   var body: some View {
-    Button("Entfernen") { confirming = true }
-      .buttonStyle(PopoverActionButtonStyle(.danger))
-      .font(.system(size: 10.5, weight: .medium))
-      .confirmationDialog(
-        "\(displayName) entfernen?",
-        isPresented: $confirming,
-        titleVisibility: .visible
-      ) {
-        Button("Entfernen", role: .destructive) { manager.delete(deleteTag) }
-        Button("Abbrechen", role: .cancel) {}
-      } message: {
-        if let freedSizeGB {
-          Text(
-            "Gibt \(SystemCapabilities.formatGB(freedSizeGB)) auf der Disk frei. "
-              + "Du kannst das Modell später jederzeit neu laden.")
-        } else {
-          Text("Du kannst das Modell später jederzeit neu laden.")
-        }
+    // spec #13: icon-only trash button (PopoverIconButtonStyle(.danger), 28×28 touch target)
+    // spec #13: .accessibilityLabel includes model display name for VoiceOver context
+    Button {
+      confirming = true
+    } label: {
+      Image(systemName: "trash")
+    }
+    .buttonStyle(PopoverIconButtonStyle(.danger))
+    .accessibilityLabel("\(displayName) entfernen")
+    .confirmationDialog(
+      "\(displayName) entfernen?",
+      isPresented: $confirming,
+      titleVisibility: .visible
+    ) {
+      Button("Entfernen", role: .destructive) { manager.delete(deleteTag) }
+      Button("Abbrechen", role: .cancel) {}
+    } message: {
+      if let freedSizeGB {
+        Text(
+          "Gibt \(SystemCapabilities.formatGB(freedSizeGB)) auf der Disk frei. "
+            + "Du kannst das Modell später jederzeit neu laden.")
+      } else {
+        Text("Du kannst das Modell später jederzeit neu laden.")
       }
+    }
   }
 }

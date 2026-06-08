@@ -30,6 +30,11 @@ private struct MainPageView: View {
   @Bindable var appState: AppState
   @Environment(\.colorScheme) private var colorScheme
 
+  // MARK: State for engine footer expand/collapse (spec change #1)
+  @State private var engineExpanded = false
+  // MARK: Namespace for workflow row glass morphing (spec change #6)
+  @Namespace private var rowNamespace
+
   var body: some View {
     VStack(spacing: 0) {
       headerBand
@@ -42,19 +47,20 @@ private struct MainPageView: View {
           .padding(.bottom, 6)
       }
 
-      enginePanel
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, appState.accessibilityPermissionGranted ? 6 : 4)
-
       if !appState.accessibilityPermissionGranted {
         accessibilityHintBanner
           .padding(.horizontal, 16)
+          .padding(.top, 12)
           .padding(.bottom, 6)
       }
 
       workflowList
         .padding(.vertical, 2)
+
+      engineFooter
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 6)
 
       appFooter
     }
@@ -111,22 +117,18 @@ private struct MainPageView: View {
     .background(MenuBarTokens.headerBand(colorScheme: colorScheme))
   }
 
+  // MARK: Status lines
+
+  // Spec change #4: Replace raw Circle dot + Text with BlitzStatusPill(.ready)
   private var configuredStatusLine: some View {
-    HStack(spacing: 6) {
-      Circle()
-        .fill(.green)
-        .frame(width: 7, height: 7)
-      Text("Bereit")
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(.primary)
-    }
+    BlitzStatusPill(state: .ready, label: "Bereit")
   }
 
+  // Spec change #5: Remove the three-line body Text paragraph; keep icon circle, headline, button
   private var unconfiguredStatusLine: some View {
     VStack(spacing: 10) {
       ZStack {
         Circle()
-          // Was hardcoded Color.orange.opacity(0.1) — now colorScheme-aware
           .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
           .frame(width: 40, height: 40)
         Image(systemName: "key.fill")
@@ -134,21 +136,9 @@ private struct MainPageView: View {
           .foregroundStyle(.orange)
       }
 
-      VStack(spacing: 4) {
-        Text("Einrichtung nötig")
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(.primary)
-
-        Text(
-          "Starte die geführte Einrichtung, um Blitztext in wenigen Schritten startklar zu machen."
-        )
-        .font(.system(size: 11.5))
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .lineLimit(nil)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 20)
-      }
+      Text("Einrichtung nötig")
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(.primary)
 
       Button {
         NotificationCenter.default.post(name: .openOnboardingWindow, object: nil)
@@ -159,9 +149,62 @@ private struct MainPageView: View {
     }
   }
 
+  // MARK: Engine Footer (spec change #1 + #2)
+  //
+  // Compressed to a BlitzStatusPill at rest; tap to reveal the full enginePanel inline.
+  // Saves ~60pt vertical space in the default state.
+
+  private var engineFooter: some View {
+    VStack(spacing: 0) {
+      // Compressed pill — always visible
+      Button {
+        withAnimation(.easeInOut(duration: 0.2)) {
+          engineExpanded.toggle()
+        }
+      } label: {
+        HStack(spacing: 6) {
+          BlitzStatusPill(
+            state: appState.appSettings.secureLocalModeEnabled ? .local : .online,
+            label: engineStatusSummary
+          )
+          Spacer()
+          Image(systemName: engineExpanded ? "chevron.up" : "chevron.down")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Transkriptions-Engine")
+      .accessibilityHint(engineExpanded ? "Einklappen" : "Ausklappen")
+
+      // Expanded engine panel (spec change #2: .liquidGlassCard replaces manual RoundedRect)
+      if engineExpanded {
+        enginePanel
+          .padding(.top, 4)
+          .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+    }
+  }
+
+  /// One-line summary shown in the compressed pill label.
+  private var engineStatusSummary: String {
+    if appState.appSettings.secureLocalModeEnabled {
+      if appState.isDownloadingLocalModel {
+        return appState.localModelDownloadStatusText ?? "Modell wird geladen…"
+      }
+      if appState.selectedLocalModelIsInstalled {
+        return "Lokal · \(appState.selectedLocalModelDisplayName)"
+      }
+      return "\(appState.selectedLocalModelDisplayName) nicht geladen"
+    }
+    return "Online · Whisper"
+  }
+
   // MARK: Engine Panel
 
-  /// Replaces the bare Toggle with a 2-segment Picker + status line for clarity.
+  // Spec change #2: .liquidGlassCard() replaces the manual RoundedRectangle fill + overlay pair
   private var enginePanel: some View {
     let modelOptions = LocalTranscriptionService.modelOptions()
     let selectedModelInstalled = appState.selectedLocalModelIsInstalled
@@ -247,15 +290,7 @@ private struct MainPageView: View {
       }
     }
     .padding(10)
-    .background(
-      RoundedRectangle(cornerRadius: 10)
-        // Was Color.primary.opacity(0.035) — invisible in dark mode; now colorScheme-aware
-        .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    .liquidGlassCard(cornerRadius: LiquidGlass.cardCornerRadius)
   }
 
   private var engineStatusLine: some View {
@@ -297,6 +332,7 @@ private struct MainPageView: View {
 
   // MARK: Banners
 
+  // Spec change #3: .liquidGlassInfoBanner(accent: .orange) replaces manual tintFill + strokeBorder
   private var accessibilityHintBanner: some View {
     HStack(alignment: .top, spacing: 10) {
       Image(systemName: "hand.raised.fill")
@@ -324,17 +360,10 @@ private struct MainPageView: View {
       .buttonStyle(PopoverActionButtonStyle(.warning))
     }
     .padding(10)
-    .background(
-      RoundedRectangle(cornerRadius: 10)
-        // Was hardcoded Color.orange.opacity(0.08) — too faint in dark mode
-        .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(MenuBarTokens.tintStroke(.orange, colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    .liquidGlassInfoBanner(accent: .orange)
   }
 
+  // Spec change #3: same treatment for installHintBanner
   private var installHintBanner: some View {
     HStack(alignment: .top, spacing: 10) {
       Image(systemName: "externaldrive.badge.plus")
@@ -362,20 +391,16 @@ private struct MainPageView: View {
       .buttonStyle(PopoverActionButtonStyle(.warning))
     }
     .padding(10)
-    .background(
-      RoundedRectangle(cornerRadius: 10)
-        .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(MenuBarTokens.tintStroke(.orange, colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    .liquidGlassInfoBanner(accent: .orange)
   }
 
-  // MARK: Workflow list
+  // MARK: Workflow list (spec change #6)
+  //
+  // ForEach wrapped in GlassEffectContainerView for adjacent-row morphing on macOS 26.
+  // rowNamespace is passed down so .glassEffectID works across all rows.
 
   private var workflowList: some View {
-    VStack(spacing: 0) {
+    GlassEffectContainerView(spacing: 0, axis: .vertical) {
       ForEach(appState.mainMenuModeConfigs) { config in
         let enabled = appState.isWorkflowAvailable(config)
         WorkflowRowView(
@@ -383,7 +408,8 @@ private struct MainPageView: View {
           enabled: enabled,
           customName: appState.displayName(for: config),
           subtitle: appState.workflowSubtitle(for: config),
-          hotkeyLabel: appState.hotkeyLabel(for: config.id)
+          hotkeyLabel: appState.hotkeyLabel(for: config.id),
+          namespace: rowNamespace
         ) {
           appState.startModeFromPopover(config.id)
         }
@@ -461,6 +487,8 @@ private struct SettingsPageView: View {
 
 private struct WorkflowPageView: View {
   @Bindable var appState: AppState
+  // Spec change #10: colorScheme needed for headerBand
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     VStack(spacing: 0) {
@@ -505,6 +533,7 @@ private struct WorkflowPageView: View {
     }
   }
 
+  // Spec change #10: .semibold size 13, headerBand background, Divider, accent on icon
   private func workflowHeader(workflow: any Workflow) -> some View {
     HStack {
       Button {
@@ -525,18 +554,20 @@ private struct WorkflowPageView: View {
       HStack(spacing: 5) {
         Image(systemName: workflow.type.icon)
           .font(.system(size: 11))
+          // Accent colour explicitly set — not overridden by .primary
           .foregroundStyle(workflow.type.accentColorValue)
         Text(appState.displayName(for: workflow.type))
-          .font(.system(size: 12, weight: .medium))
+          // Spec change #10: .semibold weight, size 13
+          .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(.primary)
       }
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 10)
+    .background(MenuBarTokens.headerBand(colorScheme: colorScheme))
   }
 
-  /// Honest note shown after a run whose recording hit the safety cap and was auto-stopped — the
-  /// captured part was still transcribed, but the user should know the tail was cut.
+  // Spec change #11: .liquidGlassInfoBanner(accent: .orange) replaces manual padding+background+overlay
   private var truncationBanner: some View {
     let minutes = Int(AudioRecorder.maxRecordingDuration / 60)
     return HStack(alignment: .top, spacing: 6) {
@@ -552,6 +583,8 @@ private struct WorkflowPageView: View {
       .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
     }
+    .padding(10)
+    .liquidGlassInfoBanner(accent: .orange)
     .padding(.horizontal, 16)
     .padding(.bottom, 8)
   }
@@ -559,6 +592,7 @@ private struct WorkflowPageView: View {
 
 // MARK: - Shared footer (used on all pages)
 
+// Spec change #12: trailing alignment — Spacer() – Beenden (no leading Spacer, no centring)
 private var appFooter: some View {
   HStack {
     Spacer()
@@ -567,8 +601,8 @@ private var appFooter: some View {
     }
     .font(.system(size: 10, weight: .medium))
     .buttonStyle(PopoverActionButtonStyle(.quiet))
-    Spacer()
   }
+  .padding(.horizontal, 16)
   .padding(.vertical, 8)
 }
 
@@ -598,6 +632,8 @@ private struct RecordingBodyView: View {
         .frame(height: 44)
         .padding(.horizontal, 24)
 
+      // Spec change #13: GlassActionButtonStyle on macOS 26; existing Circle+RoundedRect
+      // construction lives inside GlassActionButtonStyle's macOS 14–25 fallback path.
       Button(action: onStop) {
         ZStack {
           Circle()
@@ -608,8 +644,9 @@ private struct RecordingBodyView: View {
             .frame(width: 14, height: 14)
         }
       }
-      .buttonStyle(.plain)
+      .buttonStyle(GlassActionButtonStyle())
       .keyboardShortcut(.return, modifiers: [])
+      // Spec change #13: accessibilityLabel verified present
       .accessibilityLabel("Aufnahme beenden")
 
       VStack(spacing: 4) {
@@ -837,12 +874,10 @@ private struct _AutoPasteView: View {
   private var title: String { copyOnly ? "In die Zwischenablage kopiert" : "Eingefügt" }
 
   var body: some View {
+    // Spec change #14: .padding(.top, 16) on VStack replaces Spacer().frame(height: 20)
     VStack(spacing: 12) {
-      Spacer().frame(height: 20)
-
       ZStack {
         Circle()
-          // Was hardcoded Color.green.opacity(0.1) — now colorScheme-aware
           .fill(MenuBarTokens.tintFill(accent, colorScheme: colorScheme))
           .frame(width: 44, height: 44)
         Image(systemName: iconName)
@@ -868,15 +903,18 @@ private struct _AutoPasteView: View {
           .padding(.horizontal, 8)
       }
 
+      // Spec change #14: .lineLimit(1), .leading alignment
       Text(text)
         .font(.system(size: 11))
         .foregroundStyle(.secondary)
-        .lineLimit(3)
-        .multilineTextAlignment(.center)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8)
 
       Spacer().frame(height: 12)
     }
+    .padding(.top, 16)
   }
 }
 
@@ -895,7 +933,6 @@ private struct _ErrorView: View {
 
       ZStack {
         Circle()
-          // Was hardcoded Color.orange.opacity(0.1) — now colorScheme-aware
           .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
           .frame(width: 40, height: 40)
         Image(systemName: "exclamationmark.triangle.fill")

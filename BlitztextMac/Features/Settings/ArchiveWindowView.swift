@@ -81,6 +81,7 @@ struct ArchiveWindowView: View {
       }
     }
     .pickerStyle(.segmented)
+    .controlSize(.small)
     .labelsHidden()
     .accessibilityLabel("Archiv-Ansicht")
   }

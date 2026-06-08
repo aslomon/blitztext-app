@@ -49,6 +49,7 @@ struct PermissionsStepView: View {
           }
         }
 
+        // Primary grant action (only shown when not yet granted) (change 11)
         HStack(spacing: 8) {
           if micStatus == .notDetermined {
             Button("Mikrofon erlauben") { requestMicrophone() }
@@ -60,10 +61,17 @@ struct PermissionsStepView: View {
             .buttonStyle(PopoverActionButtonStyle(.warning))
           }
 
-          Button("Erneut prüfen") {
-            micStatus = MicrophonePermissionService.currentStatus
+          // 'Erneut prüfen' hidden when already granted; rendered as subordinate icon-button
+          // when not granted (change 11)
+          if !micStatus.isGranted {
+            Button {
+              micStatus = MicrophonePermissionService.currentStatus
+            } label: {
+              Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(PopoverIconButtonStyle(.quiet))
+            .help("Status aktualisieren")
           }
-          .buttonStyle(PopoverActionButtonStyle(.secondary))
         }
       }
     }

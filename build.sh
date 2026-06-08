@@ -156,6 +156,11 @@ fi
 
 # Bauen
 echo "🔨 Baue Blitztext ..."
+# ENABLE_DEBUG_DYLIB=NO: Xcode 16 splits Debug builds into a launcher + Blitztext.debug.dylib.
+# Our standalone re-sign (sign_app_bundle) signs the bundle non-deep, so the nested debug dylib
+# keeps its original signature → mismatched Team IDs → dyld aborts at launch. Forcing a single
+# merged binary (as Release already is) keeps `--debug` builds launchable outside Xcode. No-op for
+# Release. Does NOT affect Xcode's own interactive builds/previews (this only constrains build.sh).
 xcodebuild \
     -project BlitztextMac.xcodeproj \
     -scheme BlitztextMac \
@@ -164,6 +169,7 @@ xcodebuild \
     -derivedDataPath "$DERIVED_DATA_PATH" \
     ONLY_ACTIVE_ARCH=NO \
     ARCHS="$UNIVERSAL_ARCHS" \
+    ENABLE_DEBUG_DYLIB=NO \
     clean build
 
 # App finden

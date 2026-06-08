@@ -1,37 +1,18 @@
 import SwiftUI
 
-/// Step 6: a recap of what got configured, plus a secondary jump into the full settings. The
-/// primary "Fertig" lives in the shared footer and calls `viewModel.finish`.
+/// Step 6: a recap of what got configured. The primary "Fertig" and secondary "Zu den Einstellungen"
+/// buttons live in the shared footer (change 4). This step owns only the recap content.
 struct FinishStepView: View {
   @Bindable var appState: AppState
-  /// Invoked by "Zu den Einstellungen": finishes onboarding, closes the wizard, opens the popover
-  /// settings. Wired by the wizard root so this step stays free of window/notification plumbing.
+  /// Invoked by the footer's "Zu den Einstellungen": finishes onboarding, closes the wizard, opens
+  /// the popover settings. Wired by the wizard root so this step stays free of window plumbing.
   let onOpenSettings: () -> Void
 
   private var micGranted: Bool { MicrophonePermissionService.currentStatus.isGranted }
 
   var body: some View {
     VStack(alignment: .leading, spacing: OnboardingChrome.contentSpacing) {
-      HStack(spacing: 12) {
-        ZStack {
-          Circle()
-            .fill(Color.green.opacity(0.12))
-            .frame(width: 44, height: 44)
-          Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 24))
-            .foregroundStyle(.green)
-        }
-        VStack(alignment: .leading, spacing: 3) {
-          Text("Fast geschafft")
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.primary)
-          Text("Hier ist deine Einrichtung im Überblick. Mit „Fertig“ legst du los.")
-            .font(.system(size: 11.5))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        Spacer(minLength: 0)
-      }
+      successHeader
 
       OnboardingCard {
         VStack(alignment: .leading, spacing: 10) {
@@ -59,31 +40,58 @@ struct FinishStepView: View {
         }
       }
 
-      discoverCard
-
-      Button("Zu den Einstellungen") { onOpenSettings() }
-        .buttonStyle(PopoverActionButtonStyle(.secondary))
-        .font(.system(size: 12, weight: .medium))
+      // discoverCard collapsed behind InfoDisclosure (change 12)
+      InfoDisclosure("Was du später entdecken kannst") {
+        discoverContent
+      }
     }
   }
 
-  /// Surfaces the optional, on-device extras a first-run user wouldn't otherwise discover, so they
-  /// know these exist (all opt-in, all local).
-  private var discoverCard: some View {
-    OnboardingCard {
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Außerdem dabei")
-          .font(.system(size: 12, weight: .semibold))
-        discoverRow(
-          "archivebox",
-          "Lokales Archiv & Diktier-Statistik — opt-in, alles bleibt auf deinem Mac.")
-        discoverRow(
-          "wand.and.stars",
-          "Lernt aus deinen Korrekturen und schlägt feste Wörterbuch-Wörter vor.")
-        discoverRow(
-          "speaker.wave.2",
-          "Optionale Töne bei Start, Fertig und Fehler — fürs Diktieren ohne Hinsehen.")
+  // MARK: - Success header
+
+  /// 44pt checkmark circle: glass capsule on macOS 26+, flat green circle on macOS 14–25 (change 12).
+  private var successHeader: some View {
+    HStack(spacing: 12) {
+      ZStack {
+        Circle()
+          .fill(Color.green.opacity(0.12))
+          .frame(width: 44, height: 44)
+        Image(systemName: "checkmark.circle.fill")
+          .font(.system(size: 24))
+          .foregroundStyle(.green)
       }
+      // liquidGlassCapsule provides the macOS 26 glass celebration moment;
+      // on macOS 14–25 it falls back to .regularMaterial + shadow (change 12).
+      .liquidGlassCapsule(accent: .green)
+      .frame(width: 44, height: 44)
+
+      VStack(alignment: .leading, spacing: 3) {
+        Text("Fast geschafft")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(.primary)
+        Text("Hier ist deine Einrichtung im Überblick. Mit \u{201E}Fertig\u{201C} legst du los.")
+          .font(.system(size: 11.5))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+    }
+  }
+
+  // MARK: - Discover content (behind InfoDisclosure, change 12)
+
+  /// Surfaces the optional, on-device extras a first-run user wouldn't otherwise discover.
+  private var discoverContent: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      discoverRow(
+        "archivebox",
+        "Lokales Archiv & Diktier-Statistik — opt-in, alles bleibt auf deinem Mac.")
+      discoverRow(
+        "wand.and.stars",
+        "Lernt aus deinen Korrekturen und schlägt feste Wörterbuch-Wörter vor.")
+      discoverRow(
+        "speaker.wave.2",
+        "Optionale Töne bei Start, Fertig und Fehler — fürs Diktieren ohne Hinsehen.")
     }
   }
 
@@ -123,7 +131,7 @@ struct FinishStepView: View {
   private var whisperDetail: String {
     if !isLocal { return "Online über OpenAI Whisper." }
     return appState.selectedLocalModelIsInstalled
-      ? "„\(appState.selectedLocalModelDisplayName)“ ist geladen."
+      ? "\u{201E}\(appState.selectedLocalModelDisplayName)\u{201C} ist geladen."
       : "Lokales Modell fehlt noch."
   }
 }

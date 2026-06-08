@@ -4,12 +4,11 @@ import SwiftUI
 
 /// ONE page for everything word-related, grouped by INTENT instead of being scattered across the
 /// Modelle and Archiv tabs as three overlapping mechanisms:
-///  1. "Richtig erkennen" — known words Whisper should hear + spell correctly. This MERGES the old
-///     Eigennamen (manual) and the auto-learned Memory terms into ONE list, since they were
-///     functionally identical and edited in two places.
-///  2. "Memory" — one master for vocabulary memory, semantic email memory and optional correction
-///     learning.
-///  3. "Fest ersetzen" — the dictation dictionary (say A → write B) + spoken punctuation.
+///  1. "Memory" — master toggle + status = primary concern; sits at the top.
+///  2. "Eigene Identität" — foundational, short.
+///  3. "Begriffe" — known words Whisper should hear + spell correctly. Merges old Eigennamen
+///     (manual) and auto-learned Memory terms into ONE list; functionally identical.
+///  4. "Diktier-Wörterbuch" — say A → write B, plus spoken punctuation.
 /// The underlying stores and the term-injection pipeline are unchanged; this only unifies the UI.
 struct VocabularySettingsView: View {
   @Bindable var appState: AppState
@@ -18,12 +17,10 @@ struct VocabularySettingsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      intro
-      identitySection
-      vocabularyExplanation
-      recognizeSection
-      Divider().opacity(0.5)
       memorySection
+      Divider().opacity(0.5)
+      identitySection
+      recognizeSection
       Divider().opacity(0.5)
       DictationDictionarySection(appState: appState)
     }
@@ -33,6 +30,10 @@ struct VocabularySettingsView: View {
     }
   }
 
+  // MARK: - Suggestions nudge banner
+
+  /// Tinted EmptyStateCard-style banner with badge count + CTA. Shown at the top of memorySection
+  /// body (below master toggle) when there are pending improvement suggestions.
   @ViewBuilder
   private var improvementSuggestionsNudge: some View {
     let count = appState.improvementSuggestions.count
@@ -40,38 +41,36 @@ struct VocabularySettingsView: View {
       Button {
         NotificationCenter.default.post(name: .openArchiveWindow, object: nil)
       } label: {
-        HStack(spacing: 6) {
-          Image(systemName: "wand.and.stars")
-            .font(.system(size: 11, weight: .semibold))
+        HStack(spacing: 8) {
+          // Badge count — prominent
+          Text("\(count)")
+            .font(.system(size: 13, weight: .bold, design: .rounded))
             .foregroundStyle(.blue)
-          Text(
-            count == 1
-              ? "1 neuer Lern-Vorschlag — ansehen"
-              : "\(count) neue Lern-Vorschläge — ansehen"
-          )
-          .font(.system(size: 10.5, weight: .medium))
-          .foregroundStyle(.blue)
+            .frame(minWidth: 20)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(count == 1 ? "Neuer Lern-Vorschlag" : "\(count) neue Lern-Vorschläge")
+              .font(.system(size: 11, weight: .semibold))
+              .foregroundStyle(.primary)
+            Text("Im Archiv ansehen →")
+              .font(.system(size: 10.5))
+              .foregroundStyle(.blue)
+          }
+          Spacer(minLength: 0)
+          Image(systemName: "chevron.right")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.tertiary)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .liquidGlassInfoBanner(accent: .blue)
       }
-      .buttonStyle(PopoverActionButtonStyle(.secondary))
-    }
-  }
-
-  private var intro: some View {
-    Text("Schreibweisen, gelernter Kontext und feste Ersetzungen.")
-    .font(.system(size: 10.5))
-    .foregroundStyle(.secondary)
-    .fixedSize(horizontal: false, vertical: true)
-  }
-
-  private var vocabularyExplanation: some View {
-    InfoDisclosure("Unterschiede") {
-      VStack(alignment: .leading, spacing: 5) {
-        Text("Begriffe: Namen, Marken und Fachwörter. Sie helfen Transkription und Rewrite, Wörter korrekt zu schreiben. Sie sind keine Erinnerung an ganze Texte.")
-        Text("Memory: lernt aus deinem Archiv. Wiederkehrende Eigen- und Fachbegriffe werden automatisch normale Begriffe; bei E-Mail kann Memory zusätzlich ähnliche frühere Antworten als lokalen Hintergrund finden.")
-        Text("Wenn ein automatisch gelernter Begriff nicht passt, entfernst du ihn aus der Begriffsliste. Danach wird er nicht erneut gelernt.")
-        Text("Ersetzungen: feste Regeln wie gesagtes Wort A → geschriebener Text B. Sie werden direkt auf den transkribierten Text angewendet.")
-      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(
+        count == 1
+          ? "1 neuer Lern-Vorschlag — Im Archiv ansehen"
+          : "\(count) neue Lern-Vorschläge — Im Archiv ansehen"
+      )
     }
   }
 
@@ -84,10 +83,12 @@ struct VocabularySettingsView: View {
         .textFieldStyle(.roundedBorder)
         .font(.system(size: 11))
 
-      Text("Wird lokal gespeichert, als Schreibweise-Hinweis genutzt und im E-Mail-Modus als „Ich schreibe als …“ mitgegeben.")
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+      Text(
+        "Wird lokal gespeichert, als Schreibweise-Hinweis genutzt und im E-Mail-Modus als \u{201E}Ich schreibe als \u{2026}\u{201C} mitgegeben."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
 
@@ -134,11 +135,28 @@ struct VocabularySettingsView: View {
 
       fuzzyToggle
 
+      // Contextually relevant here — explains how Begriffe are used
       InfoDisclosure("Wie Begriffe genutzt werden") {
         VStack(alignment: .leading, spacing: 5) {
-          Text("Beim Diktieren werden sie als Whisper-Hinweis mitgegeben, damit ähnlich klingende Wörter eher richtig erkannt werden.")
-          Text("Beim Umschreiben werden sie dem Sprachmodell als Schreibweisen-Liste gegeben: Wenn der Begriff vorkommt, soll er exakt so geschrieben werden.")
-          Text("Manuell hinzugefügte und automatisch gelernte Begriffe landen in derselben sichtbaren Liste.")
+          Text(
+            "Beim Diktieren werden sie als Whisper-Hinweis mitgegeben, damit ähnlich klingende Wörter eher richtig erkannt werden."
+          )
+          Text(
+            "Beim Umschreiben werden sie dem Sprachmodell als Schreibweisen-Liste gegeben: Wenn der Begriff vorkommt, soll er exakt so geschrieben werden."
+          )
+          Text(
+            "Manuell hinzugefügte und automatisch gelernte Begriffe landen in derselben sichtbaren Liste."
+          )
+          Divider().opacity(0.4)
+          Text(
+            "Memory: lernt aus deinem Archiv. Wiederkehrende Eigen- und Fachbegriffe werden automatisch normale Begriffe; bei E-Mail kann Memory zusätzlich ähnliche frühere Antworten als lokalen Hintergrund finden."
+          )
+          Text(
+            "Wenn ein automatisch gelernter Begriff nicht passt, entfernst du ihn aus der Begriffsliste. Danach wird er nicht erneut gelernt."
+          )
+          Text(
+            "Ersetzungen: feste Regeln wie gesagtes Wort A → geschriebener Text B. Sie werden direkt auf den transkribierten Text angewendet."
+          )
         }
       }
     }
@@ -156,10 +174,12 @@ struct VocabularySettingsView: View {
       .controlSize(.small)
       .font(.system(size: 11.5))
 
-      Text("Korrigiert Tippfehler-nahe Schreibweisen deiner Begriffe (z. B. „Rinert“ → „Rinnert“).")
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+      Text(
+        "Korrigiert Tippfehler-nahe Schreibweisen deiner Begriffe (z. B. \u{201E}Rinert\u{201C} \u{2192} \u{201E}Rinnert\u{201C})."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
 
@@ -180,6 +200,7 @@ struct VocabularySettingsView: View {
         perform: { Task { await appState.localModelManager.refresh() } }
       )
     ) {
+      // 1. Master toggle + status pill
       HStack {
         Toggle("Memory aktivieren", isOn: $appState.isUnifiedMemoryEnabled)
           .toggleStyle(.switch)
@@ -189,30 +210,45 @@ struct VocabularySettingsView: View {
       }
 
       if appState.isUnifiedMemoryEnabled {
+        // 2. Suggestions nudge banner — top of expanded body, before InfoDisclosure
+        improvementSuggestionsNudge
+
+        // 3. "Jetzt analysieren" directly below master toggle (primary action)
+        HStack(spacing: 8) {
+          if appState.isRecomputingMemory {
+            ProgressView()
+              .controlSize(.small)
+          }
+          Button("Jetzt analysieren") { appState.recomputeMemory() }
+            .buttonStyle(PopoverActionButtonStyle(.primary))
+            .disabled(appState.isRecomputingMemory || !appState.isArchiveEnabled)
+        }
+
+        // 4. InfoDisclosure — optional details
         InfoDisclosure("Was Memory macht") {
           VStack(alignment: .leading, spacing: 5) {
-            Text("Vokabular-Memory: sucht im Archiv nach wiederkehrenden Namen und Fachbegriffen. Namen/Fremdwörter werden nach zwei Vorkommen übernommen, Fachbegriffe nach drei.")
-            Text("E-Mail Memory: speichert fertige E-Mail-Antworten lokal mit Embeddings und findet beim nächsten E-Mail-Modus ähnliche frühere Antworten als Hintergrund.")
-            Text("Korrekturlernen: liest nach dem Einfügen optional nochmal den Feldinhalt, um deine manuellen Korrekturen als Vorschläge zu erkennen.")
-            Text("Memory aus stoppt Lernen und Kontextsuche. Bereits gelernte Begriffe bleiben als Vokabular aktiv.")
+            Text(
+              "Vokabular-Memory: sucht im Archiv nach wiederkehrenden Namen und Fachbegriffen. Namen/Fremdwörter werden nach zwei Vorkommen übernommen, Fachbegriffe nach drei."
+            )
+            Text(
+              "E-Mail Memory: speichert fertige E-Mail-Antworten lokal mit Embeddings und findet beim nächsten E-Mail-Modus ähnliche frühere Antworten als Hintergrund."
+            )
+            Text(
+              "Korrekturlernen: liest nach dem Einfügen optional nochmal den Feldinhalt, um deine manuellen Korrekturen als Vorschläge zu erkennen."
+            )
+            Text(
+              "Memory aus stoppt Lernen und Kontextsuche. Bereits gelernte Begriffe bleiben als Vokabular aktiv."
+            )
           }
         }
 
         emailMemoryStatusRow
 
-        if appState.isRecomputingMemory {
-          ProgressView().controlSize(.small).scaleEffect(0.7)
-        }
-
-        Button("Jetzt analysieren") { appState.recomputeMemory() }
-          .buttonStyle(PopoverActionButtonStyle(.primary))
-          .disabled(appState.isRecomputingMemory || !appState.isArchiveEnabled)
-
         Toggle("Aus Korrekturen lernen", isOn: $appState.isImprovementDetectionEnabled)
           .toggleStyle(.switch)
           .controlSize(.small)
 
-        improvementSuggestionsNudge
+        // 5. Destructive buttons stacked vertically — reduces mis-tap risk
         clearMemoryControls
       }
     }
@@ -307,8 +343,10 @@ struct VocabularySettingsView: View {
     }
   }
 
+  /// Two destructive buttons stacked vertically (6pt gap) instead of side-by-side HStack.
+  /// Reduces mis-tap risk at 410pt popover width.
   private var clearMemoryControls: some View {
-    HStack(spacing: 8) {
+    VStack(alignment: .leading, spacing: 6) {
       clearMemoryButton
       clearEmailMemoryButton
     }
@@ -317,23 +355,27 @@ struct VocabularySettingsView: View {
 
 // MARK: - Chips
 
-/// A recognize term in the merged list. Shows a small source glyph (person = manual, sparkle =
-/// learned from Memory) and a trailing ✕ that removes it from whichever store owns it.
+/// A recognize term in the merged list. Shows a small source glyph (person = manual,
+/// wand.and.stars = learned from Memory) and a trailing ✕ that removes it from whichever
+/// store owns it.
 private struct RecognizeChip: View {
   let term: AppState.RecognizeTerm
   let onRemove: () -> Void
 
-  @Environment(\.colorScheme) private var colorScheme
-
   var body: some View {
     HStack(spacing: 4) {
-      Image(systemName: term.fromMemory ? "sparkles" : "person.fill")
+      // "sparkles" (purple) replaced by "wand.and.stars" (.secondary) — avoids collision
+      // with the textImprover mode accent (purple per DESIGN.md). Manual chips stay .tertiary
+      // so the two source types are distinguishable without colour.
+      Image(systemName: term.fromMemory ? "wand.and.stars" : "person.fill")
         .font(.system(size: 8, weight: .semibold))
-        .foregroundStyle(term.fromMemory ? AnyShapeStyle(.purple) : AnyShapeStyle(.secondary))
+        .foregroundStyle(term.fromMemory ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
         .help(term.fromMemory ? "Aus dem Archiv gelernt" : "Manuell hinzugefügt")
       Text(term.text)
         .font(.system(size: 10.5))
         .foregroundStyle(.primary)
+      // Replaced SubtleButtonStyle with .plain + .contentShape(Circle) for 18pt minimum tap area
+      // without adding visual weight — keeps chip visually minimal.
       Button {
         onRemove()
       } label: {
@@ -341,13 +383,14 @@ private struct RecognizeChip: View {
           .font(.system(size: 7, weight: .bold))
           .foregroundStyle(.tertiary)
       }
-      .buttonStyle(SubtleButtonStyle())
+      .buttonStyle(.plain)
+      .contentShape(Circle().scale(1.6))
       .help("Entfernen")
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 4)
-    .background(Capsule().fill(MenuBarTokens.cardFill(colorScheme: colorScheme)))
-    .overlay(
-      Capsule().strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5))
+    // ChipBackgroundModifier: thinMaterial on macOS 26+, MenuBarTokens fill on 14–25.
+    // Per no-stacking rule: .thinMaterial (not .glassEffect) inside GroupBox.
+    .modifier(ChipBackgroundModifier(accent: .blue))
   }
 }

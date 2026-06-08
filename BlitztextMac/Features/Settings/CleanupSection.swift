@@ -52,6 +52,7 @@ struct CleanupSection: View {
         "Zugangsdaten und Einstellungen dieses Macs löschen", isOn: $deleteLocalDataOnCleanup
       )
       .toggleStyle(.switch)
+      .controlSize(.small)
 
       Text(
         "Danach Blitztext beenden und die App aus /Applications löschen. Bereits verwaiste alte Login-Items können in den Systemeinstellungen einmalig manuell entfernt werden."

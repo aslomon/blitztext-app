@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// "Diktier-Wörterbuch" section for the Modelle tab. Lets the user toggle spoken-punctuation
+/// "Diktier-Wörterbuch" section for the Vokabular tab. Lets the user toggle spoken-punctuation
 /// recognition and maintain a small list of literal from→to replacements that run on-device,
 /// deterministically, on the cleaned transcript BEFORE the text is rewritten or pasted.
 ///
 /// Mirrors the Eigennamen add/remove pattern and the DESIGN.md conventions (SettingsSection,
-/// SubtleButtonStyle, 6pt fields, 10.5pt secondary captions, du-form). 340pt-friendly.
+/// 6pt fields, 10.5pt secondary captions, du-form). 410pt-wide popover (DESIGN.md).
 struct DictationDictionarySection: View {
   @Bindable var appState: AppState
 
@@ -77,21 +77,30 @@ struct DictationDictionarySection: View {
     }
     .padding(.horizontal, 7)
     .padding(.vertical, 3)
-    .background(
-      Capsule().fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-    )
-    .overlay(
-      Capsule().strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    // ChipBackgroundModifier: thinMaterial on macOS 26+, subtle neutral tint on 14–25.
+    // No .glassEffect here (inside GroupBox — no-stacking rule).
+    .modifier(ChipBackgroundModifier(accent: .primary))
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("\(spoken) wird zu \(symbol)")
   }
 
+  /// Orange warning wrapped in a tinted info banner (.liquidGlassInfoBanner) per DESIGN.md
+  /// orange info-banner pattern. Inner padding 8pt.
   private var punctuationWarning: some View {
-    Text("Achtung: gesprochene Wörter wie „Punkt“ oder „Komma“ werden dann zu Satzzeichen.")
+    HStack(spacing: 8) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(.orange)
+      Text(
+        "Achtung: gesprochene W\u{00F6}rter wie \u{201E}Punkt\u{201C} oder \u{201E}Komma\u{201C} werden dann zu Satzzeichen."
+      )
       .font(.system(size: 10.5))
       .foregroundStyle(.orange)
       .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .liquidGlassInfoBanner(accent: .orange)
   }
 
   // MARK: - Replacement list
@@ -135,6 +144,7 @@ struct DictationDictionarySection: View {
         .accessibilityLabel("Ersetzung")
         .onSubmit { addReplacement() }
 
+      // addRow checkbox stays: default for new entries
       Toggle("Ganzes Wort", isOn: $newWholeWord)
         .toggleStyle(.checkbox)
         .controlSize(.small)

@@ -67,11 +67,29 @@ struct ArchiveEntryRowActions: View {
         Text("Neu umschreiben …")
           .font(.system(size: 10, weight: .medium))
       }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      .frame(minHeight: 28)
+      .background(
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+          .fill(rerunMenuBackground)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+          .strokeBorder(rerunMenuBorder, lineWidth: 0.8)
+      )
     }
-    .menuStyle(.borderlessButton)
     .fixedSize()
     .disabled(isRerunning || entry.rawTranscript.isEmpty)
     .accessibilityLabel("Rohtranskript in einem Modus neu umschreiben")
+  }
+
+  private var rerunMenuBackground: Color {
+    colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.045)
+  }
+
+  private var rerunMenuBorder: Color {
+    colorScheme == .dark ? Color.white.opacity(0.16) : Color.black.opacity(0.12)
   }
 
   private var rewriteModes: [ModeConfig] {

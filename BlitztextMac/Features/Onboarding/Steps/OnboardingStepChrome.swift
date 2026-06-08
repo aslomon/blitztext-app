@@ -8,43 +8,24 @@ enum OnboardingChrome {
 }
 
 /// A neutral surface card: 10pt padding, faint fill, hairline border. Used by most step bodies.
+/// macOS 26+: Liquid Glass card via `.liquidGlassCard(accent:cornerRadius:)`.
+/// macOS 14–25: MenuBarTokens fill + hairline strokeBorder (change 6).
 struct OnboardingCard<Content: View>: View {
   var accent: Color?
   @ViewBuilder var content: Content
-
-  @Environment(\.colorScheme) private var colorScheme
 
   init(accent: Color? = nil, @ViewBuilder content: () -> Content) {
     self.accent = accent
     self.content = content()
   }
 
-  private var fill: Color {
-    if let accent {
-      return MenuBarTokens.tintFill(accent, colorScheme: colorScheme)
-    }
-    return MenuBarTokens.cardFill(colorScheme: colorScheme)
-  }
-
-  private var stroke: Color {
-    if let accent {
-      return MenuBarTokens.tintStroke(accent, colorScheme: colorScheme)
-    }
-    return MenuBarTokens.cardStroke(colorScheme: colorScheme)
-  }
-
   var body: some View {
     content
       .padding(12)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: OnboardingChrome.cardCornerRadius)
-          .fill(fill)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: OnboardingChrome.cardCornerRadius)
-          .strokeBorder(stroke, lineWidth: 0.5)
-      )
+      // Replaces the manual RoundedRectangle.fill + overlay(strokeBorder) construction.
+      // All availability gating lives inside liquidGlassCard (change 6).
+      .liquidGlassCard(accent: accent, cornerRadius: OnboardingChrome.cardCornerRadius)
   }
 }
 
@@ -57,14 +38,9 @@ struct OnboardingStepHeader: View {
 
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
-      ZStack {
-        Circle()
-          .fill(accent.opacity(0.12))
-          .frame(width: 42, height: 42)
-        Image(systemName: systemImage)
-          .font(.system(size: 17, weight: .semibold))
-          .foregroundStyle(accent)
-      }
+      // macOS 26+: liquidGlassCapsule for the icon circle (change 7).
+      // macOS 14–25: keeps the flat accent.opacity(0.12) circle.
+      iconCircle
 
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
@@ -77,6 +53,25 @@ struct OnboardingStepHeader: View {
       }
       Spacer(minLength: 0)
     }
+  }
+
+  /// Icon circle: glass capsule on macOS 26+, flat tinted circle on macOS 14–25 (change 7).
+  /// All availability gating lives inside `.liquidGlassCapsule` — no raw if #available here.
+  @ViewBuilder
+  private var iconCircle: some View {
+    ZStack {
+      // macOS 14–25 fallback background (the liquidGlassCapsule replaces this on 26+
+      // but we still need the circle to size the ZStack correctly on the fallback path)
+      Circle()
+        .fill(accent.opacity(0.12))
+        .frame(width: 42, height: 42)
+      Image(systemName: systemImage)
+        .font(.system(size: 17, weight: .semibold))
+        .foregroundStyle(accent)
+    }
+    // liquidGlassCapsule gate is inside the modifier — no raw if #available at call site (change 7)
+    .liquidGlassCapsule(accent: accent)
+    .frame(width: 42, height: 42)
   }
 }
 
@@ -104,5 +99,7 @@ struct OnboardingRecapRow: View {
       }
       Spacer(minLength: 0)
     }
+    // VoiceOver reads icon + title + detail in one pass (change 8)
+    .accessibilityElement(children: .combine)
   }
 }

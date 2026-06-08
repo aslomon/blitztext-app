@@ -68,7 +68,9 @@ extension ModeCardView {
       .pickerStyle(.menu)
       if config.rewrite.replyContextMode != .off {
         InfoDisclosure("Kontext-Details") {
-          Text("Liest die aktuelle Auswahl in der App und bezieht sie als Kontext ein. Bei OpenAI-Verarbeitung wird der markierte Text mitgesendet.")
+          Text(
+            "Liest die aktuelle Auswahl in der App und bezieht sie als Kontext ein. Bei OpenAI-Verarbeitung wird der markierte Text mitgesendet."
+          )
         }
       }
     }
@@ -143,13 +145,5 @@ extension ModeCardView {
       .toggleStyle(.switch)
       .controlSize(.small)
       .font(.system(size: 11))
-  }
-
-  // MARK: - Footer
-
-  var footer: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Divider().opacity(0.35)
-    }
   }
 }

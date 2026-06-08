@@ -25,6 +25,8 @@ struct HotkeyRecorderView: View {
           .controlSize(.mini)
       }
 
+      // Fixed-layout button row: cancel (xmark) always leftmost, confirm (checkmark) always
+      // rightmost of the trailing pair. Opacity toggles prevent layout jumps (spec change 11).
       HStack(spacing: 8) {
         Button {
           draftCapture = .empty
@@ -43,38 +45,36 @@ struct HotkeyRecorderView: View {
         .disabled(!config.isEnabled)
         .help("Tastenkombination aufnehmen")
 
-        if isRecording {
-          Button {
-            commitDraftCapture()
-          } label: {
-            Image(systemName: "checkmark")
-          }
-          .buttonStyle(PopoverIconButtonStyle(.primary))
-          .disabled(!canCommitDraftCapture)
-          .help("Aufnahme übernehmen")
-          .accessibilityLabel("Aufnahme übernehmen")
-
-          Button {
+        // Cancel / clear — always leftmost of trailing pair
+        Button {
+          if isRecording {
             cancelRecording()
-          } label: {
-            Image(systemName: "xmark")
-          }
-          .buttonStyle(PopoverIconButtonStyle(.quiet))
-          .help("Aufnahme abbrechen")
-          .accessibilityLabel("Aufnahme abbrechen")
-        } else {
-          Button {
+          } else {
             clearShortcut()
-          } label: {
-            Image(systemName: "xmark")
           }
-          .buttonStyle(PopoverIconButtonStyle(.quiet))
-          .disabled(!config.isConfigured || !config.isEnabled)
-          .help("Tastenkombination löschen")
-          .accessibilityLabel("Tastenkombination löschen")
+        } label: {
+          Image(systemName: "xmark")
         }
+        .buttonStyle(PopoverIconButtonStyle(.quiet))
+        .disabled(isRecording ? false : (!config.isConfigured || !config.isEnabled))
+        .help(isRecording ? "Aufnahme abbrechen" : "Tastenkombination löschen")
+        .accessibilityLabel(isRecording ? "Aufnahme abbrechen" : "Tastenkombination löschen")
+
+        // Confirm — always rightmost; invisible and disabled when not recording
+        Button {
+          commitDraftCapture()
+        } label: {
+          Image(systemName: "checkmark")
+        }
+        .buttonStyle(PopoverIconButtonStyle(.primary))
+        .disabled(!canCommitDraftCapture)
+        .help("Aufnahme übernehmen")
+        .accessibilityLabel("Aufnahme übernehmen")
+        .opacity(isRecording ? 1 : 0)
+        .allowsHitTesting(isRecording)
       }
 
+      // Ghost capture view hidden from VoiceOver tree (spec change 10)
       HotkeyCaptureView(
         isRecording: $isRecording,
         onChange: { draftCapture = $0 },
@@ -82,27 +82,32 @@ struct HotkeyRecorderView: View {
       )
       .frame(width: 1, height: 1)
       .opacity(0.01)
+      .accessibilityHidden(true)
 
-      HStack(spacing: 6) {
-        Image(systemName: statusIcon)
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(statusColor)
-        Text(statusText)
-          .font(.system(size: 10.5))
-          .foregroundStyle(statusColor)
-          .fixedSize(horizontal: false, vertical: true)
-        Spacer(minLength: 0)
+      // Status banner: shown only for conflict (orange tint) or active recording (spec change 12).
+      // Idle/configured state removed — reclaims ~40pt per card.
+      if showStatusBanner {
+        HStack(spacing: 6) {
+          Image(systemName: statusIcon)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(statusColor)
+          Text(statusText)
+            .font(.system(size: 10.5))
+            .foregroundStyle(statusColor)
+            .fixedSize(horizontal: false, vertical: true)
+          Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+          RoundedRectangle(cornerRadius: 8)
+            .fill(statusFill)
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(statusStroke, lineWidth: 0.5)
+        )
       }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 6)
-      .background(
-        RoundedRectangle(cornerRadius: 8)
-          .fill(statusFill)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 8)
-          .strokeBorder(statusStroke, lineWidth: 0.5)
-      )
     }
     .onChange(of: isRecording) { _, value in
       appState.setHotkeyRecordingActive(value)
@@ -146,33 +151,38 @@ struct HotkeyRecorderView: View {
     )
   }
 
+  /// Banner is visible only for conflict (orange) or active recording — idle state is hidden (spec change 12).
+  private var showStatusBanner: Bool {
+    statusConflictLabel != nil || isRecording
+  }
+
   private var statusText: String {
     if let conflict = statusConflictLabel { return conflict }
-    if isRecording { return "Aufnahme aktiv. Tastenkürzel sind solange pausiert." }
-    if !config.isEnabled || !config.isConfigured { return "Kein Tastenkürzel gesetzt." }
-    return config.label
+    // Only reached when isRecording is true (showStatusBanner guard)
+    return "Aufnahme aktiv. Tastenkürzel sind solange pausiert."
   }
 
   private var statusIcon: String {
-    statusConflictLabel == nil ? "keyboard" : "exclamationmark.triangle.fill"
+    statusConflictLabel != nil ? "exclamationmark.triangle.fill" : "record.circle"
   }
 
   private var statusColor: Color {
-    statusConflictLabel == nil ? .secondary : .orange
+    statusConflictLabel != nil ? .orange : .secondary
   }
 
   private var statusFill: Color {
-    if statusConflictLabel == nil {
-      return MenuBarTokens.cardFill(colorScheme: colorScheme)
+    if statusConflictLabel != nil {
+      return MenuBarTokens.tintFill(.orange, colorScheme: colorScheme)
     }
-    return MenuBarTokens.tintFill(.orange, colorScheme: colorScheme)
+    // Recording-active state: neutral card fill, no tint
+    return MenuBarTokens.cardFill(colorScheme: colorScheme)
   }
 
   private var statusStroke: Color {
-    if statusConflictLabel == nil {
-      return MenuBarTokens.cardStroke(colorScheme: colorScheme)
+    if statusConflictLabel != nil {
+      return MenuBarTokens.tintStroke(.orange, colorScheme: colorScheme)
     }
-    return MenuBarTokens.tintStroke(.orange, colorScheme: colorScheme)
+    return MenuBarTokens.cardStroke(colorScheme: colorScheme)
   }
 
   private var statusConflictLabel: String? {
@@ -240,14 +250,7 @@ private struct HotkeyKeycapRow: View {
           .lineLimit(1)
           .padding(.horizontal, 6)
           .padding(.vertical, 3)
-          .background(
-            RoundedRectangle(cornerRadius: 5)
-              .fill(Color.primary.opacity(0.055))
-          )
-          .overlay(
-            RoundedRectangle(cornerRadius: 5)
-              .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
-          )
+          .liquidGlassKeycap()
       }
     }
   }

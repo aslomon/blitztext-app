@@ -24,12 +24,10 @@ struct LocalLLMModelPicker: View {
         statusPill
       }
 
-      Text(statusLine)
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+      // spec #6: two distinct inline states — model name + 'Aktiv' pill, or compact offline hint
+      inlineStatusRow
 
-      manageButton
+      manageRow
     }
     .task {
       await manager.refresh()
@@ -41,7 +39,7 @@ struct LocalLLMModelPicker: View {
     if !manager.serverReachable {
       BlitzStatusPill(state: .warning, label: manager.ollamaAppInstalled ? "Starten" : "Setup")
     } else if selectedInstalledRecord != nil {
-      BlitzStatusPill(state: .ready, label: "Gewählt")
+      BlitzStatusPill(state: .ready, label: "Aktiv")
     } else if manager.installed.isEmpty {
       BlitzStatusPill(state: .download, label: "Laden")
     } else {
@@ -49,19 +47,34 @@ struct LocalLLMModelPicker: View {
     }
   }
 
-  private var statusLine: String {
-    if !manager.serverReachable {
-      return manager.ollamaAppInstalled
-        ? "Ollama ist installiert, läuft aber noch nicht. Öffne die Modellseite zum Starten."
-        : "Ollama ist noch nicht installiert. Öffne die Modellseite für die geführte Installation."
+  // spec #6: model selected → name at 12pt .semibold + trailing 'Aktiv' pill;
+  //          offline/no model → compact single-line hint, no full sentences.
+  @ViewBuilder
+  private var inlineStatusRow: some View {
+    if let record = selectedInstalledRecord {
+      HStack(spacing: 6) {
+        Text(record.name)
+          .font(.system(size: 12, weight: .semibold))
+          .lineLimit(1)
+        Spacer()
+        BlitzStatusPill(state: .ready, label: "Aktiv")
+      }
+    } else {
+      Text(compactStatusHint)
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
-    if let selectedInstalledRecord {
-      return "Aktiv: \(selectedInstalledRecord.name)"
+  }
+
+  private var compactStatusHint: String {
+    if !manager.serverReachable {
+      return "Ollama offline — Modelle einrichten."
     }
     if manager.installed.isEmpty {
-      return "Noch kein lokales Umschreibmodell geladen."
+      return "Noch kein Modell geladen — Modelle einrichten."
     }
-    return "\(manager.installed.count) Modell(e) geladen. Wähle das aktive Modell in der Modellseite."
+    return "Kein Modell gewählt — Modelle verwalten."
   }
 
   private var selectedInstalledRecord: OllamaService.InstalledModel? {
@@ -70,26 +83,28 @@ struct LocalLLMModelPicker: View {
   }
 
   // MARK: - Actions
+  // spec #7: 'Prüfen' demoted to icon-only PopoverIconButtonStyle(.quiet) with arrow.clockwise
+  // spec #8: management button symbol changed from 'square.and.arrow.down.on.square' to 'macwindow'
 
-  private var manageButton: some View {
+  private var manageRow: some View {
     HStack(spacing: 8) {
       Button {
         NotificationCenter.default.post(name: .openLocalModelsWindow, object: nil)
       } label: {
-        Label(
-          manageButtonTitle,
-          systemImage: "square.and.arrow.down.on.square"
-        )
-        .font(.system(size: 10.5, weight: .medium))
+        Label(manageButtonTitle, systemImage: "macwindow")
+          .font(.system(size: 10.5, weight: .medium))
       }
       .buttonStyle(PopoverActionButtonStyle(.secondary))
 
-      Button("Prüfen") {
+      // spec #7: icon-only refresh button
+      Button {
         Task { await manager.refresh() }
+      } label: {
+        Image(systemName: "arrow.clockwise")
       }
-      .font(.system(size: 10, weight: .medium))
-      .buttonStyle(PopoverActionButtonStyle(.quiet))
+      .buttonStyle(PopoverIconButtonStyle(.quiet))
       .disabled(manager.isRefreshing)
+      .help("Ollama-Status prüfen")
     }
   }
 

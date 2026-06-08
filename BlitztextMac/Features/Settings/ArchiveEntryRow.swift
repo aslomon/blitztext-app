@@ -36,13 +36,7 @@ struct ArchiveEntryRow: View {
       }
     }
     .padding(10)
-    .background(
-      MenuBarTokens.cardFill(colorScheme: colorScheme), in: RoundedRectangle(cornerRadius: 8)
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    .liquidGlassCard(cornerRadius: 8)
   }
 
   // MARK: - Header
@@ -73,7 +67,7 @@ struct ArchiveEntryRow: View {
       }
       .contentShape(Rectangle())
     }
-    .buttonStyle(PopoverActionButtonStyle(.quiet))
+    .buttonStyle(.plain)
     .accessibilityLabel("\(displayName), \(timeLabel)")
     .accessibilityHint(expanded ? "Eintrag einklappen" : "Eintrag ausklappen")
   }

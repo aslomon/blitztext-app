@@ -67,6 +67,7 @@ struct LocalModelsView: View {
   }
 
   // MARK: - System card
+  // spec #12: corner radius 10pt for section-level cards (unchanged — already 10pt)
 
   private var systemCard: some View {
     HStack(spacing: 18) {
@@ -76,9 +77,7 @@ struct LocalModelsView: View {
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 10).fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-    )
+    .liquidGlassCard(cornerRadius: 10)
   }
 
   private func systemStat(_ symbol: String, _ caption: String, _ value: String) -> some View {
@@ -94,6 +93,8 @@ struct LocalModelsView: View {
   }
 
   // MARK: - Recommendation
+  // spec #9: .liquidGlassTintedCard(accent: .blue, cornerRadius: 10)
+  //          This is the single permitted glass-on-card in LocalModelsView (floating window).
 
   private func recommendationCard(_ model: OllamaModelCatalog.Model) -> some View {
     let installed = manager.isInstalled(model.tag)
@@ -142,17 +143,11 @@ struct LocalModelsView: View {
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 10)
-        .fill(MenuBarTokens.tintFill(.blue, colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(MenuBarTokens.tintStroke(.blue, colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    .liquidGlassTintedCard(accent: .blue, cornerRadius: 10)
   }
 
   // MARK: - Installed
+  // spec #12: .liquidGlassCard(cornerRadius: 8) on list-level rows
 
   private var installedSection: some View {
     let totalGB = manager.installed.reduce(0.0) { $0 + $1.sizeGB }
@@ -198,9 +193,8 @@ struct LocalModelsView: View {
       )
     }
     .padding(10)
-    .background(
-      RoundedRectangle(cornerRadius: 8).fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-    )
+    // spec #12: .liquidGlassCard(cornerRadius: 8) for list-level rows
+    .liquidGlassCard(cornerRadius: 8)
   }
 
   // MARK: - Catalog
@@ -272,7 +266,8 @@ struct LocalModelsView: View {
   }
 
   private func selectInstalledModel(for tag: String) {
-    guard let record = manager.installed.first(where: { OllamaService.isInstalled(tag, in: [$0.name]) })
+    guard
+      let record = manager.installed.first(where: { OllamaService.isInstalled(tag, in: [$0.name]) })
     else { return }
     select(record)
   }
@@ -295,6 +290,8 @@ struct LocalModelsView: View {
   }
 
   // MARK: - Banners
+  // spec #11: at most two buttons; when installed: 'Ollama starten' (.warning) + icon-only refresh;
+  //           when not installed: 'Ollama installieren' (.warning) + Link with SF Symbol.
 
   private var serverDownBanner: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -314,28 +311,41 @@ struct LocalModelsView: View {
             .foregroundStyle(.secondary)
         }
       }
+      // spec #11: two buttons max
       HStack(spacing: 8) {
         if manager.ollamaAppInstalled {
+          // installed: primary action + icon-only refresh
           Button("Ollama starten") { manager.prepareOllama() }
-            .buttonStyle(PopoverActionButtonStyle(.warning)).font(.system(size: 11.5, weight: .semibold))
+            .buttonStyle(PopoverActionButtonStyle(.warning))
+            .font(.system(size: 11.5, weight: .semibold))
             .disabled(manager.isPreparingOllama)
-        } else {
-          Button("Ollama installieren") {
-            manager.prepareOllama()
+
+          Button {
+            Task { await manager.refresh() }
+          } label: {
+            Image(systemName: "arrow.clockwise")
           }
-          .buttonStyle(PopoverActionButtonStyle(.warning)).font(.system(size: 11.5, weight: .semibold))
-          .disabled(manager.isPreparingOllama)
-        }
-        Button("Download-Seite") { openOllamaDownloadPage() }
-          .buttonStyle(PopoverActionButtonStyle(.secondary)).font(.system(size: 11))
-        Button("Erneut prüfen") { Task { await manager.refresh() } }
-          .buttonStyle(PopoverActionButtonStyle(.secondary)).font(.system(size: 11))
+          .buttonStyle(PopoverIconButtonStyle(.quiet))
           .disabled(manager.isRefreshing || manager.isPreparingOllama)
+          .help("Erneut prüfen")
+        } else {
+          // not installed: install action + download-page link
+          Button("Ollama installieren") { manager.prepareOllama() }
+            .buttonStyle(PopoverActionButtonStyle(.warning))
+            .font(.system(size: 11.5, weight: .semibold))
+            .disabled(manager.isPreparingOllama)
+
+          Link(destination: URL(string: "https://ollama.com/download")!) {
+            Label("Download-Seite", systemImage: "arrow.up.right.square")
+              .font(.system(size: 11, weight: .medium))
+          }
+          .buttonStyle(PopoverActionButtonStyle(.secondary))
+        }
       }
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.10)))
+    .liquidGlassInfoBanner(accent: .orange, cornerRadius: 10)
   }
 
   private func errorBanner(_ message: String) -> some View {
@@ -346,13 +356,26 @@ struct LocalModelsView: View {
       .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.08)))
   }
 
+  // MARK: - Footer
+  // spec #10: multi-sentence hint moved behind InfoDisclosure; only single caption line visible.
+
   private var footerHint: some View {
-    Text(
-      "Modelle werden über deine lokale Ollama-Installation geladen und geteilt. "
-        + "Nichts verlässt deinen Mac. Abgebrochene Downloads bleiben erhalten und werden "
-        + "beim erneuten Laden fortgesetzt."
-    )
-    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Nichts verlässt deinen Mac.")
+        .font(.system(size: 10)).foregroundStyle(.secondary)
+
+      InfoDisclosure("Ollama & Datenschutz") {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(
+            "Modelle werden über deine lokale Ollama-Installation geladen und geteilt. "
+              + "Nichts verlässt deinen Mac."
+          )
+          Text(
+            "Abgebrochene Downloads bleiben erhalten und werden beim erneuten Laden fortgesetzt."
+          )
+        }
+      }
+    }
   }
 
   private func openOllamaDownloadPage() {

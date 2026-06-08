@@ -14,9 +14,17 @@ struct SystemSettingsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
+      // Section order per DESIGN.md:
+      // (1) Bedienungshilfen — blocking prerequisite
+      // (2) Installation & Start — blocking prerequisite
+      // (3) Tastenkürzel
+      // (4) Diktat — recording length + silence trimming
+      // (5) Akustisches Feedback
+      // (6) Einrichtung
+      // (7) Sauber Entfernen — destructive, always trails
       AccessibilityPermissionSection(appState: appState)
 
-      setupSection
+      installationAndStartSection
 
       hotkeysSection
 
@@ -24,7 +32,7 @@ struct SystemSettingsView: View {
 
       feedbackSection
 
-      installationAndStartSection
+      setupSection
 
       CleanupSection()
     }
@@ -142,6 +150,85 @@ struct SystemSettingsView: View {
     }
   }
 
+  // MARK: - Tastenkürzel
+  // Modus picker promoted above hotkey table. SectionLabel used as picker label.
+  // hotkeyWarnings appear immediately below the picker.
+
+  private var hotkeysSection: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      SectionLabel(text: "Tastenkürzel")
+
+      // Modus picker first (promoted above the table per spec)
+      VStack(alignment: .leading, spacing: 6) {
+        SectionLabel(text: "Modus")
+
+        Picker("", selection: $appState.appSettings.hotkeyMode) {
+          ForEach(HotkeyMode.allCases) { mode in
+            Text(mode.displayName).tag(mode)
+          }
+        }
+        .pickerStyle(.segmented)
+        .controlSize(.small)
+        .labelsHidden()
+
+        // Warnings immediately below the picker
+        hotkeyWarnings
+      }
+
+      // Hotkey table below the picker
+      VStack(spacing: 6) {
+        ForEach(appState.mainMenuModeConfigs) { config in
+          HStack {
+            Text(appState.hotkeyLabel(for: config.id))
+              .font(.system(size: 11, design: .monospaced))
+              .foregroundStyle(.secondary)
+              .frame(width: 124, alignment: .leading)
+            Text(appState.displayName(for: config))
+              .font(.system(size: 11.5, weight: .medium))
+            Spacer()
+          }
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var hotkeyWarnings: some View {
+    if !appState.hotkeyValidationIssues.isEmpty {
+      VStack(alignment: .leading, spacing: 6) {
+        ForEach(hotkeyWarningRows, id: \.self) { row in
+          HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .font(.system(size: 10, weight: .semibold))
+              .foregroundStyle(.orange)
+            Text(row)
+              .font(.system(size: 10.5))
+              .foregroundStyle(.orange)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+      }
+      .padding(.horizontal, 8)
+      .padding(.vertical, 7)
+      .liquidGlassInfoBanner(accent: .orange)
+    }
+  }
+
+  private var hotkeyWarningRows: [String] {
+    appState.hotkeyValidationIssues.map { issue in
+      switch issue {
+      case .duplicate(let label, let modeIDs):
+        let names = modeIDs.map(modeDisplayName).joined(separator: ", ")
+        return "\(label): \(names)"
+      }
+    }
+  }
+
+  private func modeDisplayName(_ modeID: ModeConfig.ID) -> String {
+    guard let config = appState.modeConfig(for: modeID) else { return modeID }
+    return appState.displayName(for: config)
+  }
+
   // MARK: - Diktat (Länge + Pausen)
 
   /// Selectable dictation length caps (minutes). The cap is only a runaway guard — these are all
@@ -231,87 +318,7 @@ struct SystemSettingsView: View {
     }
   }
 
-  // MARK: - Tastenkürzel
-
-  private var hotkeysSection: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      SectionLabel(text: "Tastenkürzel")
-
-      VStack(spacing: 6) {
-        ForEach(appState.mainMenuModeConfigs) { config in
-          HStack {
-            Text(appState.hotkeyLabel(for: config.id))
-              .font(.system(size: 11, design: .monospaced))
-              .foregroundStyle(.secondary)
-              .frame(width: 124, alignment: .leading)
-            Text(appState.displayName(for: config))
-              .font(.system(size: 11.5, weight: .medium))
-            Spacer()
-          }
-        }
-      }
-
-      hotkeyWarnings
-
-      // Mode picker
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Modus")
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-
-        Picker("", selection: $appState.appSettings.hotkeyMode) {
-          ForEach(HotkeyMode.allCases) { mode in
-            Text(mode.displayName).tag(mode)
-          }
-        }
-        .pickerStyle(.segmented)
-      }
-    }
-  }
-
-  @ViewBuilder
-  private var hotkeyWarnings: some View {
-    if !appState.hotkeyValidationIssues.isEmpty {
-      VStack(alignment: .leading, spacing: 6) {
-        ForEach(hotkeyWarningRows, id: \.self) { row in
-          HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-              .font(.system(size: 10, weight: .semibold))
-              .foregroundStyle(.orange)
-            Text(row)
-              .font(.system(size: 10.5))
-              .foregroundStyle(.orange)
-              .fixedSize(horizontal: false, vertical: true)
-          }
-        }
-      }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 7)
-      .background(
-        RoundedRectangle(cornerRadius: 8)
-          .fill(MenuBarTokens.tintFill(.orange, colorScheme: colorScheme))
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 8)
-          .strokeBorder(MenuBarTokens.tintStroke(.orange, colorScheme: colorScheme), lineWidth: 0.5)
-      )
-    }
-  }
-
-  private var hotkeyWarningRows: [String] {
-    appState.hotkeyValidationIssues.map { issue in
-      switch issue {
-      case .duplicate(let label, let modeIDs):
-        let names = modeIDs.map(modeDisplayName).joined(separator: ", ")
-        return "\(label): \(names)"
-      }
-    }
-  }
-
-  private func modeDisplayName(_ modeID: ModeConfig.ID) -> String {
-    guard let config = appState.modeConfig(for: modeID) else { return modeID }
-    return appState.displayName(for: config)
-  }
+  // MARK: - Helpers
 
   private var installationHeadline: String {
     switch currentInstallLocation {

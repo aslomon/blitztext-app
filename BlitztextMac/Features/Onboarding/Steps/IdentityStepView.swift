@@ -5,34 +5,26 @@ struct IdentityStepView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: OnboardingChrome.contentSpacing) {
+      // Moved 'bleibt lokal' assurance into the header subtitle (change 9)
       OnboardingStepHeader(
         systemImage: "person.text.rectangle",
         accent: .indigo,
         title: "Deine Schreibperspektive",
         subtitle:
-          "Blitztext braucht deinen Namen, damit E-Mail-Antworten aus der richtigen Sicht formuliert werden."
+          "Blitztext nutzt deinen Namen als \u{201E}Ich schreibe als \u{2026}\u{201C}-Kontext in E-Mail- und Rewrite-Prompts. Bleibt lokal in deinen Einstellungen."
       )
 
       OnboardingCard(accent: .indigo) {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
           TextField("Dein Name", text: $appState.appSettings.userDisplayName)
             .textFieldStyle(.roundedBorder)
             .font(.system(size: 13))
 
-          VStack(alignment: .leading, spacing: 5) {
-            Label(
-              "wird als „Ich schreibe als …“ in E-Mail- und Rewrite-Prompts genutzt",
-              systemImage: "checkmark.circle.fill"
-            )
-            Label(
-              "hilft der Spracherkennung, deinen Namen korrekt zu schreiben",
-              systemImage: "checkmark.circle.fill"
-            )
-            Label("bleibt lokal in deinen Einstellungen", systemImage: "lock.fill")
-          }
-          .font(.system(size: 11.5))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
+          // One concise 10.5pt hint about what the name is used for (change 9)
+          Text("Hilft auch der Spracherkennung, deinen Namen korrekt zu schreiben.")
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
     }

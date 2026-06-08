@@ -45,9 +45,7 @@ struct SettingsSection<Content: View>: View {
         Spacer()
         if let action {
           Button(action.label) { action.perform() }
-            .font(.system(size: 10, weight: .medium))
-            .buttonStyle(.bordered)
-            .controlSize(.mini)
+            .buttonStyle(PopoverActionButtonStyle(.quiet))
         }
       }
     }
@@ -100,8 +98,7 @@ struct EmptyStateCard: View {
             Label(buttonLabel, systemImage: "arrow.right.circle.fill")
               .font(.system(size: 11, weight: .semibold))
           }
-          .buttonStyle(.bordered)
-          .controlSize(.small)
+          .buttonStyle(PopoverActionButtonStyle(.secondary))
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)

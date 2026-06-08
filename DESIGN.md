@@ -85,6 +85,103 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 - Liquid Glass nicht stapeln: Popover/Floating-Pill bekommen Glass; innere Settings-Flächen nutzen
   native SwiftUI-Controls, damit macOS 26 den Systemlook selbst rendern kann.
 
+## Liquid Glass v2 — Design Direction
+
+### Geltungsbereich
+
+Liquid Glass gilt für **schwebende Surfaces**: das Popover (`MenuBarView`), die floating Recording-Pille (`RecordingPillView`), die Onboarding-Fenster-Wurzel. Dense Settings-Flächen (GroupBox-Sektionen, Formfelder, Chips innerhalb einer GroupBox) **erhalten kein Glass** — sie nutzen native SwiftUI-Controls, damit macOS 26 den Systemlook selbst rendert.
+
+### Regel: Glass nicht stapeln
+
+Ein Glass-Layer pro Surface-Ebene. Im Popover: `BlitztextSurface` (Fenster-Backdrop) = Layer 1. Karten wie `enginePanel` oder `accessibilityHintBanner` innerhalb des Popovers = Layer 2. Kein weiterer Glass-Layer innerhalb dieser Karten. Chips, Toggles, Picker innerhalb einer GroupBox = nullte Glass-Ebene; sie erben den Systemlook.
+
+### Gating-Strategie (HARD CONSTRAINT)
+
+Alle `@available(macOS 26.0, *)` Guards **ausschließlich** in `BlitztextMac/Features/Shared/LiquidGlass.swift`. Views rufen nur benannte Wrapper-Modifier auf:
+
+```
+.liquidGlassCard(accent:cornerRadius:)
+.liquidGlassCapsule(accent:)
+.liquidGlassTintedCard(accent:cornerRadius:)
+.liquidGlassInfoBanner(accent:cornerRadius:)
+.liquidGlassKeycap()
+GlassEffectContainerView(spacing:axis:content:)
+.glassRowBackground(id:namespace:isHovered:accentColor:)
+GlassActionButtonStyle
+GlassProminentButtonStyle
+```
+
+Views dürfen **nie** `.glassEffect`, `GlassEffectContainer` oder `if #available` direkt verwenden.
+
+### Fallback-Strategie (macOS 14–25)
+
+Jeder Wrapper hat einen expliziten Fallback:
+
+- `liquidGlassCard`: `MenuBarTokens.cardFill` + 0.5pt `strokeBorder(cardStroke)`
+- `liquidGlassCapsule`: `.regularMaterial` + `Capsule` clip + Shadow
+- `liquidGlassTintedCard`: `MenuBarTokens.tintFill(accent)` + `tintStroke`
+- `liquidGlassInfoBanner`: identisch zu `liquidGlassTintedCard`
+- `liquidGlassKeycap`: `MenuBarTokens.keycapFill/keycapStroke` RoundedRectangle fill + strokeBorder
+- `GlassEffectContainerView`: plain `VStack` / `HStack`
+- `glassRowBackground`: `RoundedRectangle.fill(tintFill)` bei hover, `.clear` sonst
+- `GlassActionButtonStyle`: `PopoverActionButtonStyle(.primary)`
+- `GlassProminentButtonStyle`: `PopoverActionButtonStyle(.primary)`
+
+### Glass-Kit API Surface
+
+Definiert in `BlitztextMac/Features/Shared/LiquidGlass.swift`. Alle existierenden Definitionen (`PillGlassModifier`, `CardGlassModifier`, `BlitztextSurface`, `liquidGlassCard`, `liquidGlassCapsule`) bleiben erhalten und werden ergänzt um:
+
+1. **`liquidGlassTintedCard(accent:cornerRadius:)`** — für farbige Banner/Karten (orange Warnings, blaue Recommendations)
+2. **`liquidGlassInfoBanner(accent:cornerRadius:)`** — semantisch identisch zu `liquidGlassTintedCard`, expliziter Name für Banner-Kontexte
+3. **`liquidGlassKeycap()`** — für `HotkeyBadge`-Keycaps (clear glass auf macOS 26)
+4. **`GlassEffectContainerView`** — SwiftUI-Wrapper um `GlassEffectContainer(spacing:)` auf macOS 26, plain VStack/HStack auf älter
+5. **`.glassRowBackground(id:namespace:isHovered:accentColor:)`** — für `WorkflowRowView` hover mit `.glassEffectID` morphing
+6. **`GlassActionButtonStyle`** — `.buttonStyle(.glass)` auf macOS 26, `PopoverActionButtonStyle(.primary)` auf älter
+7. **`GlassProminentButtonStyle`** — `.buttonStyle(.glassProminent)` auf macOS 26, `PopoverActionButtonStyle(.primary)` auf älter
+
+### Neue Tokens
+
+- `MenuBarTokens.keycapFill(colorScheme:)` — analog zu `cardFill`, für HotkeyBadge
+- `MenuBarTokens.keycapStroke(colorScheme:)` — analog zu `cardStroke`, für HotkeyBadge
+- `MenuBarTokens.keycapText(colorScheme:)` — replaces the 8 inline color literals in `HotkeyBadge`
+- `LiquidGlass.pillExpandedWidth: CGFloat = 340` — gemeinsame Breite für `copyOnlyContent` und `variantChoiceContent`
+- `LiquidGlass.cardCornerRadius: CGFloat = 10` — Standard für Settings-Karten
+- `LiquidGlass.pillCardRadius: CGFloat = 14` — Standard für Pill-Expanded-Karten (CardGlassModifier)
+
+### Komponenten-Muster
+
+**Engine Panel / Cards im Popover**: `.liquidGlassCard()` ersetzt manuelles `RoundedRectangle.fill` + `.overlay(strokeBorder)`.
+
+**Farbige Banner** (orange Warnings, blaue Setup-Nudge): `.liquidGlassInfoBanner(accent:)` ersetzt alle manuellen `tintFill/tintStroke`-Banner-Konstruktionen.
+
+**Workflow-Reihen**: `GlassEffectContainerView` umschließt die `ForEach`-Liste; `.glassRowBackground(...)` gibt jedem Row den hover-morphing effect.
+
+**Hotkey-Keycaps**: `.liquidGlassKeycap()` auf jedem Keycap-Token.
+
+**Pill-Erweiterungskarten**: `.modifier(CardGlassModifier())` bleibt, ergänzt um `.shadow(color: .black.opacity(0.15), radius: 20, y: 5)` auch auf macOS 26.
+
+**Onboarding-Karten**: `OnboardingCard` nutzt `.liquidGlassCard(accent:)` statt manueller Hintergrund/Border-Konstruktion.
+
+**Action Buttons (primär)**: `GlassActionButtonStyle` / `GlassProminentButtonStyle` für die wichtigste CTA in schwebenden Surfaces (Pille, Onboarding-Footer).
+
+### Chip-Backgrounds
+
+Chips (RecognizeChip, punctuationMappingChip) **innerhalb GroupBox** nutzen `ChipBackgroundModifier` aus `LiquidGlass.swift`: auf macOS 26 `.thinMaterial` (kein `.glassEffect` — no-stacking-Regel), auf macOS 14–25 `MenuBarTokens.tintFill/tintStroke`.
+
+### Informationsarchitektur-Regeln (app-weit)
+
+- **Status → primäre Aktion → optionale Details** gilt auf jeder Seite und in jeder Karte.
+- `enginePanel` im Popover: Footer-komprimiert als `BlitzStatusPill`, on-tap expandierbar.
+- Settings-Tabs: Status-Pills leben in den Sektions-Headern, nicht als duplizierende Top-Level-Reihe.
+- Lange Erklärungen: ausschließlich hinter `InfoDisclosure`. Kein dauerhafter Erklärungstext.
+- `setupNudgeBanner`: nur auf Tab 0 (Prompts), nicht tabs-übergreifend.
+- `workflowHeader`: Modus-Name auf `.semibold` 13pt, Akzentfarbe auf Icon.
+- Systemeinstellungen-Reihenfolge: Bedienungshilfen → Installation & Start → Tastenkürzel → Feedback → Einrichtung → Sauber Entfernen.
+
+### In-App-Copy bleibt Deutsch
+
+Alle Labels, Buttons, Captions, Tooltips in Deutsch (du-Form, knapp). Code, Kommentare, Commits in Englisch.
+
 ## App- und Menüleisten-Icons
 
 - App-Icon: alte schwarze Originalfläche mit linksbündigem Blitztext-Balkenmark. Das Mark darf

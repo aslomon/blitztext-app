@@ -80,14 +80,28 @@ struct PasteContextSection: View {
 
 // MARK: - Category chip
 
-/// Capsule chip with the category's SF symbol + German name + count. Colorscheme-aware tint.
+/// Capsule chip with the category's SF symbol + German name + count.
+/// Accent follows DESIGN.md status colours:
+///   browser/web → blue, code/editor/IDE → green, email/chat/communication → orange,
+///   everything else → .secondary (no accent association).
 private struct CategoryChip: View {
   let category: PasteContextCategory
   let count: Int
 
   @Environment(\.colorScheme) private var colorScheme
 
-  private var accent: Color { Color.accentColor }
+  private var accent: Color {
+    switch category {
+    case .browser:
+      return .blue
+    case .code, .terminal:
+      return .green
+    case .email, .chat:
+      return .orange
+    case .notes, .document, .other:
+      return .secondary
+    }
+  }
 
   var body: some View {
     HStack(spacing: 4) {
@@ -112,6 +126,7 @@ private struct CategoryChip: View {
 // MARK: - Recent row
 
 /// One destination: app name + window title + a small category badge + relative time.
+/// Uses .liquidGlassCard(cornerRadius: 8) in place of manual fill + overlay.
 private struct PasteContextRow: View {
   let context: PasteContext
 
@@ -167,13 +182,6 @@ private struct PasteContextRow: View {
     }
     .padding(8)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: 8)
-        .fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(MenuBarTokens.cardStroke(colorScheme: colorScheme), lineWidth: 0.5)
-    )
+    .liquidGlassCard(cornerRadius: 8)
   }
 }

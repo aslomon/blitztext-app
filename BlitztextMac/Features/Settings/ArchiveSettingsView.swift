@@ -12,14 +12,6 @@ struct ArchiveSettingsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      Text(
-        "Privatsphäre zuerst: Alles hier ist opt-in, standardmäßig aus und bleibt on-device. "
-          + "Das Archiv speichert nur Text. Gelernte Begriffe pflegst du im Tab „Vokabular“."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-
       archiveSection
     }
     .padding(16)
@@ -31,6 +23,7 @@ struct ArchiveSettingsView: View {
     VStack(alignment: .leading, spacing: 10) {
       SectionLabel(text: "Transkriptions-Archiv")
 
+      // Status → Action: Toggle first, privacy detail behind disclosure.
       Toggle(
         "Transkriptionen lokal archivieren",
         isOn: $appState.isArchiveEnabled
@@ -38,13 +31,13 @@ struct ArchiveSettingsView: View {
       .toggleStyle(.switch)
       .controlSize(.small)
 
-      Text(
-        "Aus für maximale Privatsphäre. Wenn aktiv, werden Roh- und Endtext der letzten "
-          + "90 Tage on-device gespeichert (0600, kein Audio, nichts verlässt den Mac)."
-      )
-      .font(.system(size: 10.5))
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
+      InfoDisclosure("Datenschutz") {
+        Text(
+          "Aus für maximale Privatsphäre. Wenn aktiv, werden Roh- und Endtext der letzten "
+            + "90 Tage on-device gespeichert (0600, kein Audio, nichts verlässt den Mac). "
+            + "Das Archiv speichert nur Text. Gelernte Begriffe pflegst du im Tab \u{201E}Vokabular\u{201C}."
+        )
+      }
 
       if appState.isArchiveEnabled {
         archiveList
@@ -59,21 +52,40 @@ struct ArchiveSettingsView: View {
         )
       }
 
-      // Always reachable — opens the full window (Verlauf · Diktate · Kontext · Verbesserungen).
-      // Crucially this works even with the archive OFF/empty, so its off-state + facets are
-      // discoverable (and the user learns what to enable) instead of being a hidden dead end.
-      openArchiveWindowButton
+      // Always-visible bottom action bar: open window on the left, delete on the right.
+      // 'Archiv löschen' is rendered but disabled when archiving is off or archive is empty,
+      // preventing layout jumps.
+      bottomActionBar
     }
   }
 
-  private var openArchiveWindowButton: some View {
+  private var bottomActionBar: some View {
     HStack {
       Button("Archiv-Fenster öffnen …") {
         NotificationCenter.default.post(name: .openArchiveWindow, object: nil)
       }
       .font(.system(size: 10, weight: .medium))
       .buttonStyle(PopoverActionButtonStyle(.secondary))
+
       Spacer()
+
+      Button("Archiv löschen") { showClearArchiveConfirm = true }
+        .font(.system(size: 10, weight: .medium))
+        .buttonStyle(PopoverActionButtonStyle(.danger))
+        .disabled(!appState.isArchiveEnabled || appState.archiveStore.entries.isEmpty)
+        .accessibilityLabel("Archiv löschen")
+        .confirmationDialog(
+          "Archiv löschen?",
+          isPresented: $showClearArchiveConfirm,
+          titleVisibility: .visible
+        ) {
+          Button("Löschen", role: .destructive) { appState.clearArchive() }
+          Button("Abbrechen", role: .cancel) {}
+        } message: {
+          Text(
+            "Alle archivierten Transkriptionen werden on-device entfernt. Das lässt sich nicht rückgängig machen."
+          )
+        }
     }
     .padding(.top, 2)
   }
@@ -93,49 +105,19 @@ struct ArchiveSettingsView: View {
         .foregroundStyle(.secondary)
         .padding(.top, 2)
     } else {
-      VStack(alignment: .leading, spacing: 8) {
-        VStack(spacing: 6) {
-          ForEach(preview) { entry in
-            ArchiveEntryRow(
-              entry: entry,
-              appState: appState,
-              showActions: false,
-              onDelete: { appState.archiveStore.delete(entry.id) }
-            )
-          }
-        }
-
-        HStack {
-          Spacer()
-          clearArchiveButton
+      VStack(spacing: 6) {
+        ForEach(preview) { entry in
+          ArchiveEntryRow(
+            entry: entry,
+            appState: appState,
+            showActions: false,
+            onDelete: { appState.archiveStore.delete(entry.id) }
+          )
         }
       }
       .padding(.top, 4)
     }
   }
-
-  private var clearArchiveButton: some View {
-    HStack {
-      Spacer()
-      Button("Archiv löschen") { showClearArchiveConfirm = true }
-        .font(.system(size: 10, weight: .medium))
-        .buttonStyle(PopoverActionButtonStyle(.danger))
-        .accessibilityLabel("Archiv löschen")
-        .confirmationDialog(
-          "Archiv löschen?",
-          isPresented: $showClearArchiveConfirm,
-          titleVisibility: .visible
-        ) {
-          Button("Löschen", role: .destructive) { appState.clearArchive() }
-          Button("Abbrechen", role: .cancel) {}
-        } message: {
-          Text(
-            "Alle archivierten Transkriptionen werden on-device entfernt. Das lässt sich nicht rückgängig machen."
-          )
-        }
-    }
-  }
-
 }
 
 // accentColorValue is defined in MenuBarStyle.swift

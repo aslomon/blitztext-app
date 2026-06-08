@@ -3,10 +3,12 @@ import SwiftUI
 // MARK: - PillWaveformState
 
 /// Rolling level history for the recording pill waveform.
+/// Uses @Observable / @State instead of ObservableObject / @StateObject for leaner re-renders.
+@Observable
 @MainActor
-final class PillWaveformState: ObservableObject {
-  // 14 slots — fewer bars, cleaner read.
-  @Published var levels: [CGFloat] = Array(repeating: 0.04, count: 14)
+final class PillWaveformState {
+  // 16 slots — slightly wider fill in the macOS 26 capsule while keeping the read clean.
+  var levels: [CGFloat] = Array(repeating: 0.04, count: 16)
 
   /// Set by the parent on every SwiftUI tick so the timer always has the latest value.
   var currentAudioLevel: Float = 0
@@ -14,7 +16,8 @@ final class PillWaveformState: ObservableObject {
   var processing = false
 
   private var phase: Double = 0
-  private var timer: Timer?
+  private var previousLevel: CGFloat = 0.04
+  nonisolated(unsafe) private var timer: Timer?
 
   func startTimer() {
     guard timer == nil else { return }
@@ -29,8 +32,9 @@ final class PillWaveformState: ObservableObject {
   }
 
   func reset() {
-    levels = Array(repeating: 0.04, count: 14)
+    levels = Array(repeating: 0.04, count: 16)
     phase = 0
+    previousLevel = 0.04
   }
 
   private func tick() {
@@ -38,12 +42,18 @@ final class PillWaveformState: ObservableObject {
     levels.removeFirst()
     if processing {
       // Smooth traveling wave — calm, clearly "working", no mic needed.
-      levels.append(CGFloat(0.12 + 0.30 * (0.5 + 0.5 * sin(phase * 2))))
+      let processed = CGFloat(0.12 + 0.30 * (0.5 + 0.5 * sin(phase * 2)))
+      previousLevel = processed
+      levels.append(processed)
       return
     }
-    let base = CGFloat(currentAudioLevel)
+    let raw = CGFloat(currentAudioLevel)
     let jitter = CGFloat.random(in: -0.04...0.04)
-    levels.append(max(0.04, min(1.0, base + jitter)))
+    // Interpolate against the previous sample to smooth out quantization at low input levels.
+    let smoothed = previousLevel * 0.6 + raw * 0.4
+    let final = max(0.04, min(1.0, smoothed + jitter))
+    previousLevel = final
+    levels.append(final)
   }
 
   deinit { timer?.invalidate() }
@@ -53,20 +63,35 @@ final class PillWaveformState: ObservableObject {
 
 /// Center-mirrored bar waveform for the recording pill.
 ///
-/// 14 bars, uniform opacity — quiet and refined. Accent color at 0.75 opacity so
+/// 16 bars, uniform opacity — quiet and refined. Accent color at 0.75 opacity so
 /// it reads clearly against both the Liquid Glass and the material fallback.
+/// barSpacing reduced to 1.5pt for better fill in the slightly larger macOS 26 capsule.
 struct PillWaveformView: View {
   var audioLevel: Float
   var accentColor: Color
   var isProcessing: Bool = false
 
-  @StateObject private var state = PillWaveformState()
+  @State private var state = PillWaveformState()
 
-  private let barCount = 14
+  private let barCount: Int
   private let barWidth: CGFloat = 2.0
-  private let barSpacing: CGFloat = 2.0
-  private let maxHalfHeight: CGFloat = 11.0
+  private let barSpacing: CGFloat = 1.5
+  private let maxHalfHeight: CGFloat
   private let minHalfHeight: CGFloat = 1.5
+
+  init(
+    audioLevel: Float,
+    accentColor: Color,
+    isProcessing: Bool = false,
+    barCount: Int = 16,
+    maxHalfHeight: CGFloat = 11.0
+  ) {
+    self.audioLevel = audioLevel
+    self.accentColor = accentColor
+    self.isProcessing = isProcessing
+    self.barCount = barCount
+    self.maxHalfHeight = maxHalfHeight
+  }
 
   private var totalWidth: CGFloat {
     CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing

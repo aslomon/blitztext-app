@@ -62,15 +62,26 @@ struct ModeCardView: View {
 
   var body: some View {
     GroupBox {
-      if showEditor {
-        editorContent
-      } else {
-        summaryContent
+      // Opacity applied to body only — header remains fully legible when mode is disabled (WCAG 4.5:1)
+      Group {
+        if showEditor {
+          editorContent
+        } else {
+          summaryContent
+        }
       }
+      .opacity(config.isEnabled ? 1 : 0.78)
     } label: {
       header
     }
-    .opacity(config.isEnabled ? 1 : 0.68)
+    // Leading accent edge: 3pt coloured strip gives each card visual identity without glass stacking
+    .overlay(alignment: .leading) {
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .fill(type.accentColorValue.opacity(0.55))
+        .frame(width: 3)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .allowsHitTesting(false)
+    }
   }
 
   private var editorContent: some View {
@@ -101,9 +112,11 @@ struct ModeCardView: View {
   private var summaryContent: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 6) {
-        BlitzStatusPill(state: config.isEnabled ? .ready : .muted, label: config.isEnabled ? "Aktiv" : "Aus")
+        BlitzStatusPill(
+          state: config.isEnabled ? .ready : .muted, label: config.isEnabled ? "Aktiv" : "Aus")
         if isRewriteMode {
-          BlitzStatusPill(state: backendPillState, label: effectiveBackend == .local ? "Lokal" : "Online")
+          BlitzStatusPill(
+            state: backendPillState, label: effectiveBackend == .local ? "Lokal" : "Online")
         } else {
           BlitzStatusPill(state: .online, label: "Freitext")
         }
@@ -118,13 +131,7 @@ struct ModeCardView: View {
         .foregroundStyle(.secondary)
         .lineLimit(2)
         .fixedSize(horizontal: false, vertical: true)
-
-      Button {
-        withAnimation(.easeInOut(duration: 0.16)) { showEditor = true }
-      } label: {
-        Label("Bearbeiten", systemImage: "pencil")
-      }
-      .buttonStyle(PopoverActionButtonStyle(.secondary))
+      // "Bearbeiten" button removed — pencil icon in header is the sole edit entry point (spec change 7)
     }
   }
 
@@ -199,72 +206,85 @@ struct ModeCardView: View {
 
   // MARK: - Advanced (progressive disclosure)
 
+  // Uses SwiftUI DisclosureGroup for native chevron + animation (spec change 13)
   private var advancedDisclosure: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      advancedToggleRow
-
-      if showAdvanced {
-        advancedContent
-      }
-    }
-  }
-
-  private var advancedToggleRow: some View {
-    Button {
-      withAnimation(.easeInOut(duration: 0.15)) { showAdvanced.toggle() }
+    DisclosureGroup(isExpanded: $showAdvanced) {
+      advancedContent
+        .padding(.top, 6)
     } label: {
-      HStack(spacing: 6) {
-        Image(systemName: showAdvanced ? "chevron.down" : "chevron.right")
-          .font(.system(size: 9, weight: .semibold))
-          .foregroundStyle(.secondary)
-        Text("Erweitert")
-          .font(.system(size: 11, weight: .medium))
-          .foregroundStyle(.secondary)
-        if !showAdvanced && isAdvancedNonDefault {
-          Circle()
-            .fill(Color.orange)
-            .frame(width: 5, height: 5)
-            .help("angepasst")
-        }
-        Spacer()
-      }
-      .contentShape(Rectangle())
+      advancedToggleLabel
     }
-    .buttonStyle(PopoverActionButtonStyle(.quiet))
+    .animation(.easeInOut(duration: 0.15), value: showAdvanced)
   }
 
+  private var advancedToggleLabel: some View {
+    HStack(spacing: 6) {
+      Text("Erweitert")
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.secondary)
+      // "angepasst" indicator dot enlarged to 7x7 for better visibility (spec change 13)
+      if !showAdvanced && isAdvancedNonDefault {
+        Circle()
+          .fill(Color.orange)
+          .frame(width: 7, height: 7)
+          .help("angepasst")
+      }
+    }
+  }
+
+  // Ordered per spec change 8:
+  //   1. systemPromptEditor
+  //   2. disabled-note caption (when hasCustomPrompt)
+  //   3. tonePicker (when no custom prompt)
+  //   4. contextField
+  //   5. replyContextPicker
+  //   6. automaticFieldContextToggle
+  //   7. unifiedMemoryControls
+  //   8. variantChoiceToggle
+  // footer computed var removed — inline Divider before editorFooter where needed.
   @ViewBuilder
   private var advancedContent: some View {
-    if !isRewriteMode {
-      footer
-    } else if type == .emojiText {
+    if type == .emojiText {
       variantChoiceToggle
-      footer
-    } else {
-      if type == .textImprover {
-        tonePicker
-      }
+    } else if isRewriteMode {
+      // (1) Custom prompt editor always at top
       systemPromptEditor
-      if type == .textImprover {
-        contextField
-        replyContextPicker
-      }
+
+      // (2) Disabled note immediately below the editor when a custom prompt is active
       if hasCustomPrompt {
         Text("Deaktiviert, solange eine eigene Anweisung gesetzt ist.")
           .font(.system(size: 10))
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
       }
+
+      // (3) Tone picker only when no custom prompt is set
+      if !hasCustomPrompt, type == .textImprover {
+        tonePicker
+      }
+
+      // (4) Context field
+      if type == .textImprover {
+        contextField
+      }
+
+      // (5) Reply context picker
+      if type == .textImprover {
+        replyContextPicker
+      }
+
+      // (6) Automatic field context toggle
       if supportsAutomaticFieldContext {
         automaticFieldContextToggle
       }
+
+      // (7) Unified memory controls
       if supportsMemoryContext {
         unifiedMemoryControls
       }
-      if isRewriteMode {
-        variantChoiceToggle
-      }
-      footer
+
+      // (8) Variant choice toggle
+      variantChoiceToggle
     }
   }
 
@@ -272,9 +292,10 @@ struct ModeCardView: View {
 
   private var header: some View {
     HStack {
+      // Mode icon uses accent colour for per-mode visual identity (spec change 5)
       Image(systemName: type.icon)
         .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(type.accentColorValue)
       Text(appState.displayName(for: config).uppercased())
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(.secondary)
@@ -282,8 +303,15 @@ struct ModeCardView: View {
         .font(.system(size: 9.5, design: .monospaced))
         .foregroundStyle(.quaternary)
       Spacer()
+      // Pencil opens editor; checkmark closes it. Pencil only activates when not already editing (spec change 7)
       Button {
-        withAnimation(.easeInOut(duration: 0.16)) { showEditor.toggle() }
+        withAnimation(.easeInOut(duration: 0.16)) {
+          if showEditor {
+            showEditor = false
+          } else {
+            showEditor = true
+          }
+        }
       } label: {
         Image(systemName: showEditor ? "checkmark" : "pencil")
       }
@@ -352,12 +380,19 @@ struct ModeCardView: View {
           .font(.system(size: 11))
           .foregroundStyle(.secondary)
         Spacer()
-        Button(appState.isLoadingModels ? "Lädt …" : "Modelle vom Account laden") {
-          appState.loadAvailableModels()
+        // Fetch the account's OpenAI model list on demand. Compact pill keeps the redesigned
+        // look while preserving the original "Modelle vom Account laden" capability; errors
+        // surface in the modelLoadError caption below.
+        if appState.availableModelIDs.isEmpty {
+          Button {
+            appState.loadAvailableModels()
+          } label: {
+            BlitzStatusPill(
+              state: .warning, label: appState.isLoadingModels ? "Lädt …" : "Modelle laden")
+          }
+          .buttonStyle(.plain)
+          .disabled(appState.isLoadingModels)
         }
-        .font(.system(size: 10, weight: .medium))
-        .buttonStyle(PopoverActionButtonStyle(.quiet))
-        .disabled(appState.isLoadingModels)
       }
       Picker("", selection: bind(\.rewrite.modelID)) {
         ForEach(modelOptions) { option in

@@ -1,34 +1,50 @@
-# Blitztext App
+# Blitztext App - Local AI Fork
 
-Blitztext App is an experimental open-source macOS menubar app for turning speech into text.
+This is a local-first, more capable fork of the original open-source Blitztext macOS menubar app. It extends Blitztext from a simple speech-to-text workflow into a dictation, instruction, rewrite, and local AI assistant for everyday writing on macOS.
 
-It is intentionally small and unfinished. The goal is to make a real workflow visible and hackable: press a hotkey, speak, get text back, optionally rewrite it, and paste it into the app you were using.
+The fork keeps the original spirit of a hackable native AI workflow, but pushes it further: a redesigned interface, a live dictation pill, clearer error and fallback states, local LLM support via Ollama, smarter rewrite modes, vocabulary learning, and prototype context-aware prompting.
 
-This is a learning and experimentation project, not a polished product.
+> Fork status: actively developed local AI edition. Bring your own OpenAI API key for cloud workflows, or use local models where supported. No hosted backend, no warranty, no support guarantee.
 
-> Preview status: bring your own OpenAI API key, no hosted backend, no warranty, no support guarantee.
+## What Makes This Fork Different
+
+- **Redesigned macOS UI**: clearer menubar structure, improved settings layout, better mode cards, and a more production-grade visual system.
+- **Live dictation pill**: visible recording, processing, fallback, and error states with clearer keyboard hints and copy/paste affordances.
+- **Local LLM support**: use Ollama-backed local rewrite models instead of relying only on the OpenAI API.
+- **Local model manager**: browse, download, delete, and inspect local models with hardware-aware recommendations.
+- **Smarter rewrite modes**: dedicated modes for improving text, writing emails, optimizing prompts, and turning rough speech into calmer messages.
+- **Better default system prompts**: each mode has a more precise prompt structure and clearer behavior expectations.
+- **Dictated instructions**: workflows can distinguish spoken instructions from text that should be inserted verbatim.
+- **Vocabulary and memory system**: frequently used names, domain terms, and custom wording can be learned and injected into future prompts.
+- **Prototype context awareness**: the app can include focused-window, selected-text, file, and content-type hints in prompts.
+- **More private by default**: local transcription, local rewrite options, fail-closed offline behavior, and opt-in archive/memory features.
+- **More robust workflow**: improved paste reliability, Accessibility fallback behavior, code signing, onboarding, and test coverage.
 
 ## What It Does
 
-- **Blitztext**: record speech and transcribe it.
-- **Blitztext+**: record speech, transcribe it, then turn the rough draft into cleaner writing.
-- **Blitztext $%&!**: turn frustrated speech into a calmer message.
-- **Blitztext :)**: add fitting emojis to dictated text.
+- **Dictate**: record speech and transcribe it into text.
+- **Improve**: turn rough dictated text into cleaner writing.
+- **Write email**: transform spoken notes into a structured email draft.
+- **Optimize prompts**: convert rough intent into a clearer prompt for AI tools.
+- **Calm down**: turn frustrated speech into a calmer, usable message.
+- **Use local AI**: run supported transcription and rewrite workflows locally when compatible models are installed.
 
 ## Important Preview Notes
 
 - macOS only.
-- Bring your own OpenAI API key.
+- Bring your own OpenAI API key for cloud workflows.
+- Install Ollama and local models for local rewrite workflows.
 - No hosted Blitztext backend is included or provided.
 - In online mode, audio and text are sent directly from the app to the OpenAI API.
-- Optional local transcription via WhisperKit/CoreML if you install a compatible model locally.
+- Local transcription via WhisperKit/CoreML is supported when a compatible model is installed.
+- Local rewrite workflows are supported through Ollama-backed models where available.
 - `./build.sh` creates a locally ad-hoc-signed development app. No notarized release binary is provided.
-- Not production ready.
+- Still experimental and not production ready.
 - No warranty and no support guarantee.
 
 You are welcome to use, fork, adapt, and share this project under the license terms.
 
-The intent is not to ship a one-click finished app. The intent is to make a real AI workflow understandable: clone it, build it, read the code, change it, break it, fix it, and suggest improvements. If you only want to download something and never look inside, this preview will probably feel rough. If you want to learn how a small native macOS AI app is put together, you are in the right place.
+The intent is not to ship a one-click finished app. The intent is to make a more capable local-first AI workflow understandable: clone it, build it, read the code, change it, break it, fix it, and suggest improvements. If you want to learn how a small native macOS AI app can combine dictation, local models, rewrite modes, memory, and context, this fork is the most complete version of that direction.
 
 ## Screenshots
 
@@ -53,6 +69,7 @@ The intent is not to ship a one-click finished app. The intent is to make a real
   - `gpt-4o-mini` and optionally `gpt-4o` for rewriting
 - For local-only transcription: a WhisperKit CoreML model in:
   `~/Library/Application Support/Blitztext/models/whisperkit/`
+- For local rewriting: [Ollama](https://ollama.com/) with at least one compatible local LLM installed.
 
 The build also pulls one Swift Package dependency automatically:
 
@@ -67,7 +84,7 @@ brew install xcodegen
 ## Build And Run
 
 ```bash
-git clone https://github.com/cmagnussen/blitztext-app.git
+git clone https://github.com/aslomon/blitztext-app.git
 cd blitztext-app
 ./build.sh --run
 ```
@@ -80,9 +97,9 @@ For a local install into `/Applications`:
 
 The generated `.app` is ad-hoc signed for local development only. Do not treat it as a trusted redistributable binary. A public binary release would need Developer ID signing and notarization.
 
-On first launch, either paste your own OpenAI API key for online workflows or install a WhisperKit CoreML model for local transcription. Rewriting workflows still require OpenAI.
+On first launch, either paste your own OpenAI API key for online workflows or install local models for local transcription and rewriting.
 
-For fully local transcription, install a WhisperKit CoreML model and enable **Sicherer Lokaler Modus** in the app.
+For a local-first setup, install a WhisperKit CoreML model, install an Ollama model through the local model manager, and enable **Sicherer Lokaler Modus** in the app.
 
 For a slower, more explicit walkthrough, see [docs/setup.md](docs/setup.md).
 
@@ -103,8 +120,9 @@ The preview has no custom backend.
 
 ```text
 Online transcription: Your Mac -> OpenAI Audio Transcriptions API
-Text rewriting:       Your Mac -> OpenAI Chat Completions API
+Online rewriting:     Your Mac -> OpenAI Chat Completions API
 Local transcription:  Your Mac -> WhisperKit/CoreML on device
+Local rewriting:      Your Mac -> Ollama model on device
 ```
 
 The app stores your OpenAI API key in the user's macOS Keychain.
@@ -115,17 +133,17 @@ Read [docs/privacy.md](docs/privacy.md) before using the preview with sensitive 
 
 ```text
 BlitztextMac/
-  App/          App lifecycle and paste handling
-  Features/     Workflows, menu bar UI, settings
-  Services/     Recording, OpenAI calls, hotkeys, local storage
-  Views/        Shared SwiftUI views
-build.sh        Local build script
-docs/           Setup, privacy, roadmap, preflight, landing page notes
+  App/          App lifecycle, paste handling, model window wiring
+  Features/     Workflows, menubar UI, onboarding, settings, local model UI
+  Services/     Recording, providers, hotkeys, local storage, context services
+  Tests/        Swift tests for workflows, onboarding, and context behavior
+build.sh        Local build and signing script
+docs/           Setup, privacy, roadmap, preflight, and planning notes
 ```
 
 ## Local Models
 
-Local transcription is available as an experimental WhisperKit/CoreML path. The app does not bundle a model; choose one in the app, click install, and then switch on **Sicherer Lokaler Modus** from the menu bar or settings.
+Local transcription is available through WhisperKit/CoreML, and local rewriting is available through Ollama-backed LLMs. The app does not bundle models; use the local model manager to inspect your hardware, choose suitable models, download them, and switch to the local workflow from the menubar or settings.
 
 See [docs/local-models.md](docs/local-models.md).
 

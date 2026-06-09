@@ -39,7 +39,7 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertTrue(decoded.memoryContextEnabled)
     XCTAssertTrue(decoded.hadAccessibilityGrant)
     XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
-    XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
+    XCTAssertEqual(decoded.selectedEmbeddingModelName, LlamaCppEmbeddingProvider.defaultModelID)
     XCTAssertEqual(decoded.userDisplayName, "Jason Rinnert")
     XCTAssertEqual(decoded.modes.count, 2)
 
@@ -156,7 +156,7 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertFalse(decoded.archiveEnabled)
     XCTAssertFalse(decoded.memoryContextEnabled)
     XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
-    XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
+    XCTAssertEqual(decoded.selectedEmbeddingModelName, LlamaCppEmbeddingProvider.defaultModelID)
     XCTAssertFalse(decoded.hadAccessibilityGrant)
     XCTAssertEqual(decoded.userDisplayName, "")
     XCTAssertTrue(decoded.modes.isEmpty)
@@ -173,7 +173,7 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertFalse(decoded.archiveEnabled)
     XCTAssertFalse(decoded.memoryContextEnabled)
     XCTAssertFalse(decoded.semanticEmailMemoryEnabled)
-    XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
+    XCTAssertEqual(decoded.selectedEmbeddingModelName, LlamaCppEmbeddingProvider.defaultModelID)
     XCTAssertFalse(decoded.hadAccessibilityGrant)
     XCTAssertEqual(decoded.userDisplayName, "")
     // Dictation dictionary absent -> empty replacements.

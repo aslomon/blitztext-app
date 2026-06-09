@@ -269,7 +269,7 @@ struct AppSettings: Codable, Sendable {
   /// Semantic E-Mail Memory: stores completed email rewrites with local embeddings for later
   /// retrieval. PRIVACY-SENSITIVE -> opt-in, default OFF, only effective while `archiveEnabled`.
   var semanticEmailMemoryEnabled: Bool = false
-  var selectedEmbeddingModelName: String = OllamaEmbeddingProvider.defaultModelID
+  var selectedEmbeddingModelName: String = LlamaCppEmbeddingProvider.defaultModelID
   /// Phase 1 (signing): set true once Accessibility trust was ever observed. Drives the
   /// stale-grant hint: if previously granted but now `AXIsProcessTrusted()` is false (e.g.
   /// after a rebuild changed the CDHash), macOS may still show Blitztext enabled while not
@@ -314,7 +314,7 @@ struct AppSettings: Codable, Sendable {
     memoryContextEnabled: Bool = false,
     improvementDetectionEnabled: Bool = false,
     semanticEmailMemoryEnabled: Bool = false,
-    selectedEmbeddingModelName: String = OllamaEmbeddingProvider.defaultModelID,
+    selectedEmbeddingModelName: String = LlamaCppEmbeddingProvider.defaultModelID,
     hadAccessibilityGrant: Bool = false,
     dictationDictionary: DictationDictionary = DictationDictionary(),
     fuzzyCorrectionEnabled: Bool = true,
@@ -411,7 +411,7 @@ struct AppSettings: Codable, Sendable {
       // an old Ollama tag (e.g. "gemma3:latest") is dropped so the user re-picks a GGUF model
       // instead of silently failing every local rewrite. Robust to the runtime enum collapsing.
       selectedLocalLLM =
-        LlamaCppModelCatalog.model(for: decodedSelection.modelID) != nil
+        LlamaCppModelCatalog.chatModel(for: decodedSelection.modelID) != nil
         ? decodedSelection : LocalLLMSelection()
     } else {
       // The legacy single-string model name was always an Ollama tag — no longer usable.
@@ -431,9 +431,14 @@ struct AppSettings: Codable, Sendable {
       try container.decodeIfPresent(Bool.self, forKey: .improvementDetectionEnabled) ?? false
     semanticEmailMemoryEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .semanticEmailMemoryEnabled) ?? false
-    selectedEmbeddingModelName =
+    let decodedEmbeddingModel =
       try container.decodeIfPresent(String.self, forKey: .selectedEmbeddingModelName)
-      ?? OllamaEmbeddingProvider.defaultModelID
+      ?? LlamaCppEmbeddingProvider.defaultModelID
+    // Ollama has been removed: an old Ollama embedding tag (e.g. "nomic-embed-text") is not a
+    // llama.cpp embedding model, so fall back to the default GGUF embedding model.
+    selectedEmbeddingModelName =
+      LlamaCppModelCatalog.embeddingModels.contains { $0.id == decodedEmbeddingModel }
+      ? decodedEmbeddingModel : LlamaCppEmbeddingProvider.defaultModelID
     hadAccessibilityGrant =
       try container.decodeIfPresent(Bool.self, forKey: .hadAccessibilityGrant) ?? false
     dictationDictionary =

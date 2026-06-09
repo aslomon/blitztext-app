@@ -79,4 +79,20 @@ final class LocalLLMRuntimeTests: XCTestCase {
     XCTAssertEqual(decoded.selectedLocalLLM.modelID, "qwen3-1.7b-q4-k-m")
     XCTAssertEqual(decoded.selectedLocalLLMModelName, "gemma3:latest")
   }
+
+  func testLegacyOllamaEmbeddingModelMigratesToLlamaCppDefault() throws {
+    // The old Ollama embedding tag is not a llama.cpp embedding model — decode must fall back to
+    // the default GGUF embedding model so semantic e-mail memory keeps working without Ollama.
+    let json = """
+      {
+        "selectedEmbeddingModelName": "nomic-embed-text"
+      }
+      """
+
+    let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+
+    XCTAssertEqual(decoded.selectedEmbeddingModelName, LlamaCppEmbeddingProvider.defaultModelID)
+    XCTAssertTrue(
+      LlamaCppModelCatalog.embeddingModels.contains { $0.id == decoded.selectedEmbeddingModelName })
+  }
 }

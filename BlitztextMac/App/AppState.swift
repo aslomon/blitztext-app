@@ -438,7 +438,7 @@ final class AppState {
   func prepareSemanticEmailMemory() {
     appSettings.archiveEnabled = true
     if selectedEmbeddingModelName.isEmpty {
-      appSettings.selectedEmbeddingModelName = OllamaEmbeddingProvider.defaultModelID
+      appSettings.selectedEmbeddingModelName = LlamaCppEmbeddingProvider.defaultModelID
     }
     let modelID = selectedEmbeddingModelName
     guard !modelID.isEmpty else { return }
@@ -1873,7 +1873,7 @@ final class AppState {
     guard !modelID.isEmpty else { return }
 
     Task { [weak self] in
-      let provider = OllamaEmbeddingProvider(modelID: modelID)
+      let provider = LlamaCppEmbeddingProvider(modelID: modelID)
       guard let embedding = try? await provider.embed(record.finalText) else { return }
       let memoryRecord = EmailSemanticMemoryRecord(
         date: record.date,
@@ -1958,7 +1958,7 @@ final class AppState {
     let store = emailSemanticMemoryStore
 
     return { queryText in
-      let provider = OllamaEmbeddingProvider(modelID: modelID)
+      let provider = LlamaCppEmbeddingProvider(modelID: modelID)
       guard let queryEmbedding = try? await provider.embed(queryText) else { return [] }
       let records = await MainActor.run { store.records }
       return EmailMemoryRetriever.retrieve(

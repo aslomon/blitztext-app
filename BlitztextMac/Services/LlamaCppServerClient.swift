@@ -40,6 +40,18 @@ struct LlamaCppServerClient: Sendable {
     let error: APIError?
   }
 
+  private struct EmbeddingRequest: Encodable {
+    let model: String
+    let input: String
+  }
+
+  private struct EmbeddingResponse: Decodable {
+    struct Entry: Decodable {
+      let embedding: [Double]
+    }
+    let data: [Entry]
+  }
+
   let baseURL: URL
   let apiKey: String
   let session: URLSession
@@ -162,6 +174,49 @@ struct LlamaCppServerClient: Sendable {
       throw LLMError.noContent
     }
     return content
+  }
+
+  /// Requests an embedding vector via the OpenAI-compatible `/v1/embeddings` endpoint.
+  func embed(modelID: String, text: String) async throws -> [Double] {
+    let url = baseURL.appendingPathComponent("v1/embeddings")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    request.timeoutInterval = 120
+    request.httpBody = try JSONEncoder().encode(EmbeddingRequest(model: modelID, input: text))
+
+    let (data, response): (Data, URLResponse)
+    do {
+      (data, response) = try await session.data(for: request)
+    } catch let urlError as URLError {
+      switch urlError.code {
+      case .cannotConnectToHost, .cannotFindHost, .notConnectedToInternet, .timedOut,
+        .networkConnectionLost, .dnsLookupFailed:
+        throw LLMError.localModelUnavailable("llama.cpp ist lokal nicht erreichbar (Embedding).")
+      default:
+        throw LLMError.networkError(urlError.localizedDescription)
+      }
+    }
+
+    guard let http = response as? HTTPURLResponse else {
+      throw LLMError.networkError("Keine gültige Antwort")
+    }
+    guard http.statusCode == 200 else {
+      if http.statusCode == 503 {
+        throw LLMError.localModelUnavailable("llama.cpp lädt das Embedding-Modell noch.")
+      }
+      throw LLMError.apiError(Self.errorMessage(from: data) ?? "Status \(http.statusCode)")
+    }
+    return try Self.decodeEmbedding(data)
+  }
+
+  static func decodeEmbedding(_ data: Data) throws -> [Double] {
+    let result = try JSONDecoder().decode(EmbeddingResponse.self, from: data)
+    guard let vector = result.data.first?.embedding, !vector.isEmpty else {
+      throw LLMError.noContent
+    }
+    return vector
   }
 
   private static func errorMessage(from data: Data) -> String? {

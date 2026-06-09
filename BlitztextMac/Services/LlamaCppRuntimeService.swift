@@ -41,19 +41,34 @@ actor LlamaCppRuntimeService {
 
   private let store: LlamaCppModelStore
   private var running: RunningServer?
+  private var runningEmbedding: RunningServer?
 
   init(store: LlamaCppModelStore = .default) {
     self.store = store
   }
 
+  /// Client for the chat/rewrite server (one model at a time).
   func client(for modelID: String) async throws -> LlamaCppServerClient {
+    try await startOrReuseServer(modelID: modelID, embedding: false)
+  }
+
+  /// Client for the embedding server — runs concurrently with the rewrite server so semantic
+  /// e-mail memory can embed while a rewrite model is loaded. Started with `--embedding`.
+  func embeddingClient(for modelID: String) async throws -> LlamaCppServerClient {
+    try await startOrReuseServer(modelID: modelID, embedding: true)
+  }
+
+  private func startOrReuseServer(modelID: String, embedding: Bool) async throws
+    -> LlamaCppServerClient
+  {
     let trimmed = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let running, running.modelID == trimmed, running.process.isRunning {
-      let status = await running.client.healthStatus()
-      if status == .ready { return running.client }
+    let existing = embedding ? runningEmbedding : running
+    if let existing, existing.modelID == trimmed, existing.process.isRunning {
+      let status = await existing.client.healthStatus()
+      if status == .ready { return existing.client }
     }
 
-    try await stop()
+    try await stopSlot(embedding: embedding)
     let model = try modelEntry(for: trimmed)
     let modelURL = try store.finalURL(for: model)
     guard store.isInstalled(model) else {
@@ -78,7 +93,8 @@ actor LlamaCppRuntimeService {
       port: port,
       alias: trimmed,
       contextSize: 4096,
-      apiKey: apiKey
+      apiKey: apiKey,
+      embedding: embedding
     )
     process.environment = Self.sanitizedEnvironment()
     process.standardOutput = Pipe()
@@ -90,22 +106,30 @@ actor LlamaCppRuntimeService {
       throw RuntimeError.processLaunchFailed(error.localizedDescription)
     }
 
-    running = RunningServer(process: process, modelID: trimmed, client: client)
+    let server = RunningServer(process: process, modelID: trimmed, client: client)
+    if embedding { runningEmbedding = server } else { running = server }
     do {
       try await waitUntilReady(client: client, process: process)
       guard Self.listeningPIDs(for: port).contains(process.processIdentifier) else {
         throw RuntimeError.portOwnershipMismatch
       }
     } catch {
-      try? await stop()
+      try? await stopSlot(embedding: embedding)
       throw error
     }
     return client
   }
 
+  /// Stops both servers (rewrite + embedding) — e.g. on app teardown.
   func stop() async throws {
-    guard let server = running else { return }
-    running = nil
+    try await stopSlot(embedding: false)
+    try await stopSlot(embedding: true)
+  }
+
+  private func stopSlot(embedding: Bool) async throws {
+    let server = embedding ? runningEmbedding : running
+    guard let server else { return }
+    if embedding { runningEmbedding = nil } else { running = nil }
     guard server.process.isRunning else { return }
     server.process.terminate()
     try await Task.sleep(nanoseconds: 500_000_000)
@@ -144,7 +168,8 @@ actor LlamaCppRuntimeService {
     #endif
 
     let bundleURL = Bundle.main.bundleURL
-    let candidate = bundleURL
+    let candidate =
+      bundleURL
       .appendingPathComponent("Contents", isDirectory: true)
       .appendingPathComponent("Helpers", isDirectory: true)
       .appendingPathComponent("llama-server", isDirectory: false)
@@ -160,9 +185,10 @@ actor LlamaCppRuntimeService {
     port: Int,
     alias: String,
     contextSize: Int,
-    apiKey: String
+    apiKey: String,
+    embedding: Bool = false
   ) -> [String] {
-    [
+    var arguments = [
       "--host", "127.0.0.1",
       "--port", "\(port)",
       "--model", modelURL.path,
@@ -172,6 +198,11 @@ actor LlamaCppRuntimeService {
       "--no-webui",
       "--log-disable",
     ]
+    if embedding {
+      // nomic-embed-text-v1.5 is mean-pooled; enable the embeddings endpoint explicitly.
+      arguments += ["--embedding", "--pooling", "mean"]
+    }
+    return arguments
   }
 
   static func findFreeLocalPort() throws -> Int {

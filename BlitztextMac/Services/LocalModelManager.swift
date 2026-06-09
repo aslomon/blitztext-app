@@ -28,6 +28,7 @@ final class LocalModelManager {
   private(set) var installed: [OllamaService.InstalledModel] = []
   /// GGUF models installed for the bundled llama.cpp runtime.
   private(set) var llamaCppInstalled: [LlamaCppModelCatalog.Model] = []
+  private(set) var llamaCppEmbeddingInstalled: [LlamaCppModelCatalog.Model] = []
   /// In-flight downloads keyed by tag.
   private(set) var pulls: [String: PullUIState] = [:]
   /// In-flight GGUF downloads keyed by llama.cpp catalog id.
@@ -66,7 +67,7 @@ final class LocalModelManager {
     ollamaAppInstalled = ollamaAppURL != nil
     serverReachable = await OllamaService.statusCheck()
     installed = serverReachable ? await OllamaService.installedModelsDetailed() : []
-    llamaCppInstalled = llamaCppStore.installedModels()
+    reloadInstalledLlamaCpp()
   }
 
   // MARK: - Queries
@@ -102,6 +103,17 @@ final class LocalModelManager {
 
   func installedLlamaCppModel(for modelID: String) -> LlamaCppModelCatalog.Model? {
     llamaCppInstalled.first { $0.id == modelID }
+  }
+
+  func isLlamaCppEmbeddingInstalled(_ modelID: String) -> Bool {
+    llamaCppEmbeddingInstalled.contains { $0.id == modelID }
+  }
+
+  /// Reloads both installed-model lists (chat + embedding) from the on-disk manifests.
+  private func reloadInstalledLlamaCpp() {
+    llamaCppInstalled = llamaCppStore.installedModels()
+    llamaCppEmbeddingInstalled = LlamaCppModelCatalog.embeddingModels.filter(
+      llamaCppStore.isInstalled)
   }
 
   /// Whether the Ollama app is currently being installed or started.
@@ -230,7 +242,7 @@ final class LocalModelManager {
     lastError = nil
     do {
       try llamaCppStore.delete(model)
-      llamaCppInstalled = llamaCppStore.installedModels()
+      reloadInstalledLlamaCpp()
     } catch {
       lastError = error.localizedDescription
     }

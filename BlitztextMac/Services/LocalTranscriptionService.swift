@@ -227,8 +227,44 @@ actor LocalTranscriptionService {
     return currentModelName == defaultModelName || currentModelName == fastModelName
   }
 
+  /// After deleting `deletedModelName`, decide which model the picker should select next. Keeps the
+  /// current selection when it still exists on disk; otherwise prefers the recommended fast model if
+  /// still installed, then any remaining installed model, then the recommended name as a last
+  /// resort — so the selection never points at a model that was just removed. Pure for testing.
+  static func selectionAfterDeleting(
+    deletedModelName: String,
+    currentSelection: String,
+    remainingInstalledIDs: [String]
+  ) -> String {
+    let deleted = normalizedModelName(deletedModelName)
+    let selection = normalizedModelName(currentSelection)
+    if selection != deleted, remainingInstalledIDs.contains(selection) {
+      return selection
+    }
+    if remainingInstalledIDs.contains(recommendedFastModelName) {
+      return recommendedFastModelName
+    }
+    return remainingInstalledIDs.first ?? recommendedFastModelName
+  }
+
   func prepare(modelName: String) async throws {
     _ = try await pipeline(modelName: modelName)
+  }
+
+  /// Remove an installed Whisper model directory from disk. If that model is currently loaded into
+  /// the in-memory pipeline, the pipeline is dropped so the next transcription reloads cleanly.
+  /// A no-op on the file system when the model is not present (so "re-download" can delete safely).
+  func deleteModel(_ modelName: String) throws {
+    let normalizedName = Self.normalizedModelName(modelName)
+    let url = Self.modelURL(named: normalizedName)
+    let fileManager = FileManager.default
+    if fileManager.fileExists(atPath: url.path) {
+      try fileManager.removeItem(at: url)
+    }
+    if loadedModelName == normalizedName {
+      whisperKit = nil
+      loadedModelName = nil
+    }
   }
 
   func downloadAndInstall(

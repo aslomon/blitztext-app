@@ -33,7 +33,8 @@ struct ModelsSettingsView: View {
         : "\u{201E}\(name)\u{201C} ist geladen (\(count) Whisper-Modelle auf diesem Mac)."
     }
     if let size = LocalTranscriptionModel.sizeLabel(for: appState.selectedLocalModelName) {
-      return "\u{201E}\(name)\u{201C} ist nicht geladen \u{2014} \(size). Wird beim Installieren lokal gespeichert."
+      return
+        "\u{201E}\(name)\u{201C} ist nicht geladen \u{2014} \(size). Wird beim Installieren lokal gespeichert."
     }
     return "\u{201E}\(name)\u{201C} ist nicht geladen. Wird beim Installieren lokal gespeichert."
   }
@@ -144,6 +145,7 @@ struct ModelsSettingsView: View {
       transcriptionStateRow
       transcriptionModelPicker
       transcriptionDownloadControls
+      manageAllModelsButton
 
       if let errorText = appState.localModelDownloadErrorText {
         Text(errorText)
@@ -152,6 +154,19 @@ struct ModelsSettingsView: View {
           .fixedSize(horizontal: false, vertical: true)
       }
     }
+  }
+
+  /// Bridge from the compact Modelle tab to the full "Lokale Modelle" window, where every local model
+  /// type (Whisper, Ollama LLM, embedding) can be loaded, re-downloaded and deleted in one place.
+  private var manageAllModelsButton: some View {
+    Button {
+      NotificationCenter.default.post(name: .openLocalModelsWindow, object: nil)
+    } label: {
+      Label("Alle lokalen Modelle verwalten", systemImage: "square.stack.3d.up")
+        .font(.system(size: 10.5, weight: .medium))
+    }
+    .buttonStyle(PopoverActionButtonStyle(.secondary))
+    .controlSize(.small)
   }
 
   private var transcriptionStateRow: some View {
@@ -204,12 +219,16 @@ struct ModelsSettingsView: View {
       }
     } else {
       HStack(spacing: 10) {
-        Button(appState.localModelDownloadButtonTitle) {
-          appState.installSelectedLocalModel()
+        // Show the install button only when something is actually downloadable. When the model is
+        // already installed, the state row above ("… ist geladen") says so — a disabled
+        // "… ist installiert" button was a redundant fake button.
+        if !appState.selectedLocalModelIsInstalled {
+          Button(appState.localModelDownloadButtonTitle) {
+            appState.installSelectedLocalModel()
+          }
+          .controlSize(.small)
+          .buttonStyle(PopoverActionButtonStyle(.primary))
         }
-        .controlSize(.small)
-        .buttonStyle(PopoverActionButtonStyle(appState.selectedLocalModelIsInstalled ? .secondary : .primary))
-        .disabled(appState.selectedLocalModelIsInstalled)
 
         Link(
           "Modellseite",
@@ -252,17 +271,17 @@ private struct ModelsSectionWithPill<Pill: View, Content: View>: View {
   }
 
   var body: some View {
-    GroupBox {
-      VStack(alignment: .leading, spacing: 10) {
-        content
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    } label: {
+    // Header band (label + pill) with content directly below — NOT wrapped in a GroupBox.
+    // The inner SettingsSection children are already cards; an outer GroupBox here produced a
+    // card-in-card "box in a box" look. A plain header keeps one clear card level.
+    VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 8) {
         SectionLabel(text: label)
         Spacer()
         pill
       }
+      content
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

@@ -34,7 +34,7 @@ struct ArchiveSettingsView: View {
       InfoDisclosure("Datenschutz") {
         Text(
           "Aus für maximale Privatsphäre. Wenn aktiv, werden Roh- und Endtext der letzten "
-            + "90 Tage on-device gespeichert (0600, kein Audio, nichts verlässt den Mac). "
+            + "90 Tage on-device gespeichert (nur du, kein Audio, nichts verlässt den Mac). "
             + "Das Archiv speichert nur Text. Gelernte Begriffe pflegst du im Tab \u{201E}Vokabular\u{201C}."
         )
       }

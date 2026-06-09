@@ -1,18 +1,32 @@
 import SwiftUI
 
-/// An icon-only "trash" button that confirms before deleting an installed Ollama model (which frees
-/// several GB on disk). Shared by the inline catalog rows and the installed-models list so the
-/// destructive flow + copy stays consistent in both places.
+/// An icon-only "trash" button that confirms before deleting an installed model (which frees disk
+/// space). Shared across all model types — Ollama LLM/embedding rows and Whisper models — so the
+/// destructive flow + copy stays consistent everywhere.
 struct DeleteModelButton: View {
-  /// Label shown in the confirmation title (e.g. "Gemma 3 · 12B" or the raw tag).
+  /// Label shown in the confirmation title (e.g. "Gemma 3 · 12B" or "Whisper Large v3").
   let displayName: String
-  /// The exact tag passed to `ollama rm` / DELETE /api/delete.
-  let deleteTag: String
-  /// On-disk size freed by the delete, if known (for the confirmation message).
-  let freedSizeGB: Double?
-  let manager: LocalModelManager
+  /// Already-formatted freed size for the confirmation message (e.g. "2,1 GB" or "598 MB").
+  let freedSizeText: String?
+  /// The destructive action to run when the user confirms.
+  let onDelete: () -> Void
 
   @State private var confirming = false
+
+  init(displayName: String, freedSizeText: String?, onDelete: @escaping () -> Void) {
+    self.displayName = displayName
+    self.freedSizeText = freedSizeText
+    self.onDelete = onDelete
+  }
+
+  /// Convenience for Ollama rows: deletes `deleteTag` through the manager and formats the GB size.
+  init(displayName: String, deleteTag: String, freedSizeGB: Double?, manager: LocalModelManager) {
+    self.init(
+      displayName: displayName,
+      freedSizeText: freedSizeGB.map { SystemCapabilities.formatGB($0) },
+      onDelete: { manager.delete(deleteTag) }
+    )
+  }
 
   var body: some View {
     // spec #13: icon-only trash button (PopoverIconButtonStyle(.danger), 28×28 touch target)
@@ -29,12 +43,12 @@ struct DeleteModelButton: View {
       isPresented: $confirming,
       titleVisibility: .visible
     ) {
-      Button("Entfernen", role: .destructive) { manager.delete(deleteTag) }
+      Button("Entfernen", role: .destructive) { onDelete() }
       Button("Abbrechen", role: .cancel) {}
     } message: {
-      if let freedSizeGB {
+      if let freedSizeText {
         Text(
-          "Gibt \(SystemCapabilities.formatGB(freedSizeGB)) auf der Disk frei. "
+          "Gibt \(freedSizeText) auf der Disk frei. "
             + "Du kannst das Modell später jederzeit neu laden.")
       } else {
         Text("Du kannst das Modell später jederzeit neu laden.")

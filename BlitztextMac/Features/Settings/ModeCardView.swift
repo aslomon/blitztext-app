@@ -74,14 +74,6 @@ struct ModeCardView: View {
     } label: {
       header
     }
-    // Leading accent edge: 3pt coloured strip gives each card visual identity without glass stacking
-    .overlay(alignment: .leading) {
-      RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .fill(type.accentColorValue.opacity(0.55))
-        .frame(width: 3)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .allowsHitTesting(false)
-    }
   }
 
   private var editorContent: some View {
@@ -112,8 +104,6 @@ struct ModeCardView: View {
   private var summaryContent: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 6) {
-        BlitzStatusPill(
-          state: config.isEnabled ? .ready : .muted, label: config.isEnabled ? "Aktiv" : "Aus")
         if isRewriteMode {
           BlitzStatusPill(
             state: backendPillState, label: effectiveBackend == .local ? "Lokal" : "Online")
@@ -209,8 +199,14 @@ struct ModeCardView: View {
   // Uses SwiftUI DisclosureGroup for native chevron + animation (spec change 13)
   private var advancedDisclosure: some View {
     DisclosureGroup(isExpanded: $showAdvanced) {
-      advancedContent
-        .padding(.top, 6)
+      // DisclosureGroup wraps multiple children in a center-aligned VStack by default, which
+      // left-floated wide controls but centered narrow ones (pickers, toggles, segmented).
+      // Force leading alignment + full width so every row lines up on the left edge.
+      VStack(alignment: .leading, spacing: 10) {
+        advancedContent
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.top, 6)
     } label: {
       advancedToggleLabel
     }
@@ -296,9 +292,9 @@ struct ModeCardView: View {
       Image(systemName: type.icon)
         .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(type.accentColorValue)
-      Text(appState.displayName(for: config).uppercased())
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(.secondary)
+      Text(appState.displayName(for: config))
+        .font(.system(size: 12.5, weight: .semibold))
+        .foregroundStyle(.primary)
       Text(appState.hotkeyLabel(for: modeID))
         .font(.system(size: 9.5, design: .monospaced))
         .foregroundStyle(.quaternary)

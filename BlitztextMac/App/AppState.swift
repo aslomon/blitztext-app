@@ -619,7 +619,8 @@ final class AppState {
     guard semanticEmailEmbeddingIsReady else {
       return semanticEmailEmbeddingIsPreparing ? "Lädt" : "Modell fehlt"
     }
-    return "\(emailSemanticMemoryStore.records.count) Einträge"
+    let count = emailSemanticMemoryStore.records.count
+    return count == 1 ? "1 Eintrag" : "\(count) Einträge"
   }
 
   var unifiedMemoryStatusLabel: String {
@@ -1429,10 +1430,27 @@ final class AppState {
     }
   }
 
+  /// Download the currently selected Whisper model and switch the app into secure-local mode on
+  /// success — the "set up local transcription" entry point used by the Modelle tab and onboarding.
   func installSelectedLocalModel() {
+    performLocalModelDownload(
+      named: selectedLocalModelName, selectOnSuccess: true, enableSecureOnSuccess: true)
+  }
+
+  /// Download a specific Whisper model from the unified model-management surface. Makes it the active
+  /// transcription model on success (like the Ollama "Laden & nutzen") but never flips secure-local
+  /// mode — that stays an explicit, separate switch.
+  func installLocalModel(named modelName: String, selectOnSuccess: Bool = true) {
+    performLocalModelDownload(
+      named: modelName, selectOnSuccess: selectOnSuccess, enableSecureOnSuccess: false)
+  }
+
+  private func performLocalModelDownload(
+    named modelName: String, selectOnSuccess: Bool, enableSecureOnSuccess: Bool
+  ) {
     guard !isDownloadingLocalModel else { return }
 
-    let modelName = selectedLocalModelName
+    let normalizedName = LocalTranscriptionService.normalizedModelName(modelName)
     localModelDownloadProgress = 0
     localModelDownloadStatusText = "Download startet..."
     localModelDownloadErrorText = nil
@@ -1440,7 +1458,7 @@ final class AppState {
     Task {
       do {
         let installedURL = try await LocalTranscriptionService.shared.downloadAndInstall(
-          modelName: modelName
+          modelName: normalizedName
         ) { [weak self] progress in
           Task { @MainActor [weak self] in
             guard let self else { return }
@@ -1450,19 +1468,62 @@ final class AppState {
           }
         }
 
-        appSettings.selectedLocalTranscriptionModelName = installedURL.lastPathComponent
-        appSettings.secureLocalModeEnabled = true
+        if selectOnSuccess {
+          appSettings.selectedLocalTranscriptionModelName = installedURL.lastPathComponent
+        }
+        if enableSecureOnSuccess {
+          appSettings.secureLocalModeEnabled = true
+        }
         localModelDownloadProgress = nil
         localModelDownloadStatusText =
-          "\(LocalTranscriptionModel.displayName(for: modelName)) ist installiert."
+          "\(LocalTranscriptionModel.displayName(for: normalizedName)) ist installiert."
         localModelDownloadErrorText = nil
 
-        try? await LocalTranscriptionService.shared.prepare(modelName: modelName)
+        try? await LocalTranscriptionService.shared.prepare(modelName: normalizedName)
       } catch {
         localModelDownloadProgress = nil
         localModelDownloadStatusText = nil
         localModelDownloadErrorText = error.localizedDescription
       }
+    }
+  }
+
+  /// Delete an installed Whisper model and re-point the selection so the picker never shows a removed
+  /// model as active. Refuses while a download runs to avoid racing the same directory.
+  func deleteLocalTranscriptionModel(_ modelName: String) {
+    guard !isDownloadingLocalModel else { return }
+    let normalizedName = LocalTranscriptionService.normalizedModelName(modelName)
+    localModelDownloadErrorText = nil
+    Task {
+      do {
+        try await LocalTranscriptionService.shared.deleteModel(normalizedName)
+        let remaining = LocalTranscriptionService.installedModels().map(\.id)
+        appSettings.selectedLocalTranscriptionModelName =
+          LocalTranscriptionService.selectionAfterDeleting(
+            deletedModelName: normalizedName,
+            currentSelection: appSettings.selectedLocalTranscriptionModelName,
+            remainingInstalledIDs: remaining
+          )
+      } catch {
+        localModelDownloadErrorText = error.localizedDescription
+      }
+    }
+  }
+
+  /// Re-download a Whisper model: remove the on-disk copy, then fetch a fresh one. Keeps it the
+  /// active selection when it already was, so "Neu laden" never silently switches the active model.
+  func reinstallLocalTranscriptionModel(_ modelName: String) {
+    guard !isDownloadingLocalModel else { return }
+    let normalizedName = LocalTranscriptionService.normalizedModelName(modelName)
+    let wasSelected = selectedLocalModelName == normalizedName
+    Task {
+      do {
+        try await LocalTranscriptionService.shared.deleteModel(normalizedName)
+      } catch {
+        localModelDownloadErrorText = error.localizedDescription
+        return
+      }
+      installLocalModel(named: normalizedName, selectOnSuccess: wasSelected)
     }
   }
 

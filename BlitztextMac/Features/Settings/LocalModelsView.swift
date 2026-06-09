@@ -16,10 +16,13 @@ struct LocalModelsView: View {
       VStack(alignment: .leading, spacing: 18) {
         header
         systemCard
+        WhisperModelsSection(appState: appState)
+        ollamaGroupLabel
         if !manager.serverReachable { serverDownBanner }
         if let recommended = manager.recommended { recommendationCard(recommended) }
         if !manager.installed.isEmpty { installedSection }
         catalogSection
+        embeddingSection
         customSection
         if let error = manager.lastError { errorBanner(error) }
         footerHint
@@ -40,7 +43,7 @@ struct LocalModelsView: View {
       VStack(alignment: .leading, spacing: 2) {
         Text("Lokale Modelle")
           .font(.system(size: 16, weight: .semibold))
-        Text("Laden, entfernen und aktives Umschreibmodell wählen.")
+        Text("Transkription, Sprachmodell und Embedding — laden, neu laden, entfernen.")
           .font(.system(size: 11))
           .foregroundStyle(.secondary)
       }
@@ -173,7 +176,10 @@ struct LocalModelsView: View {
         }
       }
       Spacer()
-      if isActive(record: record) {
+      if isEmbeddingModel(record) {
+        // An embedding model is not a rewrite model — never offer "Nutzen" (which sets the LLM).
+        BlitzStatusPill(state: .muted, label: "Embedding")
+      } else if isActive(record: record) {
         BlitzStatusPill(state: .ready, label: "Aktiv")
       } else {
         Button {
@@ -211,6 +217,77 @@ struct LocalModelsView: View {
           onPullAndUse: { pullAndUse(model.tag) }
         )
       }
+    }
+  }
+
+  // MARK: - Section grouping
+
+  /// Visually separates the Ollama rewrite/embedding block from the Whisper block above, so the
+  /// unified window reads as three clearly-labelled engine groups rather than one long list.
+  private var ollamaGroupLabel: some View {
+    SectionLabel(text: "Umschreiben · Sprachmodell (Ollama)")
+  }
+
+  // MARK: - Embedding model
+
+  /// The embedding model that powers semantic e-mail memory. Managed here too so every local model
+  /// type — transcription, rewrite, embedding — can be loaded, re-downloaded and deleted in one place.
+  private var embeddingTag: String {
+    let configured = appState.selectedEmbeddingModelName
+    return configured.isEmpty ? OllamaEmbeddingProvider.defaultModelID : configured
+  }
+
+  private var embeddingSection: some View {
+    let tag = embeddingTag
+    let installed = manager.isInstalled(tag)
+    let pulling = manager.isPulling(tag)
+    return VStack(alignment: .leading, spacing: 8) {
+      SectionLabel(text: "Embedding · E-Mail-Memory")
+      HStack(spacing: 10) {
+        Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle")
+          .font(.system(size: 13))
+          .foregroundStyle(installed ? .green : .blue)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(tag).font(.system(size: 12, weight: .semibold))
+          Text(installed ? "Lokal · für semantisches E-Mail-Memory" : "Nicht geladen")
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+        Spacer()
+        embeddingActions(tag: tag, installed: installed, pulling: pulling)
+      }
+      .padding(10)
+      .liquidGlassCard(cornerRadius: 8)
+    }
+  }
+
+  @ViewBuilder
+  private func embeddingActions(tag: String, installed: Bool, pulling: Bool) -> some View {
+    if pulling {
+      Label("Wird geladen …", systemImage: "arrow.down.circle")
+        .font(.system(size: 10.5, weight: .medium)).foregroundStyle(.blue)
+    } else if installed {
+      Button {
+        manager.prepareOllamaAndPull(tag)
+      } label: {
+        Image(systemName: "arrow.clockwise")
+      }
+      .buttonStyle(PopoverIconButtonStyle(.quiet))
+      .help("Neu laden")
+      DeleteModelButton(
+        displayName: tag,
+        deleteTag: tag,
+        freedSizeGB: manager.installedRecord(for: tag)?.sizeGB,
+        manager: manager
+      )
+    } else {
+      Button {
+        manager.prepareOllamaAndPull(tag)
+      } label: {
+        Label("Laden", systemImage: "arrow.down.circle.fill")
+          .font(.system(size: 11.5, weight: .semibold))
+      }
+      .buttonStyle(PopoverActionButtonStyle(.primary))
+      .disabled(manager.isPreparingOllama)
     }
   }
 
@@ -254,6 +331,12 @@ struct LocalModelsView: View {
 
   private func isActive(record: OllamaService.InstalledModel) -> Bool {
     activeModel?.id == record.id
+  }
+
+  /// Whether this installed Ollama record is the configured embedding model (so the row labels it
+  /// "Embedding" instead of offering "Nutzen", which would mis-assign it as the rewrite LLM).
+  private func isEmbeddingModel(_ record: OllamaService.InstalledModel) -> Bool {
+    OllamaService.isInstalled(embeddingTag, in: [record.name])
   }
 
   private func isActive(tag: String) -> Bool {

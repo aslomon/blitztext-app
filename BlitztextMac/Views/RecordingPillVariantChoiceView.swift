@@ -3,24 +3,13 @@ import SwiftUI
 extension RecordingPillView {
   var variantChoiceContent: some View {
     VStack(alignment: .leading, spacing: 0) {
-
-      // ── Header ──────────────────────────────────────────────────────────
-      // doc.on.doc signals "alternate versions" more clearly than square.split.2x1.
-      // A secondary mode-name line below the title provides one-glance context.
       HStack(spacing: 6) {
-        Image(systemName: "doc.on.doc")
+        Image(systemName: "square.split.2x1")
           .font(.system(size: 11, weight: .semibold))
           .foregroundStyle(accentColor)
-        VStack(alignment: .leading, spacing: 1) {
-          Text("Version wählen")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.primary)
-          if let modeName = pendingVariants?.mode.displayName {
-            Text(modeName)
-              .font(.system(size: 10, weight: .regular))
-              .foregroundStyle(.secondary)
-          }
-        }
+        Text("Version wählen")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(.primary)
         Spacer(minLength: 8)
         CopyOnlyDismissButton(action: onDismiss)
       }
@@ -39,12 +28,11 @@ extension RecordingPillView {
       }
       .padding(10)
     }
-    // Shared expanded-pill width constant — matches copyOnlyContent.
-    .frame(width: LiquidGlass.pillExpandedWidth)
-    .modifier(CardGlassModifier())
+    .frame(width: 380)
+    .modifier(CardGlassSurface())
   }
 
-  func variantCard(_ variant: RewriteVariant) -> some View {
+  private func variantCard(_ variant: RewriteVariant) -> some View {
     VStack(alignment: .leading, spacing: 7) {
       Text(variant.title)
         .font(.system(size: 11, weight: .semibold))
@@ -65,34 +53,36 @@ extension RecordingPillView {
         } label: {
           Text("Einfügen")
             .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(accentColor, in: Capsule())
         }
-        // GlassProminentButtonStyle: prominent glass CTA on macOS 26,
-        // PopoverActionButtonStyle(.primary) fallback on macOS 14–25.
-        .buttonStyle(GlassProminentButtonStyle())
-        .accessibilityLabel("Version \(variant.title) einfügen")
-        .accessibilityHint("Fügt diesen Text in die aktive App ein")
+        .buttonStyle(.plain)
 
         Button {
           onCopyVariant(variant.id)
         } label: {
           Text("Kopieren")
             .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(accentColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(accentColor.opacity(0.12), in: Capsule())
         }
-        // GlassActionButtonStyle: secondary glass on macOS 26,
-        // PopoverActionButtonStyle(.primary) fallback on macOS 14–25.
-        .buttonStyle(GlassActionButtonStyle())
-        .accessibilityLabel("Version \(variant.title) kopieren")
+        .buttonStyle(.plain)
 
         Spacer(minLength: 0)
       }
     }
     .padding(9)
-    // Flat separator-level tint only — the outer CardGlassModifier provides glass depth.
-    // No stacked glass layers per DESIGN.md "Glass nicht stapeln" rule.
     .background(
-      Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .fill(Color.primary.opacity(0.035))
     )
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Variante: \(variant.title)")
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+    )
   }
 }

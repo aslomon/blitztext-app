@@ -32,14 +32,22 @@ struct ArchiveWindowView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      header
-      facetPicker
+      VStack(alignment: .leading, spacing: 12) {
+        header
+        facetPicker
+      }
+      .padding(.horizontal, 16)
+
+      // Full-width ScrollView so the cards' liquidGlassCard shadow has room and is NOT clipped at
+      // the sides. The inner horizontal padding (16) keeps the cards aligned with the header above.
       ScrollView {
         selectedFacet
           .padding(.top, 2)
+          .padding(.horizontal, 16)
+          .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
-    .padding(16)
+    .padding(.top, 16)
     .frame(minWidth: 460, minHeight: 480)
   }
 
@@ -68,7 +76,7 @@ struct ArchiveWindowView: View {
   /// off (and where to turn it on) so the empty facets below don't look like a bug.
   private var headerSubtitle: String {
     appState.isArchiveEnabled
-      ? "Lokal gespeichert (0600, kein Audio). Nichts verlässt deinen Mac."
+      ? "Lokal gespeichert (nur du, kein Audio). Nichts verlässt deinen Mac."
       : "Archivierung ist aus — hier erscheint nichts, bis du sie im Einstellungen-Tab Archiv aktivierst."
   }
 

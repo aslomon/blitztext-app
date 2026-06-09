@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LocalTranscriptionService Model Selection Helper**: New `selectionAfterDeleting()` static method to intelligently choose the next model after deletion, preserving current selection if still available or falling back to recommended/remaining models
+- **LocalTranscriptionService Model Deletion**: New `deleteModel()` method to safely remove installed Whisper models from disk and unload from in-memory pipeline
 - **Liquid Glass Design System (macOS 26+)**: Centralized Glass-effect component library with native `.glassEffect` support and intelligent fallbacks
+  - **glassRowBackground Static Fallback**: Simplified hover behavior to calm, static accent tint on all macOS versions (removed overly animated interactive morph that read as gimmicky on dense utility lists)
   - **LiquidGlass.swift**: Core module providing unified glass modifiers and container views (`.liquidGlassCard()`, `.liquidGlassCapsule()`, `.liquidGlassTintedCard()`, `.liquidGlassKeycap()`, `.glassRowBackground()`, `GlassEffectContainerView`)
   - **GlassActionButtonStyle & GlassProminentButtonStyle**: Consistent button styles across glass surfaces
   - **Fallback strategy**: Native glass effects on macOS 26+; transparent `.regularMaterial` + `MenuBarTokens` fills on macOS 14–25 (no degradation, smooth appearance on all supported versions)
@@ -22,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ModeCardView` upgraded with glass-card background and visual mode accent stripe
   - Hotkey recorder buttons now fixed-position with improved visibility
   - Single unified edit entry point per mode
+  - **Modi-Karten UI-Cleanup**: Removed colored accent bar, changed mode name from uppercase to regular styling with larger font weight (more prominent as section title), removed redundant "Aktiv" status pill (toggle already indicates active state), fixed control alignment in disclosure group (now all controls line up flush left)
 - **Models Settings**:
   - Removed redundant top status (status now unified in section header pills)
   - Explanatory text moved behind interactive `InfoDisclosure` components
@@ -32,22 +36,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Action bar now shows disabled states instead of hiding actions
   - Permission button hierarchy corrected per platform conventions
   - Permission blockers now listed first
+  - **Archive Window**: Fixed ScrollView width so card shadows display without lateral clipping (cards now visually flush with window edges)
 - **Onboarding Wizard**:
   - Glass-backdrop introduction step
   - Progress indicator changed from 8-capsule strip to segmented counter with step label
   - Fixed Escape key conflict with step navigation
   - Directional push transitions between steps
-- **Recording Pill & Pills**:
-  - Glass modifiers centralized (no more scattered conditionals)
-  - Morphing pill ↔ card transitions with proper state management
-  - Removed glass-effect stacking complexity
-  - `.glassProminent` button style for insert actions
-  - Error state now uses red glass surface for visual feedback
+- **Recording Pill Simplification**:
+  - Reverted to original minimalist design (single pill state without GlassEffectContainer morphing)
+  - Removed namespace-based morphing between pill/card/variant states
+  - Kept visual simplicity: hover-driven affordance animations (scale, opacity) without complex state transitions
+  - Error state continues to use red tint for visual feedback
 - **build.sh**: Added `ENABLE_DEBUG_DYLIB=NO` to prevent Xcode 26 signature mismatch on debug builds (affects `--debug` flag only; Release/Signing unaffected)
 
 ### Fixed
 
 - **MenuBarStyle Glass Modifiers**: Eliminated duplicate `BlitztextSurface`, `PillGlassModifier`, and `CardGlassModifier` definitions by consolidating into unified LiquidGlass.swift module
+- **glassRowBackground Hover Behavior**: Disabled interactive morphing Liquid Glass hover effect (macOS 26+) in favor of calm, static accent tint on all macOS versions; interactive morphing was overly animated for dense utility lists and conflicted with nested glass in popovers
+- **Grammar Fix**: Corrected "1 Einträge" → "1 Eintrag" singular form in email semantic memory status label
+- **ModeCardView Advanced Controls Alignment**: Fixed DisclosureGroup wrapping that left-aligned wide controls but centered narrow ones; now all controls line up flush left via explicit leading VStack
+- **LocalLLMModelPicker Duplicate Status Pill**: Removed redundant "Aktiv" pill in inline status row (model name only); the active state is already shown by the header status pill, eliminating visual duplication
 
 ### Added (Previous Phases)
 

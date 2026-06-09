@@ -46,12 +46,19 @@ struct SystemSettingsView: View {
   // MARK: - Installation & Start (install location + login start, consolidated)
 
   private var installationAndStartSection: some View {
-    SettingsSection(
-      "Installation & Start",
-      caption:
+    // Plain section (SectionLabel + content), matching the other System sections.
+    // Was the only SettingsSection/GroupBox card here — the lone grey box read as inconsistent.
+    VStack(alignment: .leading, spacing: 8) {
+      SectionLabel(text: "Installation & Start")
+
+      Text(
         "Für direktes Einfügen und stabile Hotkeys: Blitztext einmal nach /Applications legen, "
-        + "danach Mikrofon und Bedienungshilfen erlauben."
-    ) {
+          + "danach Mikrofon und Bedienungshilfen erlauben."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+
       Text(installationHeadline)
         .font(.system(size: 11.5, weight: .semibold))
         .foregroundStyle(.primary)

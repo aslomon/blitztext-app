@@ -52,13 +52,12 @@ struct LocalLLMModelPicker: View {
   @ViewBuilder
   private var inlineStatusRow: some View {
     if let record = selectedInstalledRecord {
-      HStack(spacing: 6) {
-        Text(record.name)
-          .font(.system(size: 12, weight: .semibold))
-          .lineLimit(1)
-        Spacer()
-        BlitzStatusPill(state: .ready, label: "Aktiv")
-      }
+      // Model name only — the active state is already shown by the header statusPill,
+      // so a second "Aktiv" pill here was redundant.
+      Text(record.name)
+        .font(.system(size: 12, weight: .semibold))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
     } else {
       Text(compactStatusHint)
         .font(.system(size: 10.5))

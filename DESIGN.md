@@ -72,6 +72,14 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
   `Kopieren`. Keine automatische Paste, solange die Karte sichtbar ist.
 - **Verfügbarkeits-Badges**: vorhandene Icons `checkmark.circle.fill` (grün) /
   `arrow.down.circle.fill` (blau) / `exclamationmark.triangle.fill` (orange) wiederverwenden.
+- **Einheitliche Modellverwaltung**: Das „Lokale Modelle"-Fenster (`LocalModelsView`) verwaltet alle
+  drei lokalen Modelltypen an einem Ort — Transkription (Whisper, `WhisperModelsSection`),
+  Umschreiben (Ollama-LLM) und Embedding. Jede Modellzeile folgt demselben Muster: grün/blau-Badge +
+  Name + Größe links, rechts Aktion(en) — `Nutzen`/`Aktiv`-Pille, `arrow.clockwise`-Icon-Button für
+  „Neu laden" und `DeleteModelButton` (Papierkorb mit Bestätigung). `DeleteModelButton` ist
+  Closure-basiert und für alle Modelltypen identisch. Reihen liegen auf `.liquidGlassCard(cornerRadius: 8)`,
+  je Engine eine `SectionLabel`-Gruppe. Embedding-Modelle zeigen nie „Nutzen" (das setzt nur das
+  Sprachmodell), sondern eine `Embedding`-Pille. Jeder Modelltyp muss löschbar und neu ladbar sein.
 - **Offline-/Lokal-Hinweis**: orange Info-Banner-Muster wie `accessibilityHintBanner`.
 
 ## Regeln

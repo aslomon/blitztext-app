@@ -79,6 +79,52 @@ final class LocalModelStateTests: XCTestCase {
     XCTAssertFalse(LocalTranscriptionService.isUsableModel(at: root))
   }
 
+  // MARK: - WhisperKit transcription model: selection after delete
+
+  /// Deleting a model the user was NOT using must leave the active selection untouched.
+  func testSelectionAfterDeletingKeepsUnaffectedSelection() {
+    let result = LocalTranscriptionService.selectionAfterDeleting(
+      deletedModelName: LocalTranscriptionService.fastModelName,
+      currentSelection: LocalTranscriptionService.recommendedFastModelName,
+      remainingInstalledIDs: [LocalTranscriptionService.recommendedFastModelName]
+    )
+    XCTAssertEqual(result, LocalTranscriptionService.recommendedFastModelName)
+  }
+
+  /// Deleting the active model falls back to the recommended fast model when it is still on disk.
+  func testSelectionAfterDeletingFallsBackToRecommendedFast() {
+    let result = LocalTranscriptionService.selectionAfterDeleting(
+      deletedModelName: LocalTranscriptionService.defaultModelName,
+      currentSelection: LocalTranscriptionService.defaultModelName,
+      remainingInstalledIDs: [
+        LocalTranscriptionService.recommendedFastModelName,
+        LocalTranscriptionService.fastModelName,
+      ]
+    )
+    XCTAssertEqual(result, LocalTranscriptionService.recommendedFastModelName)
+  }
+
+  /// When the recommended fast model is gone too, fall back to whatever installed model remains.
+  func testSelectionAfterDeletingFallsBackToFirstRemaining() {
+    let result = LocalTranscriptionService.selectionAfterDeleting(
+      deletedModelName: LocalTranscriptionService.recommendedFastModelName,
+      currentSelection: LocalTranscriptionService.recommendedFastModelName,
+      remainingInstalledIDs: [LocalTranscriptionService.fastModelName]
+    )
+    XCTAssertEqual(result, LocalTranscriptionService.fastModelName)
+  }
+
+  /// Deleting the last installed model leaves the recommended name as a safe (not-installed) default
+  /// rather than an empty or stale selection.
+  func testSelectionAfterDeletingLastModelDefaultsToRecommendedName() {
+    let result = LocalTranscriptionService.selectionAfterDeleting(
+      deletedModelName: LocalTranscriptionService.fastModelName,
+      currentSelection: LocalTranscriptionService.fastModelName,
+      remainingInstalledIDs: []
+    )
+    XCTAssertEqual(result, LocalTranscriptionService.recommendedFastModelName)
+  }
+
   // MARK: - Ollama local LLM: installed-matching is normalization-aware
 
   /// Ollama reports fully-qualified tags ("gemma3:latest"); a curated bare name ("gemma3") must

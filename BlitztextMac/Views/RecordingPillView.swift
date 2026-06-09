@@ -5,8 +5,7 @@ import SwiftUI
 /// Idle: a static accent dot + live center-mirrored waveform.
 /// Hover: morphs to expose stop (checkmark) and cancel (X) affordances.
 ///
-/// macOS 26+: native Liquid Glass via `.glassEffect(in: .capsule)` with GlassEffectContainer
-///   morphing between pill / copy-card / variant-card states using @Namespace.
+/// macOS 26+: native Liquid Glass via `.glassEffect(in: .capsule)`.
 /// macOS 14–25: clean Capsule + .regularMaterial + one quiet shadow. No gradients, no blends.
 ///
 /// Hosted in a borderless non-activating NSPanel by `RecordingPillController`.
@@ -35,36 +34,33 @@ struct RecordingPillView: View {
   var onDismiss: () -> Void = {}
 
   @State private var isHovering = false
-  /// Used for GlassEffectContainer morphing between pill / card states on macOS 26.
-  @Namespace private var pillNamespace
 
   private let pillHeight: CGFloat = 32
 
   var body: some View {
-    // macOS 26: wrap in GlassEffectContainerView so the glass engine can morph between states.
-    // macOS 14–25: GlassEffectContainerView falls back to a plain VStack with no visual change.
-    GlassEffectContainerView(spacing: 0) {
-      Group {
-        if phase == .failed {
-          failedContent
-        } else if phase == .copyOnly {
-          copyOnlyContent
-            .glassEffectIDIfAvailable("card", namespace: pillNamespace)
-        } else if phase == .variantChoice {
-          variantChoiceContent
-            .glassEffectIDIfAvailable("card", namespace: pillNamespace)
-        } else {
-          pillContent
-        }
+    Group {
+      if phase == .failed {
+        failedContent
+      } else if phase == .copyOnly {
+        copyOnlyContent
+      } else if phase == .variantChoice {
+        variantChoiceContent
+      } else {
+        pillContent
       }
     }
+    .onHover { hovering in
+      withAnimation(.easeInOut(duration: 0.18)) {
+        isHovering = hovering
+      }
+    }
+    .animation(.easeInOut(duration: 0.18), value: isHovering)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(pillAccessibilityLabel)
   }
 
-  /// Red error pill: a warning glyph + the actual message (up to 2 lines), so a failed run —
-  /// most importantly an eyes-off background-hotkey run — explains itself instead of flashing
-  /// silently. Uses a red-tinted capsule surface to make the error state immediately visible.
+  /// Red error pill: a warning glyph + the actual message (up to 2 lines), so a failed run — most
+  /// importantly an eyes-off background-hotkey run — explains itself instead of flashing silently.
   private var failedContent: some View {
     HStack(spacing: 8) {
       Image(systemName: "exclamationmark.triangle.fill")
@@ -79,18 +75,16 @@ struct RecordingPillView: View {
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 7)
-    // liquidGlassCapsule(accent: .red) gives a semantic red tint on macOS 26;
-    // on macOS 14–25 PillGlassModifier adds a Color.red.opacity(0.10) overlay.
-    .liquidGlassCapsule(accent: .red)
+    .modifier(PillGlassSurface())
   }
 
-  /// Fallback card when auto-paste couldn't land: the dictated text in a scrollable, selectable
-  /// area with a Copy button (and a ⌘V hint), so the result is never silently stuck on the
-  /// clipboard.
+  /// Fallback card when auto-paste couldn't land: the dictated text in a scrollable, selectable area
+  /// with a Copy button (and a ⌘V hint), so the result is never silently stuck on the clipboard.
   ///
   /// Design: three-zone card (header / body / footer) on a rounded-rect glass surface — NOT a
-  /// capsule — so the expanded layout reads cleanly. The Copy action uses GlassProminentButtonStyle
-  /// on macOS 26 (prominent glass CTA) and PopoverActionButtonStyle(.primary) on macOS 14–25.
+  /// capsule — so the expanded layout reads cleanly. A thin `.separator`-opacity stroke traces the
+  /// card edge. The Copy action is a filled accent capsule (prominent CTA); ⌘V hint sits in muted
+  /// caption beside it. The dismiss target is a 20×20 circle with a `.tertiary`-foreground ✕.
   private var copyOnlyContent: some View {
     VStack(alignment: .leading, spacing: 0) {
 
@@ -140,8 +134,12 @@ struct RecordingPillView: View {
         } label: {
           Text("Kopieren")
             .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(accentColor, in: Capsule())
         }
-        .buttonStyle(GlassProminentButtonStyle())
+        .buttonStyle(.plain)
         .accessibilityLabel("Text kopieren")
         .help("Text in die Zwischenablage kopieren")
 
@@ -155,9 +153,8 @@ struct RecordingPillView: View {
       .padding(.top, 8)
       .padding(.bottom, 10)
     }
-    // Shared expanded-pill width constant — matches variantChoiceContent.
-    .frame(width: LiquidGlass.pillExpandedWidth)
-    .modifier(CardGlassModifier())
+    .frame(width: 320)
+    .modifier(CardGlassSurface())
   }
 
   // MARK: - Layout
@@ -209,17 +206,8 @@ struct RecordingPillView: View {
     }
     .padding(.horizontal, 12)
     .frame(height: pillHeight)
-    .modifier(PillGlassModifier())
-    .glassEffectIDIfAvailable("pill", namespace: pillNamespace)
+    .modifier(PillGlassSurface())
     .animation(.easeInOut(duration: 0.2), value: phase)
-    // onHover lives here — only pillContent reads isHovering; keeping it here avoids
-    // unnecessary re-evaluations of copyOnlyContent and variantChoiceContent.
-    .onHover { hovering in
-      withAnimation(.easeInOut(duration: 0.18)) {
-        isHovering = hovering
-      }
-    }
-    .animation(.easeInOut(duration: 0.18), value: isHovering)
   }
 
   // MARK: - Subviews
@@ -275,25 +263,53 @@ struct RecordingPillView: View {
         .frame(width: 22, height: 22)
         .contentShape(Circle())
     }
-    // GlassActionButtonStyle: .glassEffect(.regular.interactive()) on macOS 26,
-    // PopoverActionButtonStyle(.primary) fallback on macOS 14–25 (via LiquidGlass.swift).
-    .buttonStyle(GlassActionButtonStyle())
+    .buttonStyle(.plain)
     .help(help)
     .accessibilityLabel(accessibilityLabel)
   }
 }
 
-// MARK: - GlassEffectID helper
+// MARK: - Glass Modifiers
 
-/// Applies .glassEffectID only on macOS 26+; on older systems it is a no-op.
-/// Keeps call sites in Views clean per the single-source-of-truth rule in LiquidGlass.swift.
-extension View {
-  @ViewBuilder
-  fileprivate func glassEffectIDIfAvailable(_ id: String, namespace: Namespace.ID) -> some View {
+/// Applies the pill's background surface.
+/// macOS 26+: native Liquid Glass capsule (the real design).
+/// macOS 14–25: a clean material capsule with one quiet shadow (no gradients, no blends).
+private struct PillGlassSurface: ViewModifier {
+  func body(content: Content) -> some View {
     if #available(macOS 26.0, *) {
-      self.glassEffectID(id, in: namespace)
+      content
+        .glassEffect(.regular, in: .capsule)
     } else {
-      self
+      content
+        .background(Capsule(style: .continuous).fill(.regularMaterial))
+        .clipShape(Capsule(style: .continuous))
+        .shadow(color: .black.opacity(0.14), radius: 8, y: 2)
+    }
+  }
+}
+
+/// Applies a rounded-rect glass surface for expanded cards (copyOnly, etc.).
+/// macOS 26+: native Liquid Glass in a rounded rect (radius 14).
+/// macOS 14–25: regularMaterial + stroke border + shaped shadow.
+struct CardGlassSurface: ViewModifier {
+  private let radius: CGFloat = 14
+
+  func body(content: Content) -> some View {
+    if #available(macOS 26.0, *) {
+      content
+        .glassEffect(.regular, in: .rect(cornerRadius: radius))
+    } else {
+      content
+        .background(
+          RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(.regularMaterial)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 16, y: 4)
     }
   }
 }

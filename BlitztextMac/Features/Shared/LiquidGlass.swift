@@ -334,24 +334,19 @@ extension View {
   /// - macOS 14–25: tintFill RoundedRectangle when hovered; .clear otherwise
   ///
   /// Requires a @Namespace scoped to the parent list view so morphing works across adjacent rows.
-  @ViewBuilder
   public func glassRowBackground(
-    id: AnyHashable,
-    namespace: Namespace.ID,
+    id _: AnyHashable,
+    namespace _: Namespace.ID,
     isHovered: Bool,
     accentColor: Color
   ) -> some View {
-    if #available(macOS 26.0, *) {
-      if isHovered {
-        self
-          .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 10))
-          .glassEffectID(id, in: namespace)
-      } else {
-        self
-      }
-    } else {
-      modifier(RowBackgroundFallback(isHovered: isHovered, accentColor: accentColor))
-    }
+    // Calm, static hover highlight on ALL macOS versions. The macOS 26 interactive Liquid
+    // Glass morph (.glassEffect(.interactive) + .glassEffectID) read as a gimmicky warping
+    // blob that chased the cursor and morphed between rows on a dense utility list, and it
+    // stacked glass-on-glass inside the already-glassy popover (against DESIGN.md). A subtle
+    // accent tint is the restrained, native row highlight we want. id/namespace stay in the
+    // signature for call-site stability.
+    modifier(RowBackgroundFallback(isHovered: isHovered, accentColor: accentColor))
   }
 }
 

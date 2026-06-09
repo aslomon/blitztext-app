@@ -51,7 +51,10 @@ struct LocalModelsView: View {
 
         footerHint
       }
-      .padding(16)
+      // Top inset clears the floating traffic lights (full-size-content title bar).
+      .padding(.horizontal, 16)
+      .padding(.top, 38)
+      .padding(.bottom, 16)
     }
     .frame(minWidth: 540, minHeight: 580)
     .task { await manager.refresh() }

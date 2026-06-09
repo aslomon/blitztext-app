@@ -30,10 +30,16 @@ final class LocalModelsWindowController {
   }
 
   private func makeWindow() -> NSWindow {
-    let hosting = NSHostingController(rootView: LocalModelsView(appState: appState, manager: manager))
+    let hosting = NSHostingController(
+      rootView: LocalModelsView(appState: appState, manager: manager))
     let window = NSWindow(contentViewController: hosting)
     window.title = "Lokale Modelle"
-    window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+    // Transparent, full-size-content title bar so the content runs to the top with no separator line;
+    // the traffic lights float over the content (matches the onboarding window).
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
+    window.isMovableByWindowBackground = true
     window.setContentSize(NSSize(width: 560, height: 660))
     window.minSize = NSSize(width: 520, height: 480)
     window.isReleasedWhenClosed = false

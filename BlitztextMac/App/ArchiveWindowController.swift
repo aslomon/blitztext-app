@@ -30,7 +30,12 @@ final class ArchiveWindowController {
     let hosting = NSHostingController(rootView: ArchiveWindowView(appState: appState))
     let window = NSWindow(contentViewController: hosting)
     window.title = "Transkriptions-Archiv"
-    window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+    // Transparent, full-size-content title bar so the content runs to the top with no separator line;
+    // the traffic lights float over the content (matches the onboarding window).
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
+    window.isMovableByWindowBackground = true
     window.setContentSize(NSSize(width: 520, height: 620))
     window.minSize = NSSize(width: 460, height: 420)
     window.isReleasedWhenClosed = false

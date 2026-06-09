@@ -47,7 +47,8 @@ struct ArchiveWindowView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
-    .padding(.top, 16)
+    // Top inset clears the floating traffic lights (full-size-content title bar).
+    .padding(.top, 38)
     .frame(minWidth: 460, minHeight: 480)
   }
 

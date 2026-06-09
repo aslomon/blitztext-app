@@ -131,10 +131,52 @@ struct LocalModelsView: View {
             llamaCppCatalogRow(model)
           }
           Divider().opacity(0.3)
+          huggingFaceSection
+          Divider().opacity(0.3)
           customModelField
         }
       }
     }
+  }
+
+  /// Live, auto-expanding catalog pulled from trusted Hugging Face orgs.
+  @ViewBuilder
+  private var huggingFaceSection: some View {
+    // Hide models that can't run on this Mac (too large) and ones already installed.
+    let models = manager.huggingFaceModels.filter {
+      !manager.isLlamaCppInstalled($0.id)
+        && manager.system.fit(forRuntimeRAMGB: $0.estimatedRuntimeRAMGB) != .tooLarge
+    }
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 6) {
+        Text("Aus dem Hugging-Face-Katalog (ggml-org)")
+          .font(.system(size: 11, weight: .semibold))
+        Spacer()
+        if manager.isFetchingHuggingFace {
+          ProgressView().controlSize(.small)
+        } else {
+          Button {
+            Task { await manager.fetchHuggingFaceModels() }
+          } label: {
+            Image(systemName: "arrow.clockwise")
+          }
+          .buttonStyle(PopoverIconButtonStyle(.quiet))
+          .help("Hugging-Face-Katalog aktualisieren")
+        }
+      }
+      if models.isEmpty {
+        Text(
+          manager.isFetchingHuggingFace
+            ? "Lädt aktuelle Modelle …"
+            : "Keine zusätzlichen Modelle gefunden (oder offline)."
+        )
+        .font(.system(size: 10)).foregroundStyle(.secondary)
+      }
+      ForEach(models) { model in
+        llamaCppCatalogRow(model)
+      }
+    }
+    .task { await manager.fetchHuggingFaceModelsIfNeeded() }
   }
 
   /// Manually add any GGUF model by direct URL and download it straight away.

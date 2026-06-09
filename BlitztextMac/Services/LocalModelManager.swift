@@ -27,6 +27,10 @@ final class LocalModelManager {
   private(set) var lastError: String?
   /// True while the initial/refresh query is running.
   private(set) var isRefreshing = false
+  /// Chat models fetched live from Hugging Face for the "browse more" section.
+  private(set) var huggingFaceModels: [LlamaCppModelCatalog.Model] = []
+  private(set) var isFetchingHuggingFace = false
+  @ObservationIgnored private var didFetchHuggingFace = false
 
   /// Live GGUF download tasks keyed by catalog id. Not observed.
   @ObservationIgnored private var llamaCppDownloadTasks: [String: Task<Void, Never>] = [:]
@@ -147,5 +151,23 @@ final class LocalModelManager {
     llamaCppDownloads[modelID] = nil
     if let error { lastError = error }
     await refresh()
+  }
+
+  // MARK: - Hugging Face catalog (dynamic)
+
+  /// Fetches the live HF catalog once (e.g. when the browse section first appears).
+  func fetchHuggingFaceModelsIfNeeded() async {
+    guard !didFetchHuggingFace, !isFetchingHuggingFace else { return }
+    await fetchHuggingFaceModels()
+  }
+
+  func fetchHuggingFaceModels() async {
+    guard !isFetchingHuggingFace else { return }
+    isFetchingHuggingFace = true
+    defer { isFetchingHuggingFace = false }
+    let service = HuggingFaceModelService(
+      session: URLSession(configuration: .ephemeral))
+    huggingFaceModels = await service.fetchChatModels()
+    didFetchHuggingFace = true
   }
 }

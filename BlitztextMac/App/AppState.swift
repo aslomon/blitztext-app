@@ -46,6 +46,12 @@ final class AppState {
   var localModelDownloadProgress: Double?
   var localModelDownloadStatusText: String?
   var localModelDownloadErrorText: String?
+  /// True while a local Whisper model is loading/prewarming into memory. Large models take minutes
+  /// on their first load (ANE compilation); surfacing this keeps that wait from reading as a hang or
+  /// error, and lets the UI tell the user the engine is getting ready.
+  private(set) var localModelPreparing = false
+  /// Tracks the in-flight prewarm so switching models cancels the previous one's bookkeeping.
+  @ObservationIgnored private var localModelPrewarmTask: Task<Void, Never>?
   var onMenuBarStatusChange: ((MenuBarStatus) -> Void)?
   /// Invoked when a finished run could NOT be auto-pasted (no Accessibility right / no target /
   /// focus race lost). Carries the dictated text so the floating pill can expand and show it in a
@@ -86,7 +92,16 @@ final class AppState {
   var appSettings: AppSettings {
     didSet {
       saveSettings()
-      prewarmLocalTranscriptionIfNeeded()
+      if oldValue.selectedLocalTranscriptionModelName
+        != appSettings.selectedLocalTranscriptionModelName
+      {
+        // The user explicitly switched the Whisper model — preload the new one now (even outside
+        // secure-local mode), so its slow first load happens here with visible status instead of
+        // blocking the next dictation.
+        prepareLocalModel(resolvedLocalModelName)
+      } else {
+        prewarmLocalTranscriptionIfNeeded()
+      }
       reloadHotkeys()
       applyRecordingSettings()
     }
@@ -745,11 +760,17 @@ final class AppState {
     insertModeID(newID, after: id)
   }
 
+  /// ID of the mode just created via `addMode`, so its card can auto-open in edit mode exactly once.
+  var newlyCreatedModeID: ModeConfig.ID?
+
   func addMode(template: ModeTemplate) {
     let newID = "mode-\(UUID().uuidString)"
-    let mode = template.makeMode(id: newID)
+    var mode = template.makeMode(id: newID)
+    // Name new modes "<base> (neu)" so they're easy to spot next to the existing one.
+    mode.userName = "\(mode.userName) (neu)"
     appSettings.modes[newID] = mode
     insertModeID(newID, after: template.slot.rawValue)
+    newlyCreatedModeID = newID
     openSettings(tab: 0)
   }
 
@@ -1764,15 +1785,26 @@ final class AppState {
   }
 
   private func prewarmLocalTranscriptionIfNeeded() {
-    guard appSettings.secureLocalModeEnabled,
-      LocalTranscriptionService.isModelInstalled(resolvedLocalModelName)
-    else {
+    guard appSettings.secureLocalModeEnabled else { return }
+    prepareLocalModel(resolvedLocalModelName)
+  }
+
+  /// Load + prewarm a local Whisper model off the main actor while `localModelPreparing` is true, so
+  /// the UI can show "Modell wird vorbereitet …". Large models take minutes on their first load;
+  /// doing this when the model is chosen (not at dictation time) keeps the first dictation from
+  /// blocking on a multi-minute ANE compilation. No-op when the model is not installed.
+  func prepareLocalModel(_ modelName: String) {
+    let normalizedName = LocalTranscriptionService.normalizedModelName(modelName)
+    guard LocalTranscriptionService.isModelInstalled(normalizedName) else {
+      localModelPreparing = false
       return
     }
-
-    let modelName = resolvedLocalModelName
-    Task.detached(priority: .utility) {
-      try? await LocalTranscriptionService.shared.prepare(modelName: modelName)
+    localModelPrewarmTask?.cancel()
+    localModelPreparing = true
+    localModelPrewarmTask = Task { [weak self] in
+      try? await LocalTranscriptionService.shared.prepare(modelName: normalizedName)
+      guard !Task.isCancelled else { return }
+      self?.localModelPreparing = false
     }
   }
 

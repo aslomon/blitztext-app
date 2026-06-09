@@ -147,6 +147,16 @@ struct ModelsSettingsView: View {
       transcriptionDownloadControls
       manageAllModelsButton
 
+      if appState.localModelPreparing && !appState.isDownloadingLocalModel {
+        HStack(spacing: 6) {
+          ProgressView().controlSize(.small)
+          Text("Modell wird vorbereitet … beim ersten Mal kann das einige Minuten dauern.")
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+
       if let errorText = appState.localModelDownloadErrorText {
         Text(errorText)
           .font(.system(size: 10.5))

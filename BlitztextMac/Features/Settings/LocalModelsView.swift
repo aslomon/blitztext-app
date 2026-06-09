@@ -13,18 +13,38 @@ struct LocalModelsView: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
+      VStack(alignment: .leading, spacing: 20) {
         header
-        systemCard
-        WhisperModelsSection(appState: appState)
-        ollamaGroupLabel
         if !manager.serverReachable { serverDownBanner }
-        if let recommended = manager.recommended { recommendationCard(recommended) }
-        if !manager.installed.isEmpty { installedSection }
-        catalogSection
+
+        // Engine 1 — Transcription (Whisper). Always local; independent of the Ollama server.
+        WhisperModelsSection(appState: appState)
+
+        Divider().opacity(0.4)
+
+        // Engine 2 — Rewrite (Ollama LLM). Recommendation only until the first LLM is installed;
+        // the long catalog + custom tag live behind a disclosure so they don't wall off the page.
+        ollamaGroupLabel
+        if let recommended = manager.recommended, llmInstalledModels.isEmpty {
+          recommendationCard(recommended)
+        }
+        if !llmInstalledModels.isEmpty { installedSection }
+        InfoDisclosure("Weitere Sprachmodelle laden") {
+          VStack(alignment: .leading, spacing: 14) {
+            catalogSection
+            customSection
+          }
+        }
+
+        Divider().opacity(0.4)
+
+        // Engine 3 — Embedding (Ollama). Powers semantic e-mail memory.
         embeddingSection
-        customSection
+
         if let error = manager.lastError { errorBanner(error) }
+
+        // Reference, not action — hardware facts collapse out of the way at the bottom.
+        InfoDisclosure("Dieser Mac") { systemCard }
         footerHint
       }
       .padding(16)
@@ -152,13 +172,19 @@ struct LocalModelsView: View {
   // MARK: - Installed
   // spec #12: .liquidGlassCard(cornerRadius: 8) on list-level rows
 
+  /// Installed Ollama models that are rewrite LLMs — the embedding model is excluded because it has
+  /// its own engine group below, so it never shows up twice.
+  private var llmInstalledModels: [OllamaService.InstalledModel] {
+    manager.installed.filter { !isEmbeddingModel($0) }
+  }
+
   private var installedSection: some View {
-    let totalGB = manager.installed.reduce(0.0) { $0 + $1.sizeGB }
+    let models = llmInstalledModels
+    let totalGB = models.reduce(0.0) { $0 + $1.sizeGB }
     return VStack(alignment: .leading, spacing: 8) {
       SectionLabel(
-        text:
-          "Installiert (\(manager.installed.count) · \(SystemCapabilities.formatGB(totalGB)))")
-      ForEach(manager.installed) { record in
+        text: "Installiert (\(models.count) · \(SystemCapabilities.formatGB(totalGB)))")
+      ForEach(models) { record in
         installedRow(record)
       }
     }

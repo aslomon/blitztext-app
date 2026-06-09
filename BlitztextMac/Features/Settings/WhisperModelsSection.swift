@@ -27,6 +27,8 @@ struct WhisperModelsSection: View {
 
       if appState.isDownloadingLocalModel {
         downloadProgressRow
+      } else if appState.localModelPreparing {
+        preparingRow
       }
 
       if let error = appState.localModelDownloadErrorText {
@@ -34,6 +36,18 @@ struct WhisperModelsSection: View {
           .font(.system(size: 10.5)).foregroundStyle(.red)
           .fixedSize(horizontal: false, vertical: true)
       }
+    }
+  }
+
+  /// Shown while a model loads into memory — large models take minutes on first use, so this makes
+  /// the wait explicit instead of letting a slow first dictation read as a hang.
+  private var preparingRow: some View {
+    HStack(spacing: 8) {
+      ProgressView().controlSize(.small)
+      Text("Modell wird vorbereitet … große Modelle brauchen beim ersten Mal einige Minuten.")
+        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer()
     }
   }
 

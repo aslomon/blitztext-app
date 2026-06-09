@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Inline status for the local rewrite model served by Ollama.
+/// Inline status for the local rewrite model.
 ///
 /// Selection and downloads live in the standalone "Lokale Modelle" window so there is only one
 /// place where the active model can be chosen. This view only reports the current state and opens
@@ -10,8 +10,8 @@ struct LocalLLMModelPicker: View {
 
   private var manager: LocalModelManager { appState.localModelManager }
 
-  private var selectedName: String {
-    appState.appSettings.selectedLocalLLMModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+  private var selection: LocalLLMSelection {
+    appState.appSettings.selectedLocalLLM
   }
 
   var body: some View {
@@ -36,7 +36,15 @@ struct LocalLLMModelPicker: View {
 
   @ViewBuilder
   private var statusPill: some View {
-    if !manager.serverReachable {
+    if selection.runtime == .llamaCpp {
+      if selectedLlamaCppModel != nil {
+        BlitzStatusPill(state: .ready, label: "Gewählt")
+      } else if manager.llamaCppInstalled.isEmpty {
+        BlitzStatusPill(state: .download, label: "Laden")
+      } else {
+        BlitzStatusPill(state: .warning, label: "Auswählen")
+      }
+    } else if !manager.serverReachable {
       BlitzStatusPill(state: .warning, label: manager.ollamaAppInstalled ? "Starten" : "Setup")
     } else if selectedInstalledRecord != nil {
       BlitzStatusPill(state: .ready, label: "Aktiv")
@@ -47,14 +55,12 @@ struct LocalLLMModelPicker: View {
     }
   }
 
-  // spec #6: model selected → name at 12pt .semibold + trailing 'Aktiv' pill;
-  //          offline/no model → compact single-line hint, no full sentences.
+  // spec #6: model selected → name at 12pt .semibold; offline/no model → compact single-line hint.
+  // Runtime-aware: shows the active Ollama record OR the active llama.cpp model name.
   @ViewBuilder
   private var inlineStatusRow: some View {
-    if let record = selectedInstalledRecord {
-      // Model name only — the active state is already shown by the header statusPill,
-      // so a second "Aktiv" pill here was redundant.
-      Text(record.name)
+    if let name = selectedModelName {
+      Text(name)
         .font(.system(size: 12, weight: .semibold))
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -66,7 +72,20 @@ struct LocalLLMModelPicker: View {
     }
   }
 
+  /// Active model name for the current runtime (Ollama record or llama.cpp model), or nil.
+  private var selectedModelName: String? {
+    if selection.runtime == .llamaCpp {
+      return selectedLlamaCppModel?.displayName
+    }
+    return selectedInstalledRecord?.name
+  }
+
   private var compactStatusHint: String {
+    if selection.runtime == .llamaCpp {
+      return manager.llamaCppInstalled.isEmpty
+        ? "Noch kein GGUF-Modell — Modelle einrichten."
+        : "Kein Modell gewählt — Modelle verwalten."
+    }
     if !manager.serverReachable {
       return "Ollama offline — Modelle einrichten."
     }
@@ -77,8 +96,13 @@ struct LocalLLMModelPicker: View {
   }
 
   private var selectedInstalledRecord: OllamaService.InstalledModel? {
-    guard !selectedName.isEmpty else { return nil }
-    return manager.installed.first { OllamaService.isInstalled(selectedName, in: [$0.name]) }
+    guard selection.runtime == .ollama, selection.isConfigured else { return nil }
+    return manager.installed.first { OllamaService.isInstalled(selection.modelID, in: [$0.name]) }
+  }
+
+  private var selectedLlamaCppModel: LlamaCppModelCatalog.Model? {
+    guard selection.runtime == .llamaCpp, selection.isConfigured else { return nil }
+    return manager.installedLlamaCppModel(for: selection.modelID)
   }
 
   // MARK: - Actions

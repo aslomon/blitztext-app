@@ -1,9 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The "Lokale Modelle" management page: shows this Mac's capabilities, a hardware-based
-/// recommendation, the models already pulled into Ollama (with real on-disk sizes), and the
-/// downloadable catalog with live progress. Hosted in its own window by `LocalModelsWindowController`.
+/// The "Lokale Modelle" management page: shows this Mac's capabilities, llama.cpp GGUF models,
+/// and the legacy Ollama fallback. Hosted in its own window by `LocalModelsWindowController`.
 struct LocalModelsView: View {
   @Bindable var appState: AppState
   @Bindable var manager: LocalModelManager
@@ -28,9 +27,15 @@ struct LocalModelsView: View {
 
         Divider().opacity(0.4)
 
-        // Engine 2 — Rewrite (Ollama LLM). Recommendation only until the first LLM is installed;
-        // the long catalog + custom tag live behind a disclosure so they don't wall off the page.
-        ollamaGroupLabel
+        // Engine 2 — Rewrite. llama.cpp (GGUF) is the primary local runtime.
+        llamaCppSection
+        if !manager.llamaCppInstalled.isEmpty { installedLlamaCppSection }
+
+        Divider().opacity(0.4)
+
+        // Ollama — the legacy local rewrite runtime. Recommendation only until the first LLM is
+        // installed; the long catalog + custom tag live behind a disclosure so they don't wall off.
+        legacyOllamaLabel
         if let recommended = manager.recommended, llmInstalledModels.isEmpty {
           recommendationCard(recommended)
         }
@@ -93,10 +98,150 @@ struct LocalModelsView: View {
 
   @ViewBuilder
   private var activeModelPill: some View {
-    if let activeModel {
+    let selection = appState.appSettings.selectedLocalLLM
+    if selection.runtime == .llamaCpp, let model = activeLlamaCppModel {
+      BlitzStatusPill(state: .ready, label: model.displayName)
+    } else if selection.runtime == .ollama, let activeModel {
       BlitzStatusPill(state: .ready, label: activeModel.name)
     } else {
       BlitzStatusPill(state: .warning, label: "Kein Modell")
+    }
+  }
+
+  // MARK: - llama.cpp
+
+  private var llamaCppSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionLabel(text: "llama.cpp")
+      Text("GGUF-Modelle laufen direkt über den gebündelten lokalen llama.cpp-Helper.")
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+      ForEach(LlamaCppModelCatalog.models) { model in
+        llamaCppCatalogRow(model)
+      }
+    }
+  }
+
+  private var installedLlamaCppSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionLabel(text: "Installierte GGUF-Modelle")
+      ForEach(manager.llamaCppInstalled) { model in
+        HStack(spacing: 10) {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 13))
+            .foregroundStyle(.green)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(model.displayName)
+              .font(.system(size: 12, weight: .semibold))
+            Text([model.parameterSize, model.quantization].joined(separator: " · "))
+              .font(.system(size: 10))
+              .foregroundStyle(.secondary)
+          }
+          Spacer()
+          if isActive(llamaCppModel: model) {
+            BlitzStatusPill(state: .ready, label: "Aktiv")
+          } else {
+            Button {
+              selectLlamaCpp(model)
+            } label: {
+              Label("Nutzen", systemImage: "checkmark.circle")
+            }
+            .buttonStyle(PopoverActionButtonStyle(.primary))
+          }
+          Text(SystemCapabilities.formatGB(model.downloadGB))
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+          Button {
+            if isActive(llamaCppModel: model) {
+              appState.appSettings.selectedLocalLLM = LocalLLMSelection()
+            }
+            manager.deleteLlamaCpp(model)
+          } label: {
+            Image(systemName: "trash")
+          }
+          .buttonStyle(PopoverActionButtonStyle(.danger))
+        }
+        .padding(10)
+        .background(
+          RoundedRectangle(cornerRadius: 8).fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
+        )
+      }
+    }
+  }
+
+  private func llamaCppCatalogRow(_ model: LlamaCppModelCatalog.Model) -> some View {
+    let installed = manager.isLlamaCppInstalled(model.id)
+    let downloading = manager.isDownloadingLlamaCpp(model.id)
+    let state = manager.llamaCppDownloads[model.id]
+    return VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .top, spacing: 10) {
+        Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(installed ? .green : .blue)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(model.displayName)
+            .font(.system(size: 12.5, weight: .semibold))
+          Text(model.blurb)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          Text(
+            "\(model.parameterSize) · \(model.quantization) · \(SystemCapabilities.formatGB(model.downloadGB)) · \(model.licenseName)"
+          )
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+        }
+        Spacer()
+        if installed {
+          if isActive(llamaCppModel: model) {
+            BlitzStatusPill(state: .ready, label: "Aktiv")
+          } else {
+            Button {
+              selectLlamaCpp(model)
+            } label: {
+              Label("Nutzen", systemImage: "checkmark.circle")
+            }
+            .buttonStyle(PopoverActionButtonStyle(.primary))
+          }
+        } else if downloading {
+          Button {
+            manager.cancelLlamaCppDownload(model.id)
+          } label: {
+            Label("Stopp", systemImage: "xmark.circle")
+          }
+          .buttonStyle(PopoverActionButtonStyle(.secondary))
+        } else {
+          Button {
+            manager.downloadLlamaCpp(model)
+          } label: {
+            Label("Laden", systemImage: "arrow.down.circle.fill")
+          }
+          .buttonStyle(PopoverActionButtonStyle(.primary))
+          .disabled(!manager.system.diskFits(downloadGB: model.downloadGB))
+        }
+      }
+      if let state {
+        HStack(spacing: 8) {
+          ProgressView(value: state.fraction)
+            .controlSize(.small)
+          Text(state.statusText)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .padding(10)
+    .background(
+      RoundedRectangle(cornerRadius: 8).fill(MenuBarTokens.cardFill(colorScheme: colorScheme))
+    )
+  }
+
+  private var legacyOllamaLabel: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      SectionLabel(text: "Ollama Fallback")
+      Text("Optional, falls du vorhandene Ollama-Modelle weiter nutzen möchtest.")
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
     }
   }
 
@@ -365,10 +510,16 @@ struct LocalModelsView: View {
   // MARK: - Active selection
 
   private var activeModel: OllamaService.InstalledModel? {
-    let selected = appState.appSettings.selectedLocalLLMModelName.trimmingCharacters(
-      in: .whitespacesAndNewlines)
-    guard !selected.isEmpty else { return nil }
+    let selection = appState.appSettings.selectedLocalLLM
+    guard selection.runtime == .ollama, selection.isConfigured else { return nil }
+    let selected = selection.modelID
     return manager.installed.first { OllamaService.isInstalled(selected, in: [$0.name]) }
+  }
+
+  private var activeLlamaCppModel: LlamaCppModelCatalog.Model? {
+    let selection = appState.appSettings.selectedLocalLLM
+    guard selection.runtime == .llamaCpp, selection.isConfigured else { return nil }
+    return manager.installedLlamaCppModel(for: selection.modelID)
   }
 
   private func isActive(record: OllamaService.InstalledModel) -> Bool {
@@ -386,8 +537,22 @@ struct LocalModelsView: View {
     return OllamaService.isInstalled(tag, in: [activeModel.name])
   }
 
+  private func isActive(llamaCppModel model: LlamaCppModelCatalog.Model) -> Bool {
+    appState.appSettings.selectedLocalLLM
+      == LocalLLMSelection(
+        runtime: .llamaCpp,
+        modelID: model.id
+      )
+  }
+
   private func select(_ record: OllamaService.InstalledModel) {
+    appState.appSettings.selectedLocalLLM = LocalLLMSelection(
+      runtime: .ollama, modelID: record.name)
     appState.appSettings.selectedLocalLLMModelName = record.name
+  }
+
+  private func selectLlamaCpp(_ model: LlamaCppModelCatalog.Model) {
+    appState.appSettings.selectedLocalLLM = LocalLLMSelection(runtime: .llamaCpp, modelID: model.id)
   }
 
   private func selectInstalledModel(for tag: String) {

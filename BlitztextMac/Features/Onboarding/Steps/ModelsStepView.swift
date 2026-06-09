@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Step 4: the local engines. The Whisper picker + install controls mirror `ModelsSettingsView`'s
-/// transcription block (only relevant in offline mode); the Ollama rewrite model is always shown,
+/// transcription block (only relevant in offline mode); the local rewrite model is always shown,
 /// but labelled Optional because online rewriting never needs it.
 struct ModelsStepView: View {
   @Bindable var appState: AppState
@@ -29,12 +29,12 @@ struct ModelsStepView: View {
 
       whisperCard
 
-      // Ollama card gated behind InfoDisclosure in online mode (change 10)
+      // Local rewrite-model card gated behind InfoDisclosure in online mode.
       if needsWhisper {
-        ollamaCard
+        localRewriteCard
       } else {
-        InfoDisclosure("Ollama – lokales Umformen") {
-          ollamaCard
+        InfoDisclosure("Lokales Umformen") {
+          localRewriteCard
         }
       }
     }
@@ -154,15 +154,15 @@ struct ModelsStepView: View {
     }
   }
 
-  // MARK: - Ollama (rewrite) — optional
+  // MARK: - Local rewrite model — optional
 
-  private var ollamaCard: some View {
+  private var localRewriteCard: some View {
     OnboardingCard {
       VStack(alignment: .leading, spacing: 8) {
         SectionLabel(text: "Optional – nur für lokales Umformen")
         InfoDisclosure("Wofür") {
           Text(
-            "Formuliert Texte lokal um (E-Mail, Prompt, Social) über Ollama. Nur nötig, wenn ein Modus offline umformen soll."
+            "Formuliert Texte lokal um (E-Mail, Prompt, Social) über den gebündelten llama.cpp-Helper. Nur nötig, wenn ein Modus offline umformen soll."
           )
         }
 

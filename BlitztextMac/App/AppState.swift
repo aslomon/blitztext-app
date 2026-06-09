@@ -156,8 +156,8 @@ final class AppState {
   /// At least one local Whisper model is on disk (speech → text is possible offline).
   var hasAnyTranscriptionEngine: Bool { !LocalTranscriptionService.installedModels().isEmpty }
 
-  /// At least one rewrite engine is usable: the OpenAI key or any installed local Ollama model.
-  var hasAnyRewriteEngine: Bool { hasOpenAIKey || !localModelManager.installed.isEmpty }
+  /// At least one rewrite engine is usable: the OpenAI key or an installed local llama.cpp model.
+  var hasAnyRewriteEngine: Bool { hasOpenAIKey || !localModelManager.llamaCppInstalled.isEmpty }
 
   var currentPhase: WorkflowPhase {
     activeWorkflow?.phase ?? .idle
@@ -420,14 +420,14 @@ final class AppState {
   }
 
   var semanticEmailEmbeddingIsReady: Bool {
-    !selectedEmbeddingModelName.isEmpty && localModelManager.isInstalled(selectedEmbeddingModelName)
+    !selectedEmbeddingModelName.isEmpty
+      && localModelManager.isLlamaCppEmbeddingInstalled(selectedEmbeddingModelName)
   }
 
   var semanticEmailEmbeddingIsPreparing: Bool {
     !selectedEmbeddingModelName.isEmpty
       && (localModelManager.isRefreshing
-        || localModelManager.isPulling(selectedEmbeddingModelName)
-        || localModelManager.isPreparingOllama)
+        || localModelManager.isDownloadingLlamaCpp(selectedEmbeddingModelName))
   }
 
   var semanticEmailMemoryIsReady: Bool {
@@ -440,20 +440,23 @@ final class AppState {
     if selectedEmbeddingModelName.isEmpty {
       appSettings.selectedEmbeddingModelName = LlamaCppEmbeddingProvider.defaultModelID
     }
-    let modelID = selectedEmbeddingModelName
-    guard !modelID.isEmpty else { return }
-    guard !localModelManager.isInstalled(modelID), !localModelManager.isPulling(modelID) else {
-      return
-    }
+    guard
+      let model = LlamaCppModelCatalog.embeddingModels.first(where: {
+        $0.id == selectedEmbeddingModelName
+      })
+    else { return }
+    guard !localModelManager.isLlamaCppEmbeddingInstalled(model.id),
+      !localModelManager.isDownloadingLlamaCpp(model.id)
+    else { return }
     Task { [weak self] in
       guard let self else { return }
       await self.localModelManager.refresh()
-      guard !self.localModelManager.isInstalled(modelID),
-        !self.localModelManager.isPulling(modelID)
+      guard !self.localModelManager.isLlamaCppEmbeddingInstalled(model.id),
+        !self.localModelManager.isDownloadingLlamaCpp(model.id)
       else {
         return
       }
-      self.localModelManager.prepareOllamaAndPull(modelID)
+      self.localModelManager.downloadLlamaCpp(model)
     }
   }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Whisper (WhisperKit) transcription models inside the unified "Lokale Modelle" window. Mirrors the
-/// Ollama installed-row pattern so all local model types are loaded, activated, re-downloaded and
+/// Whisper (WhisperKit) transcription models inside the unified "Lokale Modelle" window. Uses the
+/// shared installed-row pattern so all local model types are loaded, activated, re-downloaded and
 /// deleted the same way. Disk-truth state comes from `LocalTranscriptionService`; mutations route
 /// through `AppState`. Everything stays on the device.
 struct WhisperModelsSection: View {

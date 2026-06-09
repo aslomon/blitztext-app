@@ -144,7 +144,7 @@ struct ModeCardView: View {
       return "Emoji-Dichte: \(config.rewrite.emojiDensity.displayName)."
     }
     if effectiveBackend == .local {
-      return "Umformung läuft lokal über Ollama."
+      return "Umformung läuft lokal über llama.cpp."
     }
     return "Umformung über \(config.rewrite.modelID)."
   }
@@ -366,7 +366,7 @@ struct ModeCardView: View {
         if forcedOffline {
           Text("Sicherer lokaler Modus erzwingt lokale Verarbeitung.")
         } else if effectiveBackend == .local {
-          Text("Lokal auf diesem Mac über Ollama, ohne Cloud. Ollama muss laufen.")
+          Text("Lokal auf diesem Mac über llama.cpp, ohne Cloud.")
         } else {
           Text("Text wird zur Formulierung an die OpenAI-API gesendet.")
         }
@@ -419,7 +419,7 @@ struct ModeCardView: View {
   var hasCustomPrompt: Bool { !config.rewrite.systemPrompt.isEmpty }
 }
 
-// MARK: - Local LLM model picker (Ollama)
+// MARK: - Local LLM model picker (llama.cpp)
 //
 // The redesigned, state-driven `LocalLLMModelPicker` lives in `LocalLLMModelPicker.swift`.
 // The advanced-section subviews (tone / prompt / context / reply / emoji / memory / footer)

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Tab "Modelle": the engines that power Blitztext \u{2014} "Online" (the OpenAI API key) and "Lokal" (the
-/// local Whisper transcription engine, the local Ollama rewrite model and the secure-local master
+/// local Whisper transcription engine, the local llama.cpp rewrite model and the secure-local master
 /// switch). Memory, vocabulary and learned terms live in the Vokabular tab.
 struct ModelsSettingsView: View {
   @Bindable var appState: AppState
@@ -77,7 +77,7 @@ struct ModelsSettingsView: View {
       }
       Text(
         appState.appSettings.secureLocalModeEnabled
-          ? "Alles bleibt auf deinem Mac: Whisper + lokales Ollama-Modell. Keine Online-Dienste."
+          ? "Alles bleibt auf deinem Mac: Whisper + lokales llama.cpp-Modell. Keine Online-Dienste."
           : "Nutzt die OpenAI-API mit deinem eigenen Key. Leistungsfähiger, aber Audio/Text gehen online."
       )
       .font(.system(size: 10.5))
@@ -105,9 +105,9 @@ struct ModelsSettingsView: View {
     }
   }
 
-  // MARK: - Local band (Whisper + Ollama + secure-local switch)
+  // MARK: - Local band (Whisper + llama.cpp + secure-local switch)
   // spec #1: trailing BlitzStatusPill in section header
-  // spec #4: Whisper first, Ollama second, secure-local toggle at the bottom
+  // spec #4: Whisper first, llama.cpp second, secure-local toggle at the bottom
 
   private var localBand: some View {
     ModelsSectionWithPill(
@@ -177,7 +177,7 @@ struct ModelsSettingsView: View {
   }
 
   /// Bridge from the compact Modelle tab to the full "Lokale Modelle" window, where every local model
-  /// type (Whisper, Ollama LLM, embedding) can be loaded, re-downloaded and deleted in one place.
+  /// type (Whisper, llama.cpp LLM, embedding) can be loaded, re-downloaded and deleted in one place.
   private var manageAllModelsButton: some View {
     Button {
       NotificationCenter.default.post(name: .openLocalModelsWindow, object: nil)
@@ -260,59 +260,12 @@ struct ModelsSettingsView: View {
     }
   }
 
-  // MARK: - Lokales Sprachmodell (Ollama)
+  // MARK: - Lokales Sprachmodell (llama.cpp)
 
   private var localLLMSection: some View {
-    SettingsSection("Lokales Sprachmodell (Ollama)") {
-      // When no local LLM is chosen yet, surface the hardware-based recommendation with a direct
-      // download right here, so the user doesn't have to open the management window first.
-      if appState.appSettings.selectedLocalLLMModelName.trimmingCharacters(
-        in: .whitespacesAndNewlines
-      ).isEmpty,
-        let recommended = appState.localModelManager.recommended
-      {
-        ollamaRecommendation(recommended)
-      }
+    SettingsSection("Lokales Sprachmodell") {
       LocalLLMModelPicker(appState: appState)
     }
-  }
-
-  /// Compact "Empfohlen für deinen Mac" card with a direct Laden button, shown in the Modelle tab
-  /// only while no local rewrite model is selected.
-  private func ollamaRecommendation(_ model: OllamaModelCatalog.Model) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(spacing: 6) {
-        Image(systemName: "sparkles").font(.system(size: 10.5, weight: .semibold))
-        Text("Empfohlen für deinen Mac").font(.system(size: 10.5, weight: .semibold))
-        Spacer(minLength: 0)
-      }
-      .foregroundStyle(.blue)
-
-      HStack(spacing: 8) {
-        VStack(alignment: .leading, spacing: 1) {
-          Text(model.displayName).font(.system(size: 11.5, weight: .semibold))
-          Text("ca. \(SystemCapabilities.formatGB(model.downloadGB)) Download")
-            .font(.system(size: 10)).foregroundStyle(.secondary)
-        }
-        Spacer(minLength: 8)
-        if appState.localModelManager.isPulling(model.tag) {
-          ProgressView().controlSize(.small)
-        } else {
-          Button {
-            appState.localModelManager.pull(model.tag)
-          } label: {
-            Label("Laden", systemImage: "arrow.down.circle.fill")
-              .font(.system(size: 10.5, weight: .semibold))
-          }
-          .buttonStyle(PopoverActionButtonStyle(.primary))
-          .controlSize(.small)
-          .disabled(appState.localModelManager.isPreparingOllama)
-        }
-      }
-    }
-    .padding(10)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .liquidGlassInfoBanner(accent: .blue)
   }
 }
 

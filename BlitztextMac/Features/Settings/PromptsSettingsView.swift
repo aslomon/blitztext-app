@@ -24,7 +24,7 @@ struct PromptsSettingsView: View {
           title: "Noch kein Umschreib-Modell verbunden",
           caption:
             "Modi formulieren Text nur um, wenn ein Umschreib-Modell bereitsteht — der OpenAI-Key "
-            + "oder ein lokales Ollama-Modell. Richte zuerst eine Engine ein.",
+            + "oder ein lokales llama.cpp-Modell. Richte zuerst eine Engine ein.",
           accent: .purple,
           buttonLabel: "Zu Modelle",
           action: { selectTab(1) }

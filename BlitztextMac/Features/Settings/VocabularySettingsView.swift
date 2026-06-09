@@ -286,17 +286,10 @@ struct VocabularySettingsView: View {
   @ViewBuilder
   private var embeddingProgress: some View {
     let modelID = appState.selectedEmbeddingModelName
-    if let pull = appState.localModelManager.pulls[modelID] {
+    if let pull = appState.localModelManager.llamaCppDownloads[modelID] {
       VStack(alignment: .leading, spacing: 4) {
         ProgressView(value: pull.fraction)
         Text(pull.statusText)
-          .font(.system(size: 10.5))
-          .foregroundStyle(.secondary)
-      }
-    } else if let ollama = appState.localModelManager.ollamaInstallState {
-      VStack(alignment: .leading, spacing: 4) {
-        ProgressView(value: ollama.fraction)
-        Text(ollama.statusText)
           .font(.system(size: 10.5))
           .foregroundStyle(.secondary)
       }

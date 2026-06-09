@@ -41,13 +41,23 @@ struct LlamaCppDownloadService: Sendable {
     let finalURL = try store.finalURL(for: model)
     try? FileManager.default.removeItem(at: partialURL)
 
-    onProgress(Progress(fraction: nil, statusText: "Download wird gestartet …"))
-    let (temporaryURL, response) = try await session.download(from: model.downloadURL)
-    guard let http = response as? HTTPURLResponse else {
-      throw DownloadError.httpStatus(0)
+    let totalGB = Double(model.sizeBytes) / 1_000_000_000.0
+    onProgress(Progress(fraction: 0, statusText: String(format: "Lädt … 0,0 / %.1f GB", totalGB)))
+
+    // Stream with real progress via a download delegate. `URLSession.download(from:)` reports no
+    // progress at all, so a multi-GB download looked frozen ("lädt nicht").
+    let (temporaryURL, statusCode) = try await Self.downloadWithProgress(
+      url: model.downloadURL,
+      expectedBytes: model.sizeBytes
+    ) { fraction, received in
+      let gb = Double(received) / 1_000_000_000.0
+      onProgress(
+        Progress(
+          fraction: fraction, statusText: String(format: "Lädt … %.1f / %.1f GB", gb, totalGB))
+      )
     }
-    guard http.statusCode == 200 else {
-      throw DownloadError.httpStatus(http.statusCode)
+    guard statusCode == 200 else {
+      throw DownloadError.httpStatus(statusCode)
     }
 
     try FileManager.default.moveItem(at: temporaryURL, to: partialURL)
@@ -62,7 +72,8 @@ struct LlamaCppDownloadService: Sendable {
     try? FileManager.default.removeItem(at: finalURL)
     try FileManager.default.moveItem(at: partialURL, to: finalURL)
     try store.writeVerifiedManifest(for: model, fileURL: finalURL)
-    onProgress(Progress(fraction: 1, statusText: "Modell ist installiert.")
+    onProgress(
+      Progress(fraction: 1, statusText: "Modell ist installiert.")
     )
   }
 
@@ -77,6 +88,93 @@ struct LlamaCppDownloadService: Sendable {
       hasher.update(data: data)
     }
     return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// Downloads `url` to a stable temporary file, reporting incremental progress, and returns the
+  /// file URL plus the HTTP status code. Uses a `URLSessionDownloadTask` delegate because
+  /// `URLSession.download(from:)` reports no progress (a multi-GB download then looks frozen).
+  private static func downloadWithProgress(
+    url: URL,
+    expectedBytes: Int64,
+    onProgress: @escaping @Sendable (_ fraction: Double?, _ received: Int64) -> Void
+  ) async throws -> (URL, Int) {
+    let delegate = ProgressDownloadDelegate(expectedBytes: expectedBytes, onProgress: onProgress)
+    let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+    defer { session.finishTasksAndInvalidate() }
+    return try await withCheckedThrowingContinuation { continuation in
+      delegate.continuation = continuation
+      session.downloadTask(with: url).resume()
+    }
+  }
+}
+
+/// `URLSessionDownloadDelegate` that bridges progress + completion into async/await. Delegate
+/// callbacks arrive serially on the session's background queue, so the mutable state is safe.
+private final class ProgressDownloadDelegate: NSObject, URLSessionDownloadDelegate,
+  @unchecked Sendable
+{
+  private let expectedBytes: Int64
+  private let onProgress: @Sendable (Double?, Int64) -> Void
+  var continuation: CheckedContinuation<(URL, Int), Error>?
+  private var resumed = false
+  private var lastReportedBytes: Int64 = 0
+
+  init(expectedBytes: Int64, onProgress: @escaping @Sendable (Double?, Int64) -> Void) {
+    self.expectedBytes = expectedBytes
+    self.onProgress = onProgress
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    downloadTask: URLSessionDownloadTask,
+    didWriteData bytesWritten: Int64,
+    totalBytesWritten: Int64,
+    totalBytesExpectedToWrite: Int64
+  ) {
+    // Throttle to ~8 MB steps so we don't flood the main actor with state updates.
+    guard totalBytesWritten - lastReportedBytes >= 8_000_000 || lastReportedBytes == 0 else {
+      return
+    }
+    lastReportedBytes = totalBytesWritten
+    let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : expectedBytes
+    let fraction = total > 0 ? min(1, Double(totalBytesWritten) / Double(total)) : nil
+    onProgress(fraction, totalBytesWritten)
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    downloadTask: URLSessionDownloadTask,
+    didFinishDownloadingTo location: URL
+  ) {
+    // `location` is removed once this method returns — move it to a stable temp file synchronously.
+    let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
+    let destination = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString).appendingPathExtension("gguf.download")
+    do {
+      try? FileManager.default.removeItem(at: destination)
+      try FileManager.default.moveItem(at: location, to: destination)
+      finish(.success((destination, status)))
+    } catch {
+      finish(.failure(error))
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didCompleteWithError error: Error?
+  ) {
+    if let error {
+      finish(.failure(error))
+    }
+    // Success is delivered by didFinishDownloadingTo; nothing to do here on success.
+  }
+
+  private func finish(_ result: Result<(URL, Int), Error>) {
+    guard !resumed else { return }
+    resumed = true
+    continuation?.resume(with: result)
+    continuation = nil
   }
 }
 

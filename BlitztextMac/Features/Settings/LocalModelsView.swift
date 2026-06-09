@@ -9,6 +9,7 @@ struct LocalModelsView: View {
   @Bindable var appState: AppState
   @Bindable var manager: LocalModelManager
   @Environment(\.colorScheme) private var colorScheme
+  @State private var customURL = ""
 
   var body: some View {
     ScrollView {
@@ -129,9 +130,38 @@ struct LocalModelsView: View {
           ForEach(notInstalledChatModels) { model in
             llamaCppCatalogRow(model)
           }
+          Divider().opacity(0.3)
+          customModelField
         }
       }
     }
+  }
+
+  /// Manually add any GGUF model by direct URL and download it straight away.
+  private var customModelField: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Eigenes Modell per URL")
+        .font(.system(size: 11, weight: .semibold))
+      HStack(spacing: 8) {
+        TextField("https://…/modell.gguf", text: $customURL)
+          .textFieldStyle(.roundedBorder)
+          .font(.system(size: 11.5))
+          .onSubmit(loadCustomURL)
+        Button("Laden", action: loadCustomURL)
+          .buttonStyle(PopoverActionButtonStyle(.primary))
+          .font(.system(size: 11.5, weight: .medium))
+          .disabled(customURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+      Text("Direkter Link zu einer .gguf-Datei (z. B. von Hugging Face). Ohne Prüfsumme.")
+        .font(.system(size: 10)).foregroundStyle(.secondary)
+    }
+  }
+
+  private func loadCustomURL() {
+    let url = customURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !url.isEmpty else { return }
+    manager.downloadCustomLlamaCpp(urlString: url)
+    customURL = ""
   }
 
   private var catalogDisclosureTitle: String {

@@ -69,12 +69,13 @@ actor LlamaCppRuntimeService {
     }
 
     try await stopSlot(embedding: embedding)
-    let model = try modelEntry(for: trimmed)
-    let modelURL = try store.finalURL(for: model)
-    // The manifest is only written after a checksum-verified download, so its presence (+ matching
-    // size, checked in isInstalled) is proof enough. Re-hashing the whole file on every cold start
-    // would add 30–60 s for a 20–32B model.
-    guard store.isInstalled(model) else {
+    // Resolve the model file from its on-disk manifest so custom / dynamically-added models (not in
+    // the static catalog) run too. The manifest is only written after a verified download and its
+    // size is re-checked, so re-hashing the whole file on every cold start is unnecessary.
+    let modelURL: URL
+    do {
+      modelURL = try store.installedFileURL(forID: trimmed)
+    } catch {
       throw RuntimeError.modelNotInstalled(trimmed)
     }
 
@@ -136,13 +137,6 @@ actor LlamaCppRuntimeService {
     if server.process.isRunning {
       kill(server.process.processIdentifier, SIGKILL)
     }
-  }
-
-  private func modelEntry(for modelID: String) throws -> LlamaCppModelCatalog.Model {
-    guard let model = LlamaCppModelCatalog.model(for: modelID) else {
-      throw RuntimeError.modelUnknown(modelID)
-    }
-    return model
   }
 
   private func waitUntilReady(client: LlamaCppServerClient, process: Process) async throws {

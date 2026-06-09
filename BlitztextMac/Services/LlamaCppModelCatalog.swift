@@ -206,4 +206,59 @@ enum LlamaCppModelCatalog {
     let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
     return models.first { $0.id == trimmed }
   }
+
+  /// Builds a downloadable Model from a direct `.gguf` URL the user entered. No pinned checksum —
+  /// the file's hash is recorded after download. Returns nil for anything that isn't a safe https
+  /// link to a `.gguf` file.
+  static func customModel(fromURLString urlString: String) -> Model? {
+    let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let url = URL(string: trimmed),
+      let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http"
+    else { return nil }
+    let fileName = url.lastPathComponent
+    guard fileName.hasSuffix(".gguf"), fileName.count > 5,
+      !fileName.contains("/"), !fileName.contains("..")
+    else { return nil }
+    let base = String(fileName.dropLast(5))
+    let slug = base.lowercased().replacingOccurrences(
+      of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+    return Model(
+      id: "custom-\(slug)",
+      displayName: base,
+      fileName: fileName,
+      downloadURL: url,
+      sha256: "",
+      sizeBytes: 0,
+      estimatedRuntimeRAMGB: 0,
+      parameterSize: "—",
+      quantization: "—",
+      licenseName: "—",
+      licenseURL: nil,
+      blurb: "Eigenes Modell von \(url.host ?? "URL").",
+      qualityRank: 0
+    )
+  }
+
+  /// A display model for an installed manifest: the rich catalog entry if the id is known, otherwise
+  /// a descriptor derived from the manifest itself (custom / dynamically-added models).
+  static func installedModel(from manifest: LlamaCppModelStore.VerifiedManifest) -> Model {
+    if let known = model(for: manifest.modelID) { return known }
+    let gb = Double(manifest.sizeBytes) / 1_000_000_000.0
+    return Model(
+      id: manifest.modelID,
+      displayName: manifest.displayName ?? manifest.fileName,
+      fileName: manifest.fileName,
+      downloadURL: manifest.downloadURL.flatMap(URL.init(string:))
+        ?? URL(string: "https://invalid.local")!,
+      sha256: manifest.sha256,
+      sizeBytes: manifest.sizeBytes,
+      estimatedRuntimeRAMGB: gb + 2,
+      parameterSize: manifest.parameterSize ?? "—",
+      quantization: manifest.quantization ?? "—",
+      licenseName: "—",
+      licenseURL: nil,
+      blurb: "Eigenes Modell.",
+      qualityRank: 0
+    )
+  }
 }

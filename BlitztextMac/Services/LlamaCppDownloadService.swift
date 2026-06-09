@@ -64,14 +64,27 @@ struct LlamaCppDownloadService: Sendable {
     onProgress(Progress(fraction: nil, statusText: "Download wird geprüft …"))
 
     let actual = try Self.sha256Hex(for: partialURL)
-    guard actual.caseInsensitiveCompare(model.sha256) == .orderedSame else {
-      try? FileManager.default.removeItem(at: partialURL)
-      throw DownloadError.checksumMismatch(expected: model.sha256, actual: actual)
+    // A pinned (catalog) sha256 is enforced; a custom model added by URL has none, so the computed
+    // hash is recorded instead of rejecting the download.
+    if !model.sha256.isEmpty {
+      guard actual.caseInsensitiveCompare(model.sha256) == .orderedSame else {
+        try? FileManager.default.removeItem(at: partialURL)
+        throw DownloadError.checksumMismatch(expected: model.sha256, actual: actual)
+      }
     }
 
     try? FileManager.default.removeItem(at: finalURL)
     try FileManager.default.moveItem(at: partialURL, to: finalURL)
-    try store.writeVerifiedManifest(for: model, fileURL: finalURL)
+    try store.writeManifest(
+      modelID: model.id,
+      fileName: model.fileName,
+      sha256: actual,
+      fileURL: finalURL,
+      displayName: model.displayName,
+      parameterSize: model.parameterSize,
+      quantization: model.quantization,
+      downloadURL: model.downloadURL.absoluteString
+    )
     onProgress(
       Progress(fraction: 1, statusText: "Modell ist installiert.")
     )

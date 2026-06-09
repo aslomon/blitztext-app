@@ -107,4 +107,41 @@ final class LlamaCppCatalogTests: XCTestCase {
     XCTAssertEqual(SystemCapabilities.formatGB(8.1), "8,1 GB")
     XCTAssertEqual(SystemCapabilities.formatGB(0.8), "0,8 GB")
   }
+
+  // MARK: - Custom models (manual URL)
+
+  func testCustomModelFromValidGGUFURL() {
+    let model = LlamaCppModelCatalog.customModel(
+      fromURLString:
+        "https://huggingface.co/foo/bar/resolve/main/My-Model.Q4_K_M.gguf?download=true")
+    XCTAssertNotNil(model)
+    XCTAssertEqual(model?.fileName, "My-Model.Q4_K_M.gguf")
+    XCTAssertEqual(model?.id, "custom-my-model-q4-k-m")
+    XCTAssertEqual(model?.sha256, "", "Custom models have no pinned checksum")
+  }
+
+  func testCustomModelRejectsNonGGUFAndBadInput() {
+    XCTAssertNil(LlamaCppModelCatalog.customModel(fromURLString: "https://example.com/model.bin"))
+    XCTAssertNil(LlamaCppModelCatalog.customModel(fromURLString: "ftp://example.com/model.gguf"))
+    XCTAssertNil(LlamaCppModelCatalog.customModel(fromURLString: "not a url"))
+    XCTAssertNil(LlamaCppModelCatalog.customModel(fromURLString: ""))
+  }
+
+  func testInstalledModelUsesCatalogEntryWhenKnown() {
+    let manifest = LlamaCppModelStore.VerifiedManifest(
+      modelID: "qwen3-1.7b-q4-k-m", fileName: "Qwen3-1.7B-Q4_K_M.gguf", sha256: "x", sizeBytes: 1)
+    XCTAssertEqual(
+      LlamaCppModelCatalog.installedModel(from: manifest).displayName, "Qwen3 · 1.7B · Q4_K_M")
+  }
+
+  func testInstalledModelDerivesDescriptorForCustom() {
+    let manifest = LlamaCppModelStore.VerifiedManifest(
+      modelID: "custom-foo", fileName: "Foo.gguf", sha256: "abc", sizeBytes: 2_000_000_000,
+      displayName: "Foo", parameterSize: "7B", quantization: "Q4_K_M",
+      downloadURL: "https://example.com/Foo.gguf")
+    let model = LlamaCppModelCatalog.installedModel(from: manifest)
+    XCTAssertEqual(model.id, "custom-foo")
+    XCTAssertEqual(model.displayName, "Foo")
+    XCTAssertEqual(model.parameterSize, "7B")
+  }
 }

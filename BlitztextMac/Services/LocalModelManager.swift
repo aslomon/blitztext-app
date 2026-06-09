@@ -68,11 +68,30 @@ final class LocalModelManager {
     llamaCppEmbeddingInstalled.contains { $0.id == modelID }
   }
 
-  /// Reloads both installed-model lists (chat + embedding) from the on-disk manifests.
+  /// Reloads both installed-model lists (chat + embedding) from the on-disk manifests, so custom /
+  /// dynamically-added models show up alongside catalog ones.
   private func reloadInstalledLlamaCpp() {
-    llamaCppInstalled = llamaCppStore.installedModels()
-    llamaCppEmbeddingInstalled = LlamaCppModelCatalog.embeddingModels.filter(
-      llamaCppStore.isInstalled)
+    let manifests = llamaCppStore.installedManifests()
+    let embeddingIDs = Set(LlamaCppModelCatalog.embeddingModels.map(\.id))
+    llamaCppInstalled =
+      manifests
+      .filter { !embeddingIDs.contains($0.modelID) }
+      .map(LlamaCppModelCatalog.installedModel(from:))
+      .sorted { $0.qualityRank > $1.qualityRank }
+    llamaCppEmbeddingInstalled =
+      manifests
+      .filter { embeddingIDs.contains($0.modelID) }
+      .map(LlamaCppModelCatalog.installedModel(from:))
+  }
+
+  /// Adds + downloads a custom GGUF model from a direct URL (no pinned checksum — the hash is
+  /// recorded after download).
+  func downloadCustomLlamaCpp(urlString: String) {
+    guard let model = LlamaCppModelCatalog.customModel(fromURLString: urlString) else {
+      lastError = "Ungültige URL. Erwartet wird ein direkter https-Link zu einer .gguf-Datei."
+      return
+    }
+    downloadLlamaCpp(model)
   }
 
   // MARK: - Download

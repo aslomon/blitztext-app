@@ -74,6 +74,13 @@ struct ModeCardView: View {
     } label: {
       header
     }
+    .onAppear {
+      // A freshly created mode opens straight into its editor so the user can rename/configure it.
+      if appState.newlyCreatedModeID == modeID {
+        showEditor = true
+        appState.newlyCreatedModeID = nil
+      }
+    }
   }
 
   private var editorContent: some View {

@@ -23,18 +23,25 @@ struct SystemSettingsView: View {
       // (6) Einrichtung
       // (7) Sauber Entfernen — destructive, always trails
       AccessibilityPermissionSection(appState: appState)
+        .settingsGroupBackground()
 
       installationAndStartSection
+        .settingsGroupBackground()
 
       hotkeysSection
+        .settingsGroupBackground()
 
       dictationSection
+        .settingsGroupBackground()
 
       feedbackSection
+        .settingsGroupBackground()
 
       setupSection
+        .settingsGroupBackground()
 
       CleanupSection()
+        .settingsGroupBackground()
     }
     .padding(16)
     .onAppear {

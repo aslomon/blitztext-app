@@ -12,10 +12,14 @@ struct DictationStatsSection: View {
   private var stats: DictationStats { appState.dictationStats }
 
   var body: some View {
-    SettingsSection(
-      "Deine Diktate",
-      caption: "Aus dem lokalen Archiv berechnet. Keine neue Aufzeichnung, kein Datenfluss."
-    ) {
+    // Plain heading + content (NOT a carded SettingsSection): the stat tiles are already a card, so
+    // a box here was a box-in-box. Matches the popover section style.
+    VStack(alignment: .leading, spacing: 10) {
+      SectionLabel(text: "Deine Diktate")
+      Text("Aus dem lokalen Archiv berechnet. Keine neue Aufzeichnung, kein Datenfluss.")
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       if stats.isEmpty {
         emptyState
       } else {

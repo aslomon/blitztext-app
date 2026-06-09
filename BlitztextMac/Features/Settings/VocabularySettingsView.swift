@@ -202,7 +202,7 @@ struct VocabularySettingsView: View {
     ) {
       // 1. Master toggle + status pill
       HStack {
-        Toggle("Memory aktivieren", isOn: $appState.isUnifiedMemoryEnabled)
+        Toggle("Aktivieren", isOn: $appState.isUnifiedMemoryEnabled)
           .toggleStyle(.switch)
           .controlSize(.small)
         Spacer()

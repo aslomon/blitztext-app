@@ -29,6 +29,17 @@ struct SettingsSection<Content: View>: View {
   var body: some View {
     GroupBox {
       VStack(alignment: .leading, spacing: 10) {
+        // Heading lives INSIDE the box (not as the GroupBox label floating above it) so the section
+        // title visually belongs to its own container.
+        HStack(spacing: 8) {
+          SectionLabel(text: label)
+          Spacer()
+          if let action {
+            Button(action.label) { action.perform() }
+              .buttonStyle(PopoverActionButtonStyle(.quiet))
+          }
+        }
+
         if let caption {
           Text(caption)
             .font(.system(size: 10.5))
@@ -39,15 +50,6 @@ struct SettingsSection<Content: View>: View {
         content
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-    } label: {
-      HStack(spacing: 8) {
-        SectionLabel(text: label)
-        Spacer()
-        if let action {
-          Button(action.label) { action.perform() }
-            .buttonStyle(PopoverActionButtonStyle(.quiet))
-        }
-      }
     }
   }
 }
@@ -189,5 +191,25 @@ struct DestructiveClearButton: View {
       } message: {
         Text(message)
       }
+  }
+}
+
+// MARK: - Section background
+
+extension View {
+  /// Wraps a settings section in a subtle background "div" (DESIGN.md card fill) so each group reads
+  /// as a clearly separated block — light enough to group without a heavy box. Matches the Modelle bands.
+  func settingsGroupBackground() -> some View {
+    self
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(12)
+      .background(
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+          .fill(Color.primary.opacity(0.03))
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+          .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+      )
   }
 }

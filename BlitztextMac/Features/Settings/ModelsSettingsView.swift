@@ -281,9 +281,9 @@ private struct ModelsSectionWithPill<Pill: View, Content: View>: View {
   }
 
   var body: some View {
-    // Header band (label + pill) with content directly below — NOT wrapped in a GroupBox.
-    // The inner SettingsSection children are already cards; an outer GroupBox here produced a
-    // card-in-card "box in a box" look. A plain header keeps one clear card level.
+    // Plain group header (label + pill). The inner SettingsSection children are themselves the
+    // cards now (heading inside), so wrapping the band in its own background produced a visible
+    // box-in-box. One container level only.
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 8) {
         SectionLabel(text: label)

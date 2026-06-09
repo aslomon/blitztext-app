@@ -68,7 +68,8 @@ struct LocalModelsView: View {
           .foregroundStyle(.secondary)
       }
       Spacer()
-      activeModelPill
+      // Active-model pill removed from the header — it duplicated the "Aktiv" marker shown on the
+      // model itself in the Ollama section below.
       Button {
         Task { await manager.refresh() }
       } label: {

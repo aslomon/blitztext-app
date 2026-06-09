@@ -9,17 +9,20 @@ struct PasteContextSection: View {
   private static let recentLimit = 8
 
   var body: some View {
-    SettingsSection(
-      "Kontext · Wo du diktierst",
-      caption: "Lokal protokolliert (0600), nur mit dem Archiv. Kein Text — nur, wo du diktierst."
-    ) {
+    // Plain heading + content (NOT a carded SettingsSection): in the archive window the row list is
+    // already made of cards, so a box here produced a box-in-box. Matches the popover section style.
+    VStack(alignment: .leading, spacing: 10) {
+      SectionLabel(text: "Kontext · Wo du diktierst")
+      Text("Lokal protokolliert (nur du), nur mit dem Archiv. Kein Text — nur, wo du diktierst.")
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       VStack(alignment: .leading, spacing: 12) {
         if appState.pasteContexts.isEmpty {
           emptyState
         } else {
           aggregate
           recentList
-          clearButton
         }
       }
     }

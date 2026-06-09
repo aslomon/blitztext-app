@@ -57,12 +57,12 @@ enum MenuBarTokens {
 
   // MARK: Header band
 
-  /// The thin header band behind the top-bar (app name + gear).
-  /// Forces an opaque backstop so text is never transparent-washed.
-  static func headerBand(colorScheme: ColorScheme) -> Color {
-    colorScheme == .dark
-      ? Color(nsColor: .windowBackgroundColor).opacity(0.85)
-      : Color(nsColor: .controlBackgroundColor).opacity(0.95)
+  /// Transparent so the header sits on the popover's normal background (`.blitztextSurface`)
+  /// instead of a distinct opaque band — it now reads as one continuous, popup-wide surface with
+  /// the content. The root surface already provides the dark-mode backstop; the `Divider` below the
+  /// header keeps the visual separation.
+  static func headerBand(colorScheme _: ColorScheme) -> Color {
+    .clear
   }
 
   // MARK: Keycap tokens (for HotkeyBadge)

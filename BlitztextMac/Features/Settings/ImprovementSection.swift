@@ -11,12 +11,17 @@ struct ImprovementSection: View {
 
   var body: some View {
     if appState.isImprovementDetectionEnabled {
-      SettingsSection(
-        "Verbesserungen · was du nach dem Diktat änderst",
-        caption:
-          "Lokal protokolliert (0600). Lernt aus deinen Korrekturen — wiederkehrende schlägt es "
-          + "als festes Wörterbuch-Wort vor."
-      ) {
+      // Plain heading + content (NOT a carded SettingsSection): the row list is already cards, so a
+      // box here was a box-in-box. Matches the popover section style.
+      VStack(alignment: .leading, spacing: 10) {
+        SectionLabel(text: "Verbesserungen · was du nach dem Diktat änderst")
+        Text(
+          "Lokal protokolliert (nur du). Lernt aus deinen Korrekturen — wiederkehrende schlägt es "
+            + "als festes Wörterbuch-Wort vor."
+        )
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
         VStack(alignment: .leading, spacing: 12) {
           if !appState.improvementSuggestions.isEmpty {
             suggestionsBlock
@@ -25,7 +30,6 @@ struct ImprovementSection: View {
             emptyState
           } else {
             recentList
-            clearButton
           }
         }
       }

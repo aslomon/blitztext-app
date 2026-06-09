@@ -7,8 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Menu Bar Headers Redesign**: Complete visual overhaul across Main, Settings, and Workflow headers
+  - **Brand Identity**: Integrated Blitztext brand logo (BrandMark component) into Main and Settings headers for consistent visual anchor
+  - **Main Header**: Reorganized from multi-line to single clean row: `[Logo] Blitztext [Bereit Status] … [⚙]` with inline status pill (removed separate status line)
+  - **Settings Header**: New format: `[← Back] [Logo] Settings [Right Actions]` with brand mark for consistency
+  - **Workflow Header**: Preserved existing mode-icon design; logo integration optional for future refinement
+  - **Simplified Layout**: Removed header divider (no visual separation); transparent background using standard surface color
+- **Local Whisper Model Loading**: Enhanced user feedback during model initialization
+  - **Model Loading State**: Added `localModelPreparing` flag to surface slow first-load initialization (ANE compilation on large models can take minutes)
+  - **Model Switching Behavior**: When user explicitly switches Whisper models, new model now preloads immediately with visible status instead of blocking on next dictation
+  - **Status Visibility**: Prevents user confusion about hang/error when large models take time to compile and load into memory
+- **Improvement Detection Section**: Updated privacy disclosure text from "Lokal protokolliert (0600)" to "Lokal protokolliert (nur du)" for clarity
+- **Paste Context Section**: Updated privacy disclosure text from "Lokal protokolliert (0600)" to "Lokal protokolliert (nur du)" for consistency
+- **Improvements List**: Removed clear button from bottom of improvements list (clutter reduction)
+
 ### Added
 
+- **BrandMark Component**: New reusable SVG logo renderer for menu bar headers; loads Blitztext brand icon from bundled resource with template rendering for foreground tinting
 - **LocalTranscriptionService Model Selection Helper**: New `selectionAfterDeleting()` static method to intelligently choose the next model after deletion, preserving current selection if still available or falling back to recommended/remaining models
 - **LocalTranscriptionService Model Deletion**: New `deleteModel()` method to safely remove installed Whisper models from disk and unload from in-memory pipeline
 - **Liquid Glass Design System (macOS 26+)**: Centralized Glass-effect component library with native `.glassEffect` support and intelligent fallbacks

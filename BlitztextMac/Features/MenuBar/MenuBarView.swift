@@ -1,4 +1,24 @@
+import AppKit
 import SwiftUI
+
+// MARK: - Brand mark
+
+/// Small Blitztext brand mark (the menu-bar bars), tinted to the foreground colour. Loaded from the
+/// bundled `menubar_icon` resource via NSImage (it is not in an asset catalog, so `Image("…")` can't
+/// find it). Used in the popover headers for a consistent brand anchor.
+private struct BrandMark: View {
+  var size: CGFloat = 15
+
+  var body: some View {
+    Image(nsImage: NSImage(named: "menubar_icon") ?? NSImage())
+      .resizable()
+      .renderingMode(.template)
+      .aspectRatio(contentMode: .fit)
+      .frame(width: size, height: size)
+      .foregroundStyle(.primary)
+      .accessibilityHidden(true)
+  }
+}
 
 // MARK: - Root router
 
@@ -38,7 +58,6 @@ private struct MainPageView: View {
   var body: some View {
     VStack(spacing: 0) {
       headerBand
-      Divider()
 
       if BlitztextInstallLocationService.shouldOfferMoveToApplications {
         installHintBanner
@@ -70,16 +89,13 @@ private struct MainPageView: View {
 
   private var headerBand: some View {
     VStack(spacing: 0) {
-      HStack {
-        HStack(spacing: 6) {
-          Text("Blitztext")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-
-          Text("macOS Preview")
-            .font(.system(size: 9.5, weight: .medium))
-            // Was .quaternary — too low contrast in dark mode; .secondary reads at 4.5:1
-            .foregroundStyle(.secondary)
+      HStack(spacing: 8) {
+        BrandMark()
+        Text("Blitztext")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(.primary)
+        if appState.isConfigured {
+          BlitzStatusPill(state: .ready, label: "Bereit")
         }
 
         Spacer()
@@ -104,16 +120,14 @@ private struct MainPageView: View {
       }
       .padding(.horizontal, 16)
       .padding(.top, 12)
-      .padding(.bottom, 8)
+      .padding(.bottom, appState.isConfigured ? 12 : 8)
 
-      if appState.isConfigured {
-        configuredStatusLine
-      } else {
+      // Setup CTA only in the unconfigured state; the configured "Bereit" pill now sits inline above.
+      if !appState.isConfigured {
         unconfiguredStatusLine
+          .padding(.bottom, 12)
       }
     }
-    .padding(.bottom, 12)
-    // colorScheme-aware header band — no more forced 0.5 alpha that washes out in dark mode
     .background(MenuBarTokens.headerBand(colorScheme: colorScheme))
   }
 
@@ -442,8 +456,11 @@ private struct SettingsPageView: View {
 
         Spacer()
 
-        Text("Einstellungen")
-          .font(.system(size: 12, weight: .semibold))
+        HStack(spacing: 6) {
+          BrandMark(size: 13)
+          Text("Einstellungen")
+            .font(.system(size: 12, weight: .semibold))
+        }
 
         Spacer()
         settingsQuickAction
@@ -451,8 +468,6 @@ private struct SettingsPageView: View {
       .padding(.horizontal, 16)
       .padding(.vertical, 10)
       .background(MenuBarTokens.headerBand(colorScheme: colorScheme))
-
-      Divider()
 
       SettingsContentView(appState: appState)
 
@@ -494,8 +509,6 @@ private struct WorkflowPageView: View {
     VStack(spacing: 0) {
       if let workflow = appState.activeWorkflow {
         workflowHeader(workflow: workflow)
-
-        Divider()
 
         switch workflow.type {
         case .transcription, .localTranscription:

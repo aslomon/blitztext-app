@@ -101,17 +101,31 @@ sign_app_bundle() {
 
 sign_nested_code() {
     local target="$1"
-    local helper="$target/Contents/Helpers/llama-server"
+    local helpers_dir="$target/Contents/Helpers"
+    local helper="$helpers_dir/llama-server"
 
     if [ ! -f "$helper" ]; then
         return
     fi
 
+    local sign_id="-"
     if [ "$CODESIGN_MODE" = "stable" ]; then
-        codesign --force --options runtime --sign "$CODESIGN_IDENTITY_NAME" "$helper" 2>&1
-    else
-        codesign --force --sign - "$helper" 2>&1
+        sign_id="$CODESIGN_IDENTITY_NAME"
     fi
+
+    # Sign the bundled dylibs (real files only), then the helper — deliberately WITHOUT the hardened
+    # runtime / library validation. llama-server is spawned as a subprocess and must load its own
+    # @rpath dylibs, which are signed locally with no shared Team ID; hardened runtime would reject
+    # them ("different Team IDs"). A notarized release would instead need Developer ID signing + the
+    # com.apple.security.cs.disable-library-validation entitlement on the helper.
+    local lib
+    for lib in "$helpers_dir"/*.dylib; do
+        if [ ! -f "$lib" ] || [ -L "$lib" ]; then
+            continue
+        fi
+        codesign --force --sign "$sign_id" "$lib" >/dev/null 2>&1
+    done
+    codesign --force --sign "$sign_id" "$helper" 2>&1
 
     codesign --verify --strict --verbose=2 "$helper" >/dev/null 2>&1
 }
@@ -218,6 +232,14 @@ stage_llamacpp_helper() {
     mkdir -p "$helpers_dir"
     cp -f "$LLAMACPP_HELPER_PATH" "$helpers_dir/llama-server"
     chmod 755 "$helpers_dir/llama-server"
+    # Bundle the helper's companion dylibs (same directory), preserving symlinks, so the
+    # dynamically-linked llama-server can resolve @rpath/lib*.dylib at runtime.
+    local helper_src_dir lib
+    helper_src_dir="$(dirname "$LLAMACPP_HELPER_PATH")"
+    for lib in "$helper_src_dir"/*.dylib; do
+        [ -e "$lib" ] || continue
+        cp -a "$lib" "$helpers_dir/"
+    done
     verify_llamacpp_helper "$helpers_dir/llama-server" "$LLAMACPP_HELPER_SHA256"
 }
 

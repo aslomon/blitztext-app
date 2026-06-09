@@ -124,6 +124,23 @@ build_from_release_artifacts() {
     fi
 
     lipo -create "$arm_helper" "$x64_helper" -output "$OUTPUT_HELPER"
+
+    # Bundle the helper's companion dylibs as universal so the dynamically-linked llama-server can
+    # resolve @rpath/lib*.dylib from its own directory. Real files are lipo'd arm64+x64; symlinks
+    # (e.g. libggml.0.dylib -> libggml.0.13.0.dylib) are recreated as symlinks.
+    local arm_libdir x64_libdir libpath name
+    arm_libdir="$(dirname "$arm_helper")"
+    x64_libdir="$(dirname "$x64_helper")"
+    for libpath in "$arm_libdir"/*.dylib; do
+        name="$(basename "$libpath")"
+        if [ -L "$libpath" ]; then
+            ln -sf "$(readlink "$libpath")" "$OUTPUT_DIR/$name"
+        elif [ -f "$x64_libdir/$name" ]; then
+            lipo -create "$libpath" "$x64_libdir/$name" -output "$OUTPUT_DIR/$name"
+        else
+            cp -f "$libpath" "$OUTPUT_DIR/$name"
+        fi
+    done
 }
 
 require_command lipo

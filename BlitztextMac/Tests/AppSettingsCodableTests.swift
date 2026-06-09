@@ -176,38 +176,36 @@ final class AppSettingsCodableTests: XCTestCase {
     XCTAssertEqual(decoded.selectedEmbeddingModelName, OllamaEmbeddingProvider.defaultModelID)
     XCTAssertFalse(decoded.hadAccessibilityGrant)
     XCTAssertEqual(decoded.userDisplayName, "")
-    // Dictation dictionary absent -> empty replacements, spoken punctuation defaults OFF.
-    // OFF avoids silently mapping real words like "Punkt"/"Komma" to symbols (data-corruption).
+    // Dictation dictionary absent -> empty replacements.
     XCTAssertTrue(decoded.dictationDictionary.replacements.isEmpty)
-    XCTAssertFalse(decoded.dictationDictionary.spokenPunctuationEnabled)
   }
 
-  /// Round-trips the dictation dictionary (replacements + the punctuation toggle) and confirms
-  /// an OLD settings.json missing the key decodes to a safe default (no replacements, toggle OFF).
+  /// Round-trips the dictation dictionary (literal replacements) and confirms that an OLD
+  /// settings.json still carrying the removed `spokenPunctuationEnabled` key decodes cleanly
+  /// (the key is ignored) instead of failing.
   func testDictationDictionaryRoundTripAndMigration() throws {
     var settings = AppSettings()
     settings.dictationDictionary = DictationDictionary(
       replacements: [
         DictationReplacement(from: "blitztext", to: "Blitztext"),
         DictationReplacement(from: "ue", to: "ü", wholeWord: false),
-      ],
-      spokenPunctuationEnabled: false
+      ]
     )
 
     let data = try makeEncoder().encode(settings)
     let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
     XCTAssertEqual(decoded.dictationDictionary.replacements.count, 2)
-    XCTAssertFalse(decoded.dictationDictionary.spokenPunctuationEnabled)
     let first = try XCTUnwrap(decoded.dictationDictionary.replacements.first)
     XCTAssertEqual(first.from, "blitztext")
     XCTAssertEqual(first.to, "Blitztext")
     XCTAssertTrue(first.wholeWord)
     XCTAssertFalse(decoded.dictationDictionary.replacements[1].wholeWord)
 
-    // Legacy settings without the key -> default dictionary (toggle defaults OFF).
-    let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+    // Legacy settings WITH the now-removed punctuation key must still decode (key ignored).
+    let legacyJSON = Data(
+      #"{"dictationDictionary":{"replacements":[],"spokenPunctuationEnabled":true}}"#.utf8)
+    let legacy = try JSONDecoder().decode(AppSettings.self, from: legacyJSON)
     XCTAssertTrue(legacy.dictationDictionary.replacements.isEmpty)
-    XCTAssertFalse(legacy.dictationDictionary.spokenPunctuationEnabled)
   }
 
   /// Round-trips the dictation-length cap and the silence-trimming opt-in.

@@ -124,8 +124,13 @@ struct MemoryContext: Sendable {
 @Observable
 @MainActor
 final class MemoryStore {
-  /// Whisper hint hard cap (224-token budget; best terms go LAST in the joined string).
-  nonisolated static let injectionCap = 55
+  /// Whisper hint hard cap (224-token budget; best terms go LAST in the joined string). Kept small
+  /// on purpose: a long prefill prompt makes some Whisper models (large-v3) emit nothing, and the
+  /// user only wants a focused handful of learned terms — not hundreds.
+  nonisolated static let injectionCap = 30
+  /// Hard cap on auto-LEARNED terms kept on disk. Stops the learned vocabulary from growing without
+  /// bound; the weakest (lowest-ranked) terms are pruned once the cap is exceeded.
+  nonisolated static let maxConfirmed = 30
   /// Per-category cap for the LLM block to avoid prompt bloat.
   nonisolated static let llmBlockPerCategoryCap = 12
   /// Candidate index soft cap (decay/prune keeps it bounded).
@@ -338,6 +343,7 @@ final class MemoryStore {
         .prefix(Self.maxCandidates)
         .map { $0 }
     }
+    pruneConfirmedToCap()
     persist()
   }
 
@@ -427,6 +433,29 @@ final class MemoryStore {
         )
       )
     }
+    pruneConfirmedToCap()
+  }
+
+  /// Keeps only the top `maxConfirmed` learned terms (best-first by the injection ranking), so the
+  /// auto-learned vocabulary stays a focused set instead of accumulating endlessly. Pure ordering;
+  /// callers persist. Manual terms live in `AppSettings.customTerms` and are unaffected.
+  private func pruneConfirmedToCap() {
+    guard snapshot.confirmed.count > Self.maxConfirmed else { return }
+    let candidatesByID = Dictionary(
+      snapshot.candidates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    snapshot.confirmed =
+      snapshot.confirmed
+      .sorted { lhs, rhs in
+        if lhs.category.injectionRank != rhs.category.injectionRank {
+          return lhs.category.injectionRank < rhs.category.injectionRank
+        }
+        let lhsScore = candidatesByID[lhs.id]?.score ?? 0
+        let rhsScore = candidatesByID[rhs.id]?.score ?? 0
+        if lhsScore != rhsScore { return lhsScore > rhsScore }
+        return lhs.addedAt > rhs.addedAt
+      }
+      .prefix(Self.maxConfirmed)
+      .map { $0 }
   }
 
   nonisolated static func shouldAutoConfirm(_ candidate: MemoryCandidate) -> Bool {

@@ -1,12 +1,10 @@
 import SwiftUI
 
-/// "Diktier-Wörterbuch" section for the Vokabular tab. Lets the user toggle spoken-punctuation
-/// recognition and maintain a small list of literal from→to replacements that run on-device,
-/// deterministically, on the cleaned transcript BEFORE the text is rewritten or pasted.
-///
-/// Mirrors the Eigennamen add/remove pattern and the DESIGN.md conventions (SettingsSection,
-/// 6pt fields, 10.5pt secondary captions, du-form). 410pt-wide popover (DESIGN.md).
-struct DictationDictionarySection: View {
+/// Literal from→to replacements, rendered INLINE inside the "Begriffe" section (no own GroupBox, per
+/// DESIGN.md de-nesting). "Say A → write B" rules run on-device, deterministically, on the cleaned
+/// transcript before rewrite/paste. Replacements live next to Begriffe because they are the same
+/// idea to the user: words the app should handle a specific way.
+struct DictationReplacementsBlock: View {
   @Bindable var appState: AppState
 
   @Environment(\.colorScheme) private var colorScheme
@@ -20,99 +18,29 @@ struct DictationDictionarySection: View {
     appState.appSettings.dictationDictionary.replacements
   }
 
-  private var spokenPunctuationEnabled: Bool {
-    appState.appSettings.dictationDictionary.spokenPunctuationEnabled
-  }
-
   var body: some View {
-    SettingsSection(
-      "Diktier-Wörterbuch",
-      caption: "Ersetzt feste Wörter lokal, bevor der Text eingefügt wird."
-    ) {
-      punctuationToggle
-      if spokenPunctuationEnabled {
-        punctuationReference
-        punctuationWarning
-      }
-      replacementList
-      addRow
-      if showDuplicateHint {
-        duplicateHint
-      }
-    }
-  }
-
-  // MARK: - Spoken punctuation toggle + reference
-
-  private var punctuationToggle: some View {
-    Toggle(
-      "Gesprochene Satzzeichen erkennen",
-      isOn: $appState.appSettings.dictationDictionary.spokenPunctuationEnabled
-    )
-    .toggleStyle(.switch)
-    .controlSize(.small)
-    .font(.system(size: 11.5))
-  }
-
-  /// Compact, wrapping reference of the spoken→symbol mappings, read from the single source of
-  /// truth (`DictationPostProcessor.punctuationReference`) so it can never drift from behavior.
-  private var punctuationReference: some View {
-    FlowLayout(spacing: 5) {
-      ForEach(DictationPostProcessor.punctuationReference, id: \.spoken) { entry in
-        mappingChip(spoken: entry.spoken, symbol: entry.symbol)
-      }
-    }
-  }
-
-  private func mappingChip(spoken: String, symbol: String) -> some View {
-    HStack(spacing: 3) {
-      Text(spoken)
-        .font(.system(size: 10, weight: .medium))
-      Text("→")
-        .font(.system(size: 8, weight: .semibold))
-        .foregroundStyle(.tertiary)
-      Text(symbol)
-        .font(.system(size: 10, weight: .semibold))
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Ersetzungen")
+        .font(.system(size: 11, weight: .medium))
         .foregroundStyle(.secondary)
-    }
-    .padding(.horizontal, 7)
-    .padding(.vertical, 3)
-    // ChipBackgroundModifier: thinMaterial on macOS 26+, subtle neutral tint on 14–25.
-    // No .glassEffect here (inside GroupBox — no-stacking rule).
-    .modifier(ChipBackgroundModifier(accent: .primary))
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("\(spoken) wird zu \(symbol)")
-  }
-
-  /// Orange warning wrapped in a tinted info banner (.liquidGlassInfoBanner) per DESIGN.md
-  /// orange info-banner pattern. Inner padding 8pt.
-  private var punctuationWarning: some View {
-    HStack(spacing: 8) {
-      Image(systemName: "exclamationmark.triangle.fill")
-        .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(.orange)
       Text(
-        "Achtung: gesprochene W\u{00F6}rter wie \u{201E}Punkt\u{201C} oder \u{201E}Komma\u{201C} werden dann zu Satzzeichen."
+        "Festes Wortpaar: gesagt \u{2192} geschrieben. Lokal angewendet, bevor der Text eingefügt wird."
       )
       .font(.system(size: 10.5))
-      .foregroundStyle(.orange)
+      .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
+
+      replacementList
+      addRow
+      if showDuplicateHint { duplicateHint }
     }
-    .padding(8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .liquidGlassInfoBanner(accent: .orange)
   }
 
   // MARK: - Replacement list
 
   @ViewBuilder
   private var replacementList: some View {
-    if replacements.isEmpty {
-      Text("Noch keine Ersetzungen — füge unten ein Wortpaar hinzu.")
-        .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-    } else {
+    if !replacements.isEmpty {
       VStack(spacing: 5) {
         ForEach(replacements) { replacement in
           DictationReplacementRow(
@@ -144,7 +72,6 @@ struct DictationDictionarySection: View {
         .accessibilityLabel("Ersetzung")
         .onSubmit { addReplacement() }
 
-      // addRow checkbox stays: default for new entries
       Toggle("Ganzes Wort", isOn: $newWholeWord)
         .toggleStyle(.checkbox)
         .controlSize(.small)

@@ -21,8 +21,6 @@ struct VocabularySettingsView: View {
       Divider().opacity(0.5)
       identitySection
       recognizeSection
-      Divider().opacity(0.5)
-      DictationDictionarySection(appState: appState)
     }
     .padding(16)
     .task {
@@ -134,6 +132,11 @@ struct VocabularySettingsView: View {
       }
 
       fuzzyToggle
+
+      Divider().opacity(0.4)
+
+      // Replacements live here too — to the user they are the same idea as Begriffe.
+      DictationReplacementsBlock(appState: appState)
 
       // Contextually relevant here — explains how Begriffe are used
       InfoDisclosure("Wie Begriffe genutzt werden") {

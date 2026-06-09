@@ -2,7 +2,7 @@ import XCTest
 
 @testable import Blitztext
 
-/// The Whisper hint has a hard 224-token budget, so the injected term set is capped (~55) and
+/// The Whisper hint has a hard 224-token budget, so the injected term set is capped (30) and
 /// ordered so names+foreign rank first and the most important term lands LAST in the joined hint
 /// (Whisper drops the EARLIEST tokens on overflow). These tests pin that contract.
 ///
@@ -36,8 +36,21 @@ final class MemoryInjectionCapTests: XCTestCase {
       store.confirm(term: "Term\(index)", category: .term)
     }
     let injected = store.rankedInjectionTerms()
-    XCTAssertEqual(MemoryStore.injectionCap, 55)
+    XCTAssertEqual(MemoryStore.injectionCap, 30)
     XCTAssertEqual(injected.count, MemoryStore.injectionCap)
+  }
+
+  /// Auto-learned terms are bounded on disk: once over the cap, `decayAndPrune` keeps only the
+  /// top `maxConfirmed` so the learned vocabulary stays a focused set instead of growing forever.
+  func testConfirmedTermsPrunedToMaxConfirmed() {
+    let store = makeStore()
+    for index in 0..<(MemoryStore.maxConfirmed + 15) {
+      store.confirm(term: "Term\(index)", category: .term)
+    }
+    XCTAssertGreaterThan(store.confirmed.count, MemoryStore.maxConfirmed)
+    store.decayAndPrune()
+    XCTAssertEqual(MemoryStore.maxConfirmed, 30)
+    XCTAssertEqual(store.confirmed.count, MemoryStore.maxConfirmed)
   }
 
   func testRankedInjectionRespectsExplicitLowerLimit() {
@@ -50,7 +63,7 @@ final class MemoryInjectionCapTests: XCTestCase {
 
   func testNamesAndForeignAreKeptOverGenericTermsUnderCap() {
     let store = makeStore()
-    // 50 generic terms + 5 names + 5 foreign = 60 confirmed, cap 55.
+    // 50 generic terms + 5 names + 5 foreign = 60 confirmed, injection cap 30.
     // Names (rank 0) + foreign (rank 1) outrank generic terms (rank 2), so all 10 survive.
     for index in 0..<50 { store.confirm(term: "Term\(index)", category: .term) }
     for index in 0..<5 { store.confirm(term: "Name\(index)", category: .name) }

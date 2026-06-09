@@ -3,39 +3,19 @@ import XCTest
 @testable import Blitztext
 
 /// Pure-logic tests for `DictationPostProcessor`: literal replacements (whole-word vs substring,
-/// casing), spoken-punctuation mapping (attaching to the preceding word, no leading space,
-/// newlines), the empty/no-op guard and inline double-space collapse.
+/// casing, German umlaut/ß boundaries) and the empty/no-op guard.
 final class DictationPostProcessorTests: XCTestCase {
 
-  private func dictionary(
-    _ replacements: [DictationReplacement] = [],
-    punctuation: Bool = false
-  ) -> DictationDictionary {
-    DictationDictionary(replacements: replacements, spokenPunctuationEnabled: punctuation)
-  }
-
-  // MARK: - Default
-
-  /// Spoken punctuation MUST default OFF so dictating real words like "der wichtigste Punkt"
-  /// is never silently mapped to a symbol. Guards the data-corruption default.
-  func testSpokenPunctuationDefaultsOff() {
-    XCTAssertFalse(DictationDictionary().spokenPunctuationEnabled)
-    XCTAssertFalse(DictationDictionary(replacements: []).spokenPunctuationEnabled)
+  private func dictionary(_ replacements: [DictationReplacement] = []) -> DictationDictionary {
+    DictationDictionary(replacements: replacements)
   }
 
   // MARK: - No-op guard
 
   func testEmptyDictionaryIsNoOp() {
-    let input = "Komma das bleibt unverändert"
+    let input = "das bleibt unverändert"
     let result = DictationPostProcessor.process(input, dictionary: dictionary())
     XCTAssertEqual(result, input)
-  }
-
-  func testNoOpReturnsTextUnchangedEvenWithSpokenTokens() {
-    // punctuation off + no replacements -> the spoken token must NOT be mapped.
-    let result = DictationPostProcessor.process(
-      "Hallo Komma Welt", dictionary: dictionary(punctuation: false))
-    XCTAssertEqual(result, "Hallo Komma Welt")
   }
 
   // MARK: - Literal whole-word replacement + casing
@@ -100,87 +80,5 @@ final class DictationPostProcessorTests: XCTestCase {
     let dict = dictionary([DictationReplacement(from: "foo", to: "bar", wholeWord: false)])
     let result = DictationPostProcessor.process("a foo b", dictionary: dict)
     XCTAssertEqual(result, "a bar b")
-  }
-
-  // MARK: - Spoken punctuation attaching to preceding word
-
-  func testKommaAttachesToPrecedingWordWithoutLeadingSpace() {
-    let result = DictationPostProcessor.process(
-      "Hallo Komma wie geht es dir Fragezeichen", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "Hallo, wie geht es dir?")
-  }
-
-  func testPunktAndAusrufezeichenAttach() {
-    let result = DictationPostProcessor.process(
-      "Das ist gut Punkt Super Ausrufezeichen", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "Das ist gut. Super!")
-  }
-
-  func testDoppelpunktAndSemikolonAttach() {
-    let result = DictationPostProcessor.process(
-      "Liste Doppelpunkt eins Semikolon zwei", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "Liste: eins; zwei")
-  }
-
-  func testStrichpunktMapsToSemicolon() {
-    let result = DictationPostProcessor.process(
-      "eins Strichpunkt zwei", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "eins; zwei")
-  }
-
-  func testBindestrichMapsToHyphen() {
-    let result = DictationPostProcessor.process(
-      "schwarz Bindestrich weiß", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "schwarz - weiß")
-  }
-
-  func testSpokenPunctuationIsCaseInsensitive() {
-    let result = DictationPostProcessor.process(
-      "Hallo KOMMA Welt", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "Hallo, Welt")
-  }
-
-  // MARK: - newline mapping
-
-  func testNeueZeileMapsToNewline() {
-    let result = DictationPostProcessor.process(
-      "Zeile eins neue Zeile Zeile zwei", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "Zeile eins\nZeile zwei")
-  }
-
-  func testNeuerAbsatzMapsToNewline() {
-    let result = DictationPostProcessor.process(
-      "Absatz eins neuer Absatz Absatz zwei", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "Absatz eins\nAbsatz zwei")
-  }
-
-  // MARK: - Spoken token must not match inside other words
-
-  func testSpokenTokenNotReplacedInsideOtherWords() {
-    // "Kommando" contains "komma" — whole-word matching must leave it untouched.
-    let result = DictationPostProcessor.process(
-      "Das Kommando steht Komma jetzt", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "Das Kommando steht, jetzt")
-  }
-
-  // MARK: - Double-space collapse
-
-  func testDoubleSpacesCollapseAfterPunctuationMapping() {
-    // The removed token leaves a double space that must collapse to one.
-    let result = DictationPostProcessor.process(
-      "Hallo  Komma   Welt", dictionary: dictionary(punctuation: true))
-    XCTAssertEqual(result, "Hallo, Welt")
-  }
-
-  // MARK: - Combined order: replacements then punctuation
-
-  func testReplacementsRunBeforePunctuation() {
-    let dict = DictationDictionary(
-      replacements: [DictationReplacement(from: "blitztext", to: "Blitztext")],
-      spokenPunctuationEnabled: true
-    )
-    let result = DictationPostProcessor.process(
-      "ich nutze blitztext Punkt", dictionary: dict)
-    XCTAssertEqual(result, "ich nutze Blitztext.")
   }
 }

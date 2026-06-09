@@ -6,7 +6,8 @@ Visuelle Sprache der bestehenden Menüleisten-App. Neue UI muss sich hier einfü
 
 - Ruhig, dicht, funktional. Deutschsprachige UI-Texte (du-Form, knapp).
 - Menüleisten-Popover, feste Breite **410pt** (vorher 340) — mehr Luft für die 5 Settings-Tabs + dichten Inhalt.
-- Settings-Tabs (segmented): **Prompts · Modelle · Vokabular · Archiv · System**. Alles Wort- und Memory-bezogene lebt im **Vokabular**-Tab: Begriffe, ein zentraler Memory-Master, E-Mail Memory, Korrekturlernen und Ersetzungen. **Archiv** = nur Verlauf/Statistik/Kontext.
+- Settings-Tabs (segmented): **Prompts · Modelle · Vokabular · Archiv · System**. Alles Wort- und Memory-bezogene lebt im **Vokabular**-Tab: ein zentraler Memory-Master, E-Mail Memory, Korrekturlernen und **Begriffe** (inkl. der **Ersetzungen** als Unterblock — sie sind für den Nutzer dieselbe Idee). **Archiv** = nur Verlauf/Statistik/Kontext.
+- Vokabular ist bewusst **klein gehalten**: die Begriffsliste (manuell + automatisch gelernt) ist auf **30** gedeckelt (`MemoryStore.injectionCap`/`maxConfirmed`), damit nicht hunderte Begriffe lernen und der Whisper-Prompt knapp bleibt. Gesprochene Satzzeichen gibt es nicht (entfernt).
 - Schwebende **Pille**: Kapsel-Glass (`PillGlassModifier`) für Aufnahme/Status; für erweiterte **Copy- und Varianten-Karten** ein eigener `CardGlassModifier` (abgerundetes Rechteck, 14pt-Radius, tieferer Schatten) statt Kapsel — sonst „eckiger Inhalt im Pillen-Loch".
 
 ## Farben
@@ -174,7 +175,7 @@ Definiert in `BlitztextMac/Features/Shared/LiquidGlass.swift`. Alle existierende
 
 ### Chip-Backgrounds
 
-Chips (RecognizeChip, punctuationMappingChip) **innerhalb GroupBox** nutzen `ChipBackgroundModifier` aus `LiquidGlass.swift`: auf macOS 26 `.thinMaterial` (kein `.glassEffect` — no-stacking-Regel), auf macOS 14–25 `MenuBarTokens.tintFill/tintStroke`.
+Chips (RecognizeChip) **innerhalb GroupBox** nutzen `ChipBackgroundModifier` aus `LiquidGlass.swift`: auf macOS 26 `.thinMaterial` (kein `.glassEffect` — no-stacking-Regel), auf macOS 14–25 `MenuBarTokens.tintFill/tintStroke`.
 
 ### Informationsarchitektur-Regeln (app-weit)
 

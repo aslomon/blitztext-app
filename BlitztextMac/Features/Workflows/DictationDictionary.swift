@@ -2,10 +2,8 @@ import Foundation
 
 // MARK: - Dictation Dictionary
 //
-// On-device, deterministic post-processing of a transcript BEFORE rewrite/paste. Two parts:
-//  1. Literal replacements (`replacements`): fixed from→to substitutions the user maintains.
-//  2. Spoken punctuation (`spokenPunctuationEnabled`): mapping standalone spoken tokens such as
-//     "Komma" or "neue Zeile" to their punctuation. Both run in `DictationPostProcessor`.
+// On-device, deterministic post-processing of a transcript BEFORE rewrite/paste: fixed from→to
+// literal replacements (`replacements`) the user maintains, applied in `DictationPostProcessor`.
 //
 // Codable + Sendable so it persists inside `AppSettings` and crosses actor boundaries cleanly.
 
@@ -40,32 +38,28 @@ struct DictationReplacement: Codable, Sendable, Hashable, Identifiable {
   }
 }
 
-/// The full user-maintained dictionary: literal replacements plus the spoken-punctuation toggle.
+/// The user-maintained dictionary of literal from→to replacements.
 struct DictationDictionary: Codable, Sendable, Hashable {
   var replacements: [DictationReplacement]
-  var spokenPunctuationEnabled: Bool
 
-  init(replacements: [DictationReplacement] = [], spokenPunctuationEnabled: Bool = false) {
+  init(replacements: [DictationReplacement] = []) {
     self.replacements = replacements
-    self.spokenPunctuationEnabled = spokenPunctuationEnabled
   }
 
   enum CodingKeys: String, CodingKey {
     case replacements
-    case spokenPunctuationEnabled
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    // Older files may still carry a `spokenPunctuationEnabled` key; JSONDecoder ignores it.
     replacements =
       try container.decodeIfPresent([DictationReplacement].self, forKey: .replacements) ?? []
-    spokenPunctuationEnabled =
-      try container.decodeIfPresent(Bool.self, forKey: .spokenPunctuationEnabled) ?? false
   }
 
-  /// True when there is genuinely nothing to do: no replacements AND punctuation mapping off.
+  /// True when there is genuinely nothing to do: no usable replacements.
   /// `DictationPostProcessor` guards on this so an unconfigured dictionary adds zero overhead.
   var isNoOp: Bool {
-    !spokenPunctuationEnabled && replacements.allSatisfy { $0.from.isEmpty }
+    replacements.allSatisfy { $0.from.isEmpty }
   }
 }

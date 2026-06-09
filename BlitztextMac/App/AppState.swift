@@ -369,7 +369,9 @@ final class AppState {
           id: key, text: confirmed.term, fromMemory: true, memoryID: confirmed.id,
           memoryLemma: confirmed.lemma))
     }
-    return result
+    // Cap the whole visible list (manual + learned) to a focused set. Manual terms come first, so
+    // they are kept; auto-learned terms fill the remaining slots up to the cap.
+    return Array(result.prefix(MemoryStore.injectionCap))
   }
 
   /// Adds a manual recognize term (Eigenname). Case-insensitive de-dupe against existing manual terms.

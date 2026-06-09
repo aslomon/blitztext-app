@@ -247,7 +247,7 @@ struct AppSettings: Codable, Sendable {
   var selectedLocalLLM: LocalLLMSelection = LocalLLMSelection()
   /// Legacy Ollama model tag. Kept for settings migration and older UI state; new local runtime
   /// routing uses `selectedLocalLLM`.
-  var selectedLocalLLMModelName: String = OllamaService.defaultModelName
+  var selectedLocalLLMModelName: String = ""
   /// Per-slot configurable mode settings, keyed by `WorkflowType.rawValue`.
   /// Stored as a String-keyed dictionary so JSONEncoder writes a keyed object (not an array).
   /// Newer settings may also contain user-created mode IDs; legacy slot keys remain valid.
@@ -309,7 +309,7 @@ struct AppSettings: Codable, Sendable {
       .recommendedFastModelName,
     hasAutoSelectedFastLocalModel: Bool = false,
     selectedLocalLLM: LocalLLMSelection = LocalLLMSelection(),
-    selectedLocalLLMModelName: String = OllamaService.defaultModelName,
+    selectedLocalLLMModelName: String = "",
     archiveEnabled: Bool = false,
     memoryContextEnabled: Bool = false,
     improvementDetectionEnabled: Bool = false,
@@ -402,7 +402,7 @@ struct AppSettings: Codable, Sendable {
       try container.decodeIfPresent(
         String.self,
         forKey: .selectedLocalLLMModelName
-      ) ?? OllamaService.defaultModelName
+      ) ?? ""
     if let decodedSelection = try container.decodeIfPresent(
       LocalLLMSelection.self,
       forKey: .selectedLocalLLM

@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// An icon-only "trash" button that confirms before deleting an installed model (which frees disk
-/// space). Shared across all model types — Ollama LLM/embedding rows and Whisper models — so the
-/// destructive flow + copy stays consistent everywhere.
+/// space). Shared across model types — Whisper and GGUF rows — so the destructive flow + copy
+/// stays consistent everywhere.
 struct DeleteModelButton: View {
   /// Label shown in the confirmation title (e.g. "Gemma 3 · 12B" or "Whisper Large v3").
   let displayName: String
@@ -17,15 +17,6 @@ struct DeleteModelButton: View {
     self.displayName = displayName
     self.freedSizeText = freedSizeText
     self.onDelete = onDelete
-  }
-
-  /// Convenience for Ollama rows: deletes `deleteTag` through the manager and formats the GB size.
-  init(displayName: String, deleteTag: String, freedSizeGB: Double?, manager: LocalModelManager) {
-    self.init(
-      displayName: displayName,
-      freedSizeText: freedSizeGB.map { SystemCapabilities.formatGB($0) },
-      onDelete: { manager.delete(deleteTag) }
-    )
   }
 
   var body: some View {

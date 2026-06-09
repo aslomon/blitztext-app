@@ -42,7 +42,8 @@ final class EmailSemanticMemoryStoreTests: XCTestCase {
 
   func testRetentionDropsStaleRecordsOnAppend() {
     let store = EmailSemanticMemoryStore(fileURL: tempDir.appendingPathComponent("retention.json"))
-    let stale = Date().addingTimeInterval(-Double(EmailSemanticMemoryStore.retentionDays + 2) * 86_400)
+    let stale = Date().addingTimeInterval(
+      -Double(EmailSemanticMemoryStore.retentionDays + 2) * 86_400)
     store.append(makeRecord(finalText: "stale", date: stale))
     XCTAssertTrue(store.records.isEmpty)
 
@@ -105,7 +106,8 @@ final class EmailMemoryRetrieverTests: XCTestCase {
     XCTAssertEqual(EmailMemoryRetriever.cosineSimilarity([1], [1, 0]), 0)
   }
 
-  private func makeRecord(id: UUID, text: String, embedding: [Double]) -> EmailSemanticMemoryRecord {
+  private func makeRecord(id: UUID, text: String, embedding: [Double]) -> EmailSemanticMemoryRecord
+  {
     EmailSemanticMemoryRecord(
       id: id,
       date: Date(),
@@ -121,32 +123,19 @@ final class EmailMemoryRetrieverTests: XCTestCase {
   }
 }
 
-final class OllamaEmbeddingProviderTests: XCTestCase {
-  func testDecodesEmbedResponse() throws {
-    let data = Data(#"{"embeddings":[[0.1,0.2,0.3]]}"#.utf8)
-    XCTAssertEqual(try OllamaEmbeddingProvider.decodeEmbeddingResponse(data), [0.1, 0.2, 0.3])
-  }
-
-  func testDecodesLegacyEmbeddingsResponse() throws {
-    let data = Data(#"{"embedding":[0.4,0.5]}"#.utf8)
-    XCTAssertEqual(try OllamaEmbeddingProvider.decodeEmbeddingResponse(data), [0.4, 0.5])
+final class LlamaCppEmbeddingDecodeTests: XCTestCase {
+  func testDecodesOpenAIEmbeddingResponse() throws {
+    let data = Data(#"{"data":[{"embedding":[0.1,0.2,0.3]}]}"#.utf8)
+    XCTAssertEqual(try LlamaCppServerClient.decodeEmbedding(data), [0.1, 0.2, 0.3])
   }
 
   func testRejectsEmptyEmbedding() {
-    let data = Data(#"{"embeddings":[[]]}"#.utf8)
-    XCTAssertThrowsError(try OllamaEmbeddingProvider.decodeEmbeddingResponse(data))
+    let data = Data(#"{"data":[{"embedding":[]}]}"#.utf8)
+    XCTAssertThrowsError(try LlamaCppServerClient.decodeEmbedding(data))
   }
 
-  func testRejectsInvalidBaseURLBeforeNetworkRequest() async {
-    let provider = OllamaEmbeddingProvider(baseURLString: "http://[::1")
-
-    do {
-      _ = try await provider.embed("Hallo")
-      XCTFail("Expected invalidBaseURL")
-    } catch let error as OllamaEmbeddingError {
-      XCTAssertEqual(error, .invalidBaseURL)
-    } catch {
-      XCTFail("Unexpected error: \(error)")
-    }
+  func testRejectsMissingData() {
+    let data = Data(#"{"data":[]}"#.utf8)
+    XCTAssertThrowsError(try LlamaCppServerClient.decodeEmbedding(data))
   }
 }

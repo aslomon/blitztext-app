@@ -8,7 +8,6 @@ final class LocalLLMRuntimeTests: XCTestCase {
     let decoded = try JSONDecoder().decode(LocalLLMRuntimeKind.self, from: encoded)
 
     XCTAssertEqual(decoded, .llamaCpp)
-    XCTAssertEqual(LocalLLMRuntimeKind.ollama.backendLabel, "Lokal (Ollama)")
     XCTAssertEqual(LocalLLMRuntimeKind.llamaCpp.backendLabel, "Lokal (llama.cpp)")
   }
 

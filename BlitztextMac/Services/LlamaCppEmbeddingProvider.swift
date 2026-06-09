@@ -1,5 +1,12 @@
 import Foundation
 
+/// A source of text embeddings. The only implementation is the local llama.cpp provider below;
+/// the protocol is kept so call sites stay decoupled from the transport.
+protocol EmbeddingProvider: Sendable {
+  var modelID: String { get }
+  func embed(_ text: String) async throws -> [Double]
+}
+
 /// Embedding provider backed by a dedicated local llama.cpp server started with `--embedding`.
 /// Drop-in replacement for the removed Ollama embedding provider — semantic e-mail memory uses
 /// this so no text ever leaves the Mac and Ollama is no longer required.

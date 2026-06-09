@@ -49,8 +49,8 @@ struct SystemCapabilities: Equatable {
   /// The single best model to recommend: the highest-quality catalog entry whose estimated
   /// runtime RAM stays within the *comfortable* budget and whose download fits on disk.
   /// Falls back to the best one that merely fits (`tight`), then to the smallest model.
-  func recommendedModel(from catalog: [OllamaModelCatalog.Model] = OllamaModelCatalog.models)
-    -> OllamaModelCatalog.Model?
+  func recommendedModel(from catalog: [LlamaCppModelCatalog.Model] = LlamaCppModelCatalog.models)
+    -> LlamaCppModelCatalog.Model?
   {
     let byQuality = catalog.sorted { $0.qualityRank > $1.qualityRank }
 
@@ -70,7 +70,7 @@ struct SystemCapabilities: Equatable {
   }
 
   /// Human-readable reason for the recommendation, e.g. "Passt komfortabel in deine 48 GB RAM".
-  func recommendationReason(for model: OllamaModelCatalog.Model) -> String {
+  func recommendationReason(for model: LlamaCppModelCatalog.Model) -> String {
     switch fit(forRuntimeRAMGB: model.estimatedRuntimeRAMGB) {
     case .comfortable:
       return "Beste Qualität, die komfortabel in deine \(formattedRAM) RAM passt."

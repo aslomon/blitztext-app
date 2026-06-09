@@ -38,7 +38,8 @@ final class LlamaCppModelManagementTests: XCTestCase {
       quantization: "Q4_K_M",
       licenseName: "Test",
       licenseURL: nil,
-      blurb: "Bad path"
+      blurb: "Bad path",
+      qualityRank: 0
     )
 
     XCTAssertThrowsError(try store.finalURL(for: malicious))

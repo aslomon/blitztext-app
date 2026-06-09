@@ -71,10 +71,10 @@ actor LlamaCppRuntimeService {
     try await stopSlot(embedding: embedding)
     let model = try modelEntry(for: trimmed)
     let modelURL = try store.finalURL(for: model)
+    // The manifest is only written after a checksum-verified download, so its presence (+ matching
+    // size, checked in isInstalled) is proof enough. Re-hashing the whole file on every cold start
+    // would add 30–60 s for a 20–32B model.
     guard store.isInstalled(model) else {
-      throw RuntimeError.modelNotInstalled(trimmed)
-    }
-    guard try store.verifyFileChecksum(for: model) else {
       throw RuntimeError.modelNotInstalled(trimmed)
     }
 

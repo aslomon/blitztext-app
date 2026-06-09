@@ -327,40 +327,60 @@ actor LocalTranscriptionService {
     audioURL: URL, language: String, modelName: String, customTerms: [String] = []
   ) async throws -> String {
     let resolvedLanguage = language.trimmingCharacters(in: .whitespacesAndNewlines)
-    var decodeOptions = DecodingOptions(
-      task: .transcribe,
-      language: resolvedLanguage.isEmpty ? nil : resolvedLanguage
-    )
-
     let pipeline = try await pipeline(modelName: modelName)
 
     // Bias the decoder toward configured Eigennamen (names / foreign terms) via a conditioning
     // prompt, so local transcription gets the same vocabulary hint the remote path already uses.
+    var promptTokens: [Int] = []
     if !customTerms.isEmpty, let tokenizer = pipeline.tokenizer {
       let promptText = " " + customTerms.joined(separator: ", ")
-      let promptTokens = tokenizer.encode(text: promptText)
+      promptTokens = tokenizer.encode(text: promptText)
         .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
-      if !promptTokens.isEmpty {
-        decodeOptions.usePrefillPrompt = true
-        decodeOptions.promptTokens = Array(promptTokens.prefix(200))
-      }
+        .prefix(200)
+        .map { $0 }
     }
 
-    let results = try await pipeline.transcribe(
-      audioPath: audioURL.path,
-      decodeOptions: decodeOptions
-    )
-    let text =
-      results
-      .map(\.text)
-      .joined(separator: " ")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
+    // First pass: conditioned on the vocabulary prompt (if any).
+    var text = try await runTranscription(
+      pipeline, audioPath: audioURL.path, language: resolvedLanguage, promptTokens: promptTokens)
+
+    // Some Whisper variants (notably large-v3) emit NOTHING when conditioned on a long prefill
+    // prompt, even though the identical audio transcribes fine without it. A vocabulary hint must
+    // never cost the user their transcription — retry once without the prompt before giving up.
+    if text.isEmpty, !promptTokens.isEmpty {
+      text = try await runTranscription(
+        pipeline, audioPath: audioURL.path, language: resolvedLanguage, promptTokens: [])
+    }
 
     guard !text.isEmpty else {
       throw LocalTranscriptionError.noText
     }
 
     return text
+  }
+
+  /// Runs one WhisperKit pass and returns the joined, trimmed transcript. `promptTokens` empty means
+  /// no vocabulary conditioning. Factored out so the caller can retry promptless on an empty result.
+  private func runTranscription(
+    _ pipeline: WhisperKit, audioPath: String, language: String, promptTokens: [Int]
+  ) async throws -> String {
+    var decodeOptions = DecodingOptions(
+      task: .transcribe,
+      language: language.isEmpty ? nil : language
+    )
+    if !promptTokens.isEmpty {
+      decodeOptions.usePrefillPrompt = true
+      decodeOptions.promptTokens = promptTokens
+    }
+    let results = try await pipeline.transcribe(
+      audioPath: audioPath,
+      decodeOptions: decodeOptions
+    )
+    return
+      results
+      .map(\.text)
+      .joined(separator: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private func pipeline(modelName: String) async throws -> WhisperKit {

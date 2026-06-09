@@ -38,25 +38,8 @@ final class AudioRecorder: NSObject, AVAudioRecorderDelegate {
   /// delete a returned URL that differs from `original` (it's a separate temp file). On any trimming
   /// failure this falls back to the original — trimming never costs the user their audio.
   static func audioForTranscription(original: URL) async -> URL {
-    let result: URL =
-      silenceTrimmingEnabled
-      ? (await SilenceTrimmer.trimmedAudio(at: original) ?? original) : original
-    // TEMP DIAGNOSTIC (remove after): capture the exact audio the workflow transcribes so we can
-    // tell whether the recording itself is silent vs. whether trimming destroyed it.
-    let fm = FileManager.default
-    let origSize = (try? original.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
-    let finalSize = (try? result.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
-    let origCopy = URL(fileURLWithPath: "/tmp/blitz-last-original.m4a")
-    let finalCopy = URL(fileURLWithPath: "/tmp/blitz-last-final.m4a")
-    try? fm.removeItem(at: origCopy)
-    try? fm.copyItem(at: original, to: origCopy)
-    try? fm.removeItem(at: finalCopy)
-    try? fm.copyItem(at: result, to: finalCopy)
-    try?
-      "trimmingEnabled=\(silenceTrimmingEnabled) trimmed=\(result != original) origSize=\(origSize) finalSize=\(finalSize)\n"
-      .write(
-        to: URL(fileURLWithPath: "/tmp/blitz-audio-debug.txt"), atomically: true, encoding: .utf8)
-    return result
+    guard silenceTrimmingEnabled else { return original }
+    return await SilenceTrimmer.trimmedAudio(at: original) ?? original
   }
 
   var isRecording = false
@@ -115,13 +98,8 @@ final class AudioRecorder: NSObject, AVAudioRecorderDelegate {
       audioRecorder = try AVAudioRecorder(url: fileURL, settings: settings)
       audioRecorder?.delegate = self
       audioRecorder?.isMeteringEnabled = true
-      let started = audioRecorder?.record() ?? false
+      audioRecorder?.record()
       isRecording = true
-      // TEMP DIAGNOSTIC (remove after): did record() actually start, and what's the mic status?
-      try?
-        "micStatus=\(String(describing: status)) recordStarted=\(started) file=\(fileURL.lastPathComponent)\n"
-        .write(
-          to: URL(fileURLWithPath: "/tmp/blitz-rec-debug.txt"), atomically: true, encoding: .utf8)
       startMetering()
       startMaxDurationTimer()
     } catch {

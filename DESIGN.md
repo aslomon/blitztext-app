@@ -185,7 +185,7 @@ Chips (RecognizeChip) **innerhalb GroupBox** nutzen `ChipBackgroundModifier` aus
 - Lange Erklärungen: ausschließlich hinter `InfoDisclosure`. Kein dauerhafter Erklärungstext.
 - `setupNudgeBanner`: nur auf Tab 0 (Prompts), nicht tabs-übergreifend.
 - `workflowHeader`: Modus-Name auf `.semibold` 13pt, Akzentfarbe auf Icon.
-- Systemeinstellungen-Reihenfolge: Bedienungshilfen → Installation & Start → Tastenkürzel → Feedback → Einrichtung → Sauber Entfernen.
+- Systemeinstellungen-Reihenfolge: Bedienungshilfen → Installation & Start → Tastenkürzel → Feedback → Einrichtung → Updates → Über & Lizenzen → Sauber Entfernen.
 
 ### In-App-Copy bleibt Deutsch
 

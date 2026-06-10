@@ -215,3 +215,9 @@ A 10-theme adversarial visibility audit (one agent per theme, traced code→reac
 - [x] **R4-UX-earcon-preview** (Iter 29) Earcon preview plays only `.done` — offer Start/Fertig/Fehler preview so the user hears all three sounds they enabled (SystemSettingsView feedbackSection) — `refl-ux`
 - [x] **R4-UX-vorschlaege-naming** (Iter 26) Two identically-named "Vorschläge" surfaces (Archiv-Tab Memory vocabulary terms vs Verbesserungen MEM-2b correction rules) — rename one (e.g. "Lern-Vorschläge" / "Wörterbuch-Vorschläge") so they don't conflate (ArchiveSettingsView vs ImprovementSection) — `refl-ux`
 - [x] **R4-UX-verwerfen-a11y** (Iter 26) Missing VoiceOver label on the suggestion "Verwerfen" button (Übernehmen has one, Verwerfen reads as a bare verb) (ImprovementSection ImprovementSuggestionRow) — `refl-ux`
+
+---
+
+## User requests (2026-06-10)
+
+- [ ] **FT-7 Live-Transkript (Realtime-Diktat-Vorschau)** [P1 L] Optional setting for the plain dictation modes (`transcription`/`localTranscription`, NOT the rewrite modes): show a live rolling transcript while recording instead of record-then-transcribe only. Recommended path: WhisperKit streaming transcription on-device — native for the local mode, and as a **local-only preview** for the online mode (final text still whisper-1; preview audio/text never leaves the Mac; requires an installed local model → gate the toggle on local-transcription readiness). Explicitly out of scope for v1: OpenAI Realtime API streaming (new WebSocket transport + per-minute cost). UI: recording pill grows an expandable live-text area (labeled "Vorschau"; partials self-correct while speaking — expected streaming behavior). Setting: `AppSettings` toggle, default OFF, `decodeIfPresent` default + missing-key tests. Distinct from R2-FT-stream (that one streams the rewrite RESPONSE, not live transcription). — `user`

@@ -71,8 +71,9 @@ final class ArchiveReuseTests: XCTestCase {
     XCTAssertNotNil(AppState.RerunError.emptyTranscript.errorDescription)
     XCTAssertTrue(
       AppState.RerunError.backendNotReady(.openai).errorDescription?.contains("API Key") ?? false)
+    // Post-Ollama era: the local backend guides toward selecting a GGUF model (llama.cpp).
     XCTAssertTrue(
-      AppState.RerunError.backendNotReady(.local).errorDescription?.contains("Ollama") ?? false)
+      AppState.RerunError.backendNotReady(.local).errorDescription?.contains("GGUF") ?? false)
   }
 
   // MARK: - Concealed clipboard copy

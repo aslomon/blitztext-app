@@ -24,5 +24,15 @@
 	<true/>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
+	<key>SUFeedURL</key>
+	<string>https://aslomon.github.io/blitztext-app/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>uxbTr5Ww1nTZsj5PLe1qdsBTGn0N2v7+MwPjYZJwHRI=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

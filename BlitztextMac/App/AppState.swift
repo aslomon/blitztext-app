@@ -142,6 +142,10 @@ final class AppState {
   // Hotkeys
   let hotkeyService = HotkeyService()
 
+  // In-app updates (Sparkle, gated behind SPARKLE_ENABLED). Created at launch so the daily
+  // scheduled check arms immediately; UI goes through this service, never through Sparkle types.
+  let updateService = UpdateService()
+
   // Computed
   var isConfigured: Bool {
     KeychainService.isConfigured || !LocalTranscriptionService.installedModels().isEmpty

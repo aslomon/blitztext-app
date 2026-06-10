@@ -80,7 +80,7 @@ private struct MainPageView: View {
 
       // Engine/model selection lives only in Settings → Modelle now; the popover start page no
       // longer carries the bottom engine bar.
-      appFooter
+      AppFooter(appState: appState)
     }
   }
 
@@ -108,6 +108,12 @@ private struct MainPageView: View {
             if !appState.accessibilityPermissionGranted {
               Circle()
                 .fill(Color.orange)
+                .frame(width: 6, height: 6)
+                .offset(x: -4, y: 4)
+            } else if appState.updateService.availableUpdateVersion != nil {
+              // Quiet update cue on the gear (blue = download, per design tokens).
+              Circle()
+                .fill(Color.blue)
                 .frame(width: 6, height: 6)
                 .offset(x: -4, y: 4)
             }
@@ -472,7 +478,7 @@ private struct SettingsPageView: View {
 
       Spacer(minLength: 0)
 
-      appFooter
+      AppFooter(appState: appState)
     }
   }
 
@@ -540,7 +546,7 @@ private struct WorkflowPageView: View {
 
         Spacer(minLength: 0)
 
-        appFooter
+        AppFooter(appState: appState)
       }
     }
   }
@@ -604,18 +610,39 @@ private struct WorkflowPageView: View {
 
 // MARK: - Shared footer (used on all pages)
 
-// Spec change #12: trailing alignment — Spacer() – Beenden (no leading Spacer, no centring)
-private var appFooter: some View {
-  HStack {
-    Spacer()
-    Button("Beenden") {
-      NSApplication.shared.terminate(nil)
+/// Trailing-aligned footer: quiet version label left, optional update hint + Beenden right.
+/// The update button is the popover's secondary entry into the updater (primary lives in
+/// Einstellungen → System → Updates); it appears only while a gentle update reminder waits.
+private struct AppFooter: View {
+  @Bindable var appState: AppState
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text(appState.updateService.appVersionText)
+        .font(.system(size: 10))
+        .foregroundStyle(.tertiary)
+
+      Spacer()
+
+      if let hint = UpdateService.updateHintText(
+        forVersion: appState.updateService.availableUpdateVersion)
+      {
+        Button(hint) {
+          appState.updateService.checkForUpdates()
+        }
+        .font(.system(size: 10, weight: .medium))
+        .buttonStyle(PopoverActionButtonStyle(.primary))
+      }
+
+      Button("Beenden") {
+        NSApplication.shared.terminate(nil)
+      }
+      .font(.system(size: 10, weight: .medium))
+      .buttonStyle(PopoverActionButtonStyle(.quiet))
     }
-    .font(.system(size: 10, weight: .medium))
-    .buttonStyle(PopoverActionButtonStyle(.quiet))
+    .padding(.horizontal, 16)
+    .padding(.vertical, 8)
   }
-  .padding(.horizontal, 16)
-  .padding(.vertical, 8)
 }
 
 // MARK: - Subtle Button Style

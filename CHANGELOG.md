@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Automatic App Updates via Sparkle**: Self-hosted update mechanism for macOS (feature-gated with `SPARKLE_ENABLED` for App Store variant compatibility)
+  - **UpdateService**: Centralized wrapper around Sparkle framework with gentle daily checks and manual refresh capability
+  - **Update Checks**: Scheduled daily HTTPS requests to public release feed (appcast.xml) with no profiling or system data transmission
+  - **EdDSA Signature Verification**: Update archives signed with EdDSA keys and verified before extraction (independent of notarization)
+  - **Update UI Integration**: New "Updates" section in **Einstellungen → System** showing current version, last check time, daily toggle, and manual check button; secondary entry point via "Update verfügbar" button in menu bar footer
+  - **Menu Bar Indicator**: Quiet blue dot on settings icon when update is available (visual cue, no interruption)
+  - **Release Pipeline**: GitHub Actions workflow (release.yml) and detailed runbook (docs/release-process.md) for App Store and direct distribution
+  - **Privacy Documentation**: Honest disclosure in README and docs/privacy.md covering update traffic, what is/isn't transmitted, and toggle control
+  - **Unit Tests**: 11 UpdateServiceTests covering version parsing, app version text, EdDSA key contract enforcement, and plist configuration
+
+### Added
+
+- **Updated README Screenshots**: Current UI captures showing the llama.cpp-based local model runtime
+  - **Local Models Window**: Unified interface displaying Gemma 4 model loaded live from Hugging Face catalog
+  - **Mode Configuration**: Shows "läuft lokal über llama.cpp" subtitle confirming local-only processing
+  - **Menu Bar Popover**: Displays modern menu bar interface with model and mode management
 - **Live Hugging Face Model Catalog**: Dynamically fetch and browse chat models directly from Hugging Face (ggml-org)
   - **HuggingFaceModelService**: Fetches live GGUF models from trusted orgs with heuristic parameter parsing and deduplication
   - **Dynamic Expansion**: New models (Gemma 4, gpt-oss) automatically appear as they're published without app updates

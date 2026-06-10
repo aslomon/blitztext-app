@@ -84,6 +84,7 @@ resolve_codesign_identity() {
 sign_app_bundle() {
     local target="$1"
     sign_nested_code "$target"
+    sign_sparkle_framework "$target"
 
     if [ "$CODESIGN_MODE" = "stable" ]; then
         echo "🔏 Signiere mit stabiler lokaler Identitaet (\"$CODESIGN_IDENTITY_NAME\"). Bedienungshilfen-Freigaben ueberleben Rebuilds."
@@ -128,6 +129,41 @@ sign_nested_code() {
     codesign --force --sign "$sign_id" "$helper" 2>&1
 
     codesign --verify --strict --verbose=2 "$helper" >/dev/null 2>&1
+}
+
+# Re-signs the embedded Sparkle.framework's nested executables (XPC services, Autoupdate,
+# Updater.app) with the same identity as the app, innermost-first. Without this, the outer
+# non-deep app re-sign would reference nested code still carrying the Xcode build signature
+# (mismatched identity) and Sparkle's installer would fail signature validation at runtime.
+sign_sparkle_framework() {
+    local target="$1"
+    local fw="$target/Contents/Frameworks/Sparkle.framework"
+
+    if [ ! -d "$fw" ]; then
+        return
+    fi
+
+    local sign_id="-"
+    if [ "$CODESIGN_MODE" = "stable" ]; then
+        sign_id="$CODESIGN_IDENTITY_NAME"
+    fi
+
+    # XPC services keep their own entitlements (the Downloader is sandboxed by design).
+    local xpc
+    for xpc in "$fw/Versions/B/XPCServices/"*.xpc; do
+        [ -e "$xpc" ] || continue
+        codesign --force --options runtime --preserve-metadata=entitlements --sign "$sign_id" "$xpc" 2>&1
+    done
+
+    if [ -e "$fw/Versions/B/Autoupdate" ]; then
+        codesign --force --options runtime --sign "$sign_id" "$fw/Versions/B/Autoupdate" 2>&1
+    fi
+    if [ -d "$fw/Versions/B/Updater.app" ]; then
+        codesign --force --options runtime --sign "$sign_id" "$fw/Versions/B/Updater.app" 2>&1
+    fi
+
+    codesign --force --sign "$sign_id" "$fw" 2>&1
+    codesign --verify --strict --verbose=2 "$fw" >/dev/null 2>&1
 }
 
 verify_universal_app() {

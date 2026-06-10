@@ -12,6 +12,21 @@ When **Sicherer Lokaler Modus** is enabled and compatible local models are insta
 
 You are responsible for your OpenAI account, API usage, costs, and data handling.
 
+## Update Checks
+
+The app can check for new versions once per day and on manual request (Einstellungen → System →
+Updates). The check downloads the public release feed (`appcast.xml`) of this project over HTTPS
+and, only when you choose to install, the signed update archive from the project's GitHub releases.
+
+- Transmitted: a standard HTTPS request; the user agent contains the app name and version.
+- Not transmitted: no system profile, no hardware data, no identifiers, no usage data. Sparkle's
+  optional system profiling is disabled and absent from the build (`SUEnableSystemProfiling` is
+  never set).
+- The daily check can be turned off in Einstellungen → System → Updates; the manual check stays
+  available. Disabling it stops all scheduled update traffic.
+- Update archives are verified against the app's pinned EdDSA public key before extraction
+  (`SUVerifyUpdateBeforeExtraction`), independent of Apple notarization.
+
 ## Local Data
 
 The app stores:

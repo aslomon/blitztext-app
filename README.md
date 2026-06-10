@@ -116,6 +116,12 @@ You can mix and match per mode: dictate locally, rewrite online, or the reverse.
 
 ---
 
+## 🔄 Updates
+
+The app checks for new versions once a day (and on demand in **Einstellungen → System → Updates**) against this repository's release feed, powered by [Sparkle](https://sparkle-project.org). Honest scope of that traffic: one HTTPS request for the appcast — the user agent carries the app version, nothing else. No system profile, no identifiers, and the daily check has an off switch. Update archives are EdDSA-signed and verified before extraction. Details in [docs/privacy.md](docs/privacy.md), release flow in [docs/release-process.md](docs/release-process.md).
+
+---
+
 ## 🧩 Memory, vocabulary & context (all opt-in, all local)
 
 - **Semantic e-mail memory that learns** — opt in, and the more e-mails you dictate, the better it gets. A local vector store (a **nomic-embed-text** GGUF on a second llama.cpp server) embeds your finished drafts, so Blitztext can recall how you phrased _similar cases before_ and feed that back as quiet background context. Capped, retention-aware, never uploaded.

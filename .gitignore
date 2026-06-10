@@ -30,3 +30,6 @@ Secrets.swift
 
 # Tooling
 node_modules/
+
+# Sparkle CLI tools (downloaded, not tracked)
+.sparkle-tools/

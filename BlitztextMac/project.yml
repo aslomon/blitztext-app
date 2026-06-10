@@ -11,13 +11,23 @@ settings:
     SWIFT_VERSION: "5.10"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     ONLY_ACTIVE_ARCH: NO
-    MARKETING_VERSION: "1.5"
-    CURRENT_PROJECT_VERSION: "15"
+    MARKETING_VERSION: "1.6"
+    CURRENT_PROJECT_VERSION: "16"
+  configs:
+    # SPARKLE_ENABLED gates all updater code; a Mac App Store variant builds without it
+    # (stores forbid self-updating apps). DEBUG must stay explicit for the Debug config.
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: "DEBUG SPARKLE_ENABLED"
+    Release:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: "SPARKLE_ENABLED"
 
 packages:
   ArgmaxOSS:
     url: https://github.com/argmaxinc/argmax-oss-swift.git
     exactVersion: 0.18.0
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.9.3
 
 targets:
   BlitztextMac:
@@ -48,6 +58,8 @@ targets:
     dependencies:
       - package: ArgmaxOSS
         product: WhisperKit
+      - package: Sparkle
+        product: Sparkle
     entitlements:
       path: Resources/BlitztextMac.entitlements
       properties:

@@ -21,7 +21,9 @@ struct SystemSettingsView: View {
       // (4) Diktat — recording length + silence trimming
       // (5) Akustisches Feedback
       // (6) Einrichtung
-      // (7) Sauber Entfernen — destructive, always trails
+      // (7) Updates
+      // (8) Über & Lizenzen
+      // (9) Sauber Entfernen — destructive, always trails
       AccessibilityPermissionSection(appState: appState)
         .settingsGroupBackground()
 
@@ -40,12 +42,21 @@ struct SystemSettingsView: View {
       setupSection
         .settingsGroupBackground()
 
+      if UpdateService.isAvailable {
+        updatesSection
+          .settingsGroupBackground()
+      }
+
+      LicensesSection()
+        .settingsGroupBackground()
+
       CleanupSection()
         .settingsGroupBackground()
     }
     .padding(16)
     .onAppear {
       launchAtLoginService.refresh()
+      appState.updateService.refresh()
       refreshInstallState()
     }
   }
@@ -161,6 +172,54 @@ struct SystemSettingsView: View {
         NotificationCenter.default.post(name: .openOnboardingWindow, object: nil)
       }
       .buttonStyle(PopoverActionButtonStyle(.secondary))
+    }
+  }
+
+  // MARK: - Updates
+
+  private var updatesSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionLabel(text: "Updates")
+
+      HStack(spacing: 8) {
+        Text(appState.updateService.appVersionText)
+          .font(.system(size: 11.5, weight: .semibold))
+          .foregroundStyle(.primary)
+
+        if let hint = UpdateService.updateHintText(
+          forVersion: appState.updateService.availableUpdateVersion)
+        {
+          BlitzStatusPill(state: .download, label: hint)
+        }
+      }
+
+      Text(appState.updateService.lastCheckDisplayText)
+        .font(.system(size: 10.5))
+        .foregroundStyle(.secondary)
+
+      Button("Jetzt nach Updates suchen") {
+        appState.updateService.checkForUpdates()
+      }
+      .buttonStyle(PopoverActionButtonStyle(.secondary))
+      .disabled(!appState.updateService.canCheckForUpdates)
+
+      Toggle(
+        "Automatisch täglich prüfen",
+        isOn: Binding(
+          get: { appState.updateService.automaticChecksEnabled },
+          set: { appState.updateService.setAutomaticChecksEnabled($0) }
+        )
+      )
+      .toggleStyle(.switch)
+      .controlSize(.small)
+
+      Text(
+        "Die Prüfung fragt nur die Update-Liste des Projekts ab — übertragen wird dabei lediglich "
+          + "die App-Version im Anfrage-Header. Keine weiteren Daten, kein Geräteprofil."
+      )
+      .font(.system(size: 10.5))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
 

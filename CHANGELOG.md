@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Blitztext Launch Failure with Sparkle Framework**: Fixed app refusing to launch when Hardened Runtime + Sparkle dynamic framework were present
+  - **Root Cause**: Hardened Runtime's library validation enforces matching Team IDs; self-signed local identity has no Team ID → dyld abort ("mapped file has no Team ID")
+  - **Solution**: Local dev builds now temporarily add `disable-library-validation` entitlement at sign time; notarized Developer ID releases retain full library validation with shared Team ID
+  - **Implementation**: build.sh now generates temporary entitlements with the disable-library-validation flag for local signing, while production releases keep the hardened configuration
+- **Accessibility Permission Recognition on Fresh Installs**: Fixed accessibility toggle not being recognized by app even when system shows it enabled
+  - **Root Cause**: On fresh installs and rebuilds (where app identity changes via ad-hoc signing), the old CDHash entry in system settings remains; `AXIsProcessTrusted()` correctly rejects it
+  - **UI Improvement**: Help text now explicitly guides users to remove and re-add the Blitztext entry via the minus (−) button when the toggle appears on but isn't recognized
+  - **Scope**: Fix applies to both fresh installs and any rebuild scenario where signature changes
+
 ### Added
 
 - **Automatic App Updates via Sparkle**: Self-hosted update mechanism for macOS (feature-gated with `SPARKLE_ENABLED` for App Store variant compatibility)
